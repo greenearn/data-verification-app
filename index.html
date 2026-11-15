@@ -1,0 +1,113 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Data Verification</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+body{font-family:system-ui,Arial;background:#0f1117;color:#e6e6e6;margin:0;padding:12px}
+h3{margin:14px 0 8px;font-size:15px;color:#8ab4ff}
+button,select,textarea,input{width:100%;box-sizing:border-box;margin:4px 0;padding:10px;border-radius:8px;border:1px solid #333;background:#1a1d27;color:#e6e6e6;font-size:14px}
+button{background:#2b6cb0;border:none;cursor:pointer;font-weight:bold}
+button.sec{background:#333}.row{display:flex;gap:8px}.card{border:1px solid #2a2e3a;border-radius:10px;padding:10px;margin:8px 0}
+a{color:#8ab4ff}.small{font-size:12px;color:#9aa}.ok{color:#4ade80}.bad{color:#f87171}
+</style></head><body><div id="app">Loading…</div>
+<script>
+const q=new URLSearchParams(location.search);
+const API=q.get('api'),AUTH=q.get('auth'),ADMIN=q.get('admin_api'),TG=q.get('tg_id');
+let token=localStorage.getItem('dv_token_'+TG)||'',ME=null,SERVICES=[];
+const tu=(window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initDataUnsafe&&Telegram.WebApp.initDataUnsafe.user)||{};
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const app=document.getElementById('app');
+async function call(url,data){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});return r.json();}
+const api=(a,x)=>call(API,Object.assign({auth:token,action:a},x||{}));
+const adm=(a,x)=>call(ADMIN,Object.assign({tg_id:TG,action:a},x||{}));
+function nav(){return '<p><a href="#home">Home</a> · <a href="#orders">Orders</a> · <a href="#deposit">Deposit</a> · <a href="#withdraw">Withdraw</a> · <a href="#ref">Refer</a> · <a href="#support">Support</a> · <a href="#notifs">Notifs</a> · <a href="#" class="sec" onclick="logout()">Logout</a>'+(ME&&ME.is_admin?' · <a href="#admin"><b>Admin</b></a>':'')+'</p>';}
+async function boot(){
+  if(!API||!AUTH||!TG){app.innerHTML='<p class="bad">Open this app from /start in the bot.</p>';return;}
+  if(!token){
+    let r=await call(AUTH,{tg_id:TG,mode:'login'});
+    if(!r.ok) r=await call(AUTH,{tg_id:TG,mode:'register',name:tu.first_name||'',username:tu.username||''});
+    if(r.ok){token=r.token;localStorage.setItem('dv_token_'+TG,token);}else{app.innerHTML='<p class="bad">Auth failed: '+esc(r.error)+'</p>';return;}
+  }
+  let me=await api('me');
+  if(me.ok){ME=me;ME.is_admin=false;try{const d=await adm('dashboard');ME.is_admin=!!d.ok;}catch(e){}}
+  route();
+}
+function route(){const h=location.hash||'#home';
+  if(h.startsWith('#orders'))orders();else if(h.startsWith('#deposit'))deposit();else if(h.startsWith('#withdraw'))withdraw();
+  else if(h.startsWith('#ref'))refv();else if(h.startsWith('#support'))support();else if(h.startsWith('#notifs'))notifs();
+  else if(h.startsWith('#admin'))admin();else home();}
+window.onhashchange=route;
+function logout(){call(AUTH,{tg_id:TG,mode:'logout'});localStorage.removeItem('dv_token_'+TG);location.reload();}
+async function home(){const s=await api('services');SERVICES=s.services||[];
+  let h=nav()+'<h3>Hello '+esc(ME.name)+' — balance: <b class="ok">'+ME.balance+'</b> credits</h3>';
+  for(const p of SERVICES){h+='<div class="card"><b>'+esc(p.platform)+'</b><br>';
+    for(const t of p.tasks)h+='<button class="sec" onclick="orderForm(\''+esc(p.platform)+'\',\''+esc(t.key)+'\')">'+esc(t.name)+' — $'+t.price+' / 10K</button>';
+    h+='</div>';}
+  app.innerHTML=h;}
+let OF={platform:'',task:'',price:0};
+function orderForm(p,k){for(const pl of SERVICES)if(pl.platform===p)for(const t of pl.tasks)if(t.key===k)OF={platform:p,task:k,price:t.price};
+  app.innerHTML=nav()+'<h3>'+esc(OF.platform)+' / '+esc(OF.task)+'</h3><p class="small">One number/username/email per line. Price $'+OF.price+' per 10,000 items.</p>'+
+  '<textarea id=inp rows=8 placeholder="one per line"></textarea><p>Count: <span id=cnt>0</span> — Total: <b id=tot>0</b> credits</p>'+
+  '<button onclick="placeOrder()">Place order</button><p id=ofmsg></p><p><a href="#home">Back</a></p>';
+  document.getElementById('inp').oninput=function(){const n=this.value.split('\n').filter(x=>x.trim()).length;
+    document.getElementById('cnt').textContent=n;document.getElementById('tot').textContent=(OF.price*n/10000).toFixed(4);};}
+async function placeOrder(){const inp=document.getElementById('inp').value;const r=await api('create_order',{platform:OF.platform,task:OF.task,input:inp});
+  document.getElementById('ofmsg').innerHTML=r.ok?'<span class="ok">Order '+r.order.id+' created.</span>':'<span class="bad">'+esc(r.error)+' need '+esc(r.need||'')+'</span>';
+  if(r.ok)ME.balance=r.balance;}
+async function orders(){const r=await api('orders');let h=nav()+'<h3>My orders</h3>';
+  for(const o of r.orders||[])h+='<div class="card"><b>'+o.id+'</b> '+esc(o.platform)+' / '+esc(o.task)+'<br>'+o.count+' items — '+o.total+' credits — <span class="'+(o.status==='done'?'ok':o.status==='failed'||o.status==='cancelled'?'bad':'')+'">'+o.status+'</span> <a href="#ord_'+o.id+'">open</a></div>';
+  if(location.hash.startsWith('#ord_')){const id=location.hash.slice(5);const d=await api('order',{id});
+    if(d.ok){h+='<h3>'+id+'</h3><textarea rows=12>'+esc(d.order.result||'')+'</textarea><button onclick="dl(\''+id+'.csv\',document.querySelector(\'textarea\').value)">Download CSV</button>';}}
+  app.innerHTML=h;}
+function dl(n,t){const b=new Blob([t],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;a.click();}
+async function deposit(){app.innerHTML=nav()+'<h3>Deposit (2328.io)</h3><p class="small">Pay to the admin\'s 2328.io address, then request credit below.</p>'+
+  'Amount<br><input id=damt type=number min=1>Method<br><input id=dmeth value="2328.io">Tx id / note<br><input id=ddet>'+
+  '<button onclick="depReq()">Request deposit</button><p id=dmsg></p><h3>History</h3><div id=dhist></div>';
+  const r=await api('deposits');let h='';for(const d of r.deposits||[])h+='<div class="card">'+d.id+' — '+d.amount+' — '+esc(d.method)+' — <b>'+d.status+'</b> '+(d.note?'<br>'+esc(d.note):'')+'</div>';
+  document.getElementById('dhist').innerHTML=h;}
+async function depReq(){const r=await api('deposit_request',{amount:parseFloat(document.getElementById('damt').value),method:document.getElementById('dmeth').value,details:document.getElementById('ddet').value});
+  document.getElementById('dmsg').innerHTML=r.ok?'<span class="ok">Request sent. Admin will approve after payment.</span>':'<span class="bad">'+esc(r.error)+'</span>';}
+async function withdraw(){app.innerHTML=nav()+'<h3>Withdraw</h3>Address<br><input id=waddr value="'+esc(ME.address||'')+'">Amount<br><input id=wamt type=number>'+
+  '<button onclick="wReq()">Save address + request withdrawal</button><p id=wmsg></p><h3>History</h3><div id=whist></div>';
+  const r=await api('withdrawals');let h='';for(const w of r.withdrawals||[])h+='<div class="card">'+w.id+' — '+w.amount+' — '+esc(w.address)+' — <b>'+w.status+'</b></div>';
+  document.getElementById('whist').innerHTML=h;}
+async function wReq(){await api('set_address',{address:document.getElementById('waddr').value});
+  const r=await api('withdraw_request',{amount:parseFloat(document.getElementById('wamt').value),address:document.getElementById('waddr').value});
+  document.getElementById('wmsg').innerHTML=r.ok?'<span class="ok">Withdrawal requested.</span>':'<span class="bad">'+esc(r.error)+' min '+esc(r.min||'')+'</span>';}
+async function refv(){const r=await api('ref_stats');
+  app.innerHTML=nav()+'<h3>Referral</h3><p>Link: <input value="'+esc(r.link)+'" onclick="this.select()"><br>You earn <b>'+r.percent+'%</b> of every order made by your referrals. Referrals: <b>'+r.referrals+'</b>.</p>'+
+  '<p class="small">Want your own clone app (commission basis, no payment addresses / no user data / no messaging)?</p><button onclick="cloneReq()">Request clone access</button><p id=cmsg></p>';}
+async function cloneReq(){const r=await api('clone_request');document.getElementById('cmsg').innerHTML='<span class="ok">Request sent to admin.</span>';}
+async function support(){app.innerHTML=nav()+'<h3>Support</h3><textarea id=stxt rows=4></textarea><button onclick="sSend()">Send</button><p id=smsg></p><p class="small">Admin replies arrive in your Telegram chat.</p>';}
+async function sSend(){const r=await api('support_send',{text:document.getElementById('stxt').value});
+  document.getElementById('smsg').innerHTML=r.ok?'<span class="ok">Sent.</span>':'<span class="bad">Empty.</span>';}
+async function notifs(){const r=await api('notifs');await api('notif_read');let h=nav()+'<h3>Notifications</h3>';
+  for(const n of r.notifs||[])h+='<div class="card"><b>'+esc(n.title)+'</b> <span class="small">'+esc(n.ts)+'</span><br>'+esc(n.body)+'</div>';
+  app.innerHTML=h||nav()+'<p>No notifications yet.</p>';}
+async function admin(){if(!ME||!ME.is_admin){app.innerHTML=nav()+'<p class="bad">Admins only.</p>';return;}
+  const d=await adm('dashboard');const s=d.settings||{};
+  let h=nav()+'<h3>Admin panel</h3><p>Orders: '+(d.orders||[]).length+' · Deposits: '+(d.deposits||[]).length+' · Withdrawals: '+(d.withdrawals||[]).length+' · Ref %: '+esc(d.ref_percent)+'</p>';
+  h+='<h3>Settings</h3>Ref % <input id=st_ref value="'+esc(s.ref_percent)+'">Min deposit <input id=st_md value="'+esc(s.min_deposit)+'">Min withdraw <input id=st_mw value="'+esc(s.min_withdraw)+'">Welcome bonus <input id=st_wb value="'+esc(s.welcome_bonus)+'">Test mode (1/0) <input id=st_tm value="'+esc(s.test_mode)+'"><button onclick="saveSt()">Save settings</button><p id=stmsg></p>';
+  h+='<h3>Deposits</h3>';for(const x of d.deposits||[])h+='<div class="card">'+x.id+' user '+x.uid+' '+x.amount+' '+esc(x.method)+' <b>'+x.status+'</b> <button onclick="depAct(\''+x.id+'\',1)">Approve</button> <button class="sec" onclick="depAct(\''+x.id+'\',0)">Reject</button></div>';
+  h+='<h3>Withdrawals</h3>';for(const x of d.withdrawals||[])h+='<div class="card">'+x.id+' user '+x.uid+' '+x.amount+' '+esc(x.address)+' <b>'+x.status+'</b> <button onclick="wdAct(\''+x.id+'\',1)">Approve</button> <button class="sec" onclick="wdAct(\''+x.id+'\',0)">Reject</button></div>';
+  h+='<h3>Broadcast</h3><textarea id=bt rows=3></textarea><button onclick="bcast()">Send to all users</button><p id=bmsg></p>';
+  h+='<h3>Clone requests</h3>';for(const x of (await adm('clone_requests')).requests||[])h+='<div class="card">user '+x.uid+' <b>'+x.status+'</b> <button onclick="clAct(\''+x.id+'\',1)">Approve</button> <button class="sec" onclick="clAct(\''+x.id+'\',0)">Reject</button></div>';
+  h+='<h3>Users</h3><input id=uq placeholder="search" oninput="uS()"><div id=ul></div>';
+  h+='<h3>Support messages</h3><div id=sml></div>';
+  app.innerHTML=h;await uS();await smL();}
+async function saveSt(){const r=await adm('save_settings',{ref_percent:parseFloat(document.getElementById('st_ref').value),min_deposit:parseFloat(document.getElementById('st_md').value),min_withdraw:parseFloat(document.getElementById('st_mw').value),welcome_bonus:parseFloat(document.getElementById('st_wb').value),test_mode:parseInt(document.getElementById('st_tm').value)||0});
+  document.getElementById('stmsg').innerHTML='<span class="ok">Saved.</span>';}
+async function depAct(id,ap){await adm('deposit_action',{id,id2:id,approve:ap});admin();}
+async function wdAct(id,ap){await adm('withdraw_action',{id,approve:ap});admin();}
+async function bcast(){const r=await adm('broadcast',{text:document.getElementById('bt').value});document.getElementById('bmsg').innerHTML='<span class="ok">Sent to '+r.sent+'.</span>';}
+async function clAct(id,ap){await adm('clone_action',{id,approve:ap});admin();}
+async function uS(){const r=await adm('users',{q:document.getElementById('uq').value||''});let h='';
+  for(const x of r.users||[])h+='<div class="card">'+x.id+' '+esc(x.name)+' bal '+x.balance+' '+(x.banned?'BANNED':'')+'<br><button onclick="setBal(\''+x.id+'\')">Set balance</button> <button class="sec" onclick="ban(\''+x.id+'\','+(!x.banned?1:0)+')">'+(x.banned?'Unban':'Ban')+'</button></div>';
+  document.getElementById('ul').innerHTML=h;window._us=r.users||[];}
+async function setBal(uid){const v=prompt('New balance for '+uid);if(v===null)return;await adm('set_balance',{uid:parseInt(uid),balance:parseFloat(v)||0});uS();}
+async function ban(uid,b){await adm('ban_user',{uid:parseInt(uid),ban:!!b});uS();}
+async function smL(){const r=await adm('messages');let h='';for(const m of r.messages||[])h+='<div class="card">'+m.uid+': '+esc(m.text)+'<br><input id=r_'+m.id+' placeholder="reply"><button onclick="sRep(\''+m.id+'\')">Reply</button></div>';
+  document.getElementById('sml').innerHTML=h;}
+async function sRep(id){const v=document.getElementById('r_'+id).value;await adm('reply_message',{id,text:v});alert('Sent.');}
+boot();
+</script></body></html>
