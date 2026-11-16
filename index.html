@@ -24,7 +24,7 @@ button,input,textarea,select{font:inherit}
 .status,.tag{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;letter-spacing:.07em;border:1px solid rgba(84,224,193,.25);border-radius:30px;padding:6px 10px;color:var(--mint);background:rgba(38,150,128,.08);white-space:nowrap}
 .welcome{margin:29px 0 17px}
 .eyebrow{color:var(--mint);text-transform:uppercase;letter-spacing:.17em;font-size:10px;font-weight:800}
-.welcome h1{font-size:clamp(25px,5vw,32px);line-height:1.16;letter-spacing:-.045em;margin:8px 0 7px}
+.welcome h1{font-size:clamp(25px,5vw,32px);line-height:1.16;letter-spacing:-.045em;margin:8px 0 7px;overflow-wrap:anywhere}
 .welcome p,.panel p{color:var(--muted);font-size:12px;margin:0}
 .balance{position:relative;overflow:hidden;background:linear-gradient(112deg,rgba(22,71,79,.92),rgba(16,43,65,.96) 60%,rgba(16,38,61,.98));border:1px solid rgba(84,224,193,.25);border-radius:21px;padding:21px 22px;margin:20px 0 29px}
 .balance .muted{font-size:10px;letter-spacing:.13em;font-weight:750;color:#b2d1d1}
@@ -41,9 +41,16 @@ button,input,textarea,select{font:inherit}
 .ico{width:36px;height:36px;display:grid;place-items:center;border-radius:12px;background:rgba(84,224,193,.09);border:1px solid rgba(84,224,193,.15);font-size:18px;color:var(--mint);margin-bottom:12px}
 .service strong,.panel h3{font-size:12px;font-weight:750}
 .service p{font-size:11px;color:var(--muted);margin:5px 0 12px;line-height:1.5}
-.tag{font-size:9px;padding:4px 8px;color:#b5c8d8;border-color:var(--line);background:rgba(255,255,255,.025)}
-.category-title{grid-column:1/-1;color:var(--mint);font-size:10px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;padding:12px 2px 0;border-bottom:1px solid var(--line);padding-bottom:9px}
+.tag{font-size:9px;padding:4px 8px;color:#b5c8d8;border-color:var(--line);background:rgba(255,255,255,.025);white-space:normal}
 .service-status{font-size:10px;color:var(--muted);margin-top:9px}
+.category-group{grid-column:1/-1;border:1px solid var(--line);border-radius:15px;background:rgba(11,27,43,.55);overflow:hidden;margin-top:5px}
+.category-toggle{width:100%;display:flex;align-items:center;gap:10px;padding:15px;background:transparent;border:0;color:var(--mint);text-align:left;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;cursor:pointer}
+.category-toggle:focus-visible{outline:2px solid var(--mint);outline-offset:-3px}
+.category-count{font-size:9px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none;margin-left:auto}
+.category-arrow{font-size:17px;transition:transform .2s}
+.category-group.open .category-arrow{transform:rotate(180deg)}
+.category-content{display:none;padding:0 10px 10px;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.category-group.open .category-content{display:grid}
 .panel{padding:17px;margin-top:11px}
 .panel h3{margin:0 0 5px}
 .panel p{font-size:11px;line-height:1.6}
@@ -105,7 +112,7 @@ select option{background:#102338;color:white}
 .price-line strong{color:#effaf6;text-align:right}
 .price-total{border-top:1px solid var(--line);margin-top:7px;padding-top:10px;font-size:12px}
 @media(max-width:520px){.wrap{padding:17px 13px 36px}.brand strong{font-size:10px}.brand small{font-size:9px}.logo{width:40px;height:40px;flex-basis:40px}.status{font-size:9px;padding:5px 8px}.welcome{margin-top:25px}.grid{gap:9px}.service{padding:13px;min-height:150px}.panel{padding:14px}}
-@media(max-width:360px){.grid{grid-template-columns:1fr}}
+@media(max-width:360px){.grid{grid-template-columns:1fr}.category-content{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -255,7 +262,7 @@ try{
 const data=await apiGet("/api/services");
 services=Array.isArray(data.services)?data.services:[];
 renderServices();
-const categoryCount=new Set(services.map(s=>s.category||"Other")).size;
+const categoryCount=new Set(services.map(s=>s.category||"Other Services")).size;
 status.textContent=services.length+" services across "+categoryCount+" categories loaded. "+(data.ordering_enabled?"":"Ordering is currently disabled.");
 }catch(e){
 status.textContent="Could not load services: "+e.message;
@@ -275,12 +282,14 @@ if(s.unit_price_cents==null||!s.pricing_unit_quantity)return "Price unavailable"
 return money(s.unit_price_cents,s.currency)+" / "+Number(s.pricing_unit_quantity).toLocaleString();
 }
 
+/* Dynamic, expandable category catalogue */
 function renderServices(){
 const box=document.getElementById("services-grid");
 const select=document.getElementById("service-select");
 if(!box||!select)return;
 
 const groups={};
+
 services.forEach(function(s){
 const category=s.category||"Other Services";
 if(!groups[category])groups[category]=[];
@@ -288,11 +297,26 @@ groups[category].push(s);
 });
 
 let html="";
-Object.keys(groups).forEach(function(category){
-html+='<div class="category-title">'+esc(category)+'</div>';
-groups[category].forEach(function(s){
+
+Object.keys(groups).forEach(function(category,index){
+const items=groups[category];
+const isSelected=items.some(function(s){
+return s.resource_code===selectedCode;
+});
+const isOpen=isSelected||index===0;
+
+html+='<section class="category-group '+(isOpen?"open":"")+'">'+
+'<button type="button" class="category-toggle" aria-expanded="'+(isOpen?"true":"false")+'">'+
+'<span>'+esc(category)+'</span>'+
+'<span class="category-count">'+items.length+' service'+(items.length===1?"":"s")+'</span>'+
+'<span class="category-arrow">⌄</span>'+
+'</button>'+
+'<div class="category-content">';
+
+items.forEach(function(s){
 const chosen=s.resource_code===selectedCode;
 const icon=s.input_type==="email"?"✉":"✓";
+
 html+='<article class="service '+(chosen?"selected":"")+'" data-code="'+esc(s.resource_code)+'" tabindex="0" role="button" aria-label="Select '+esc(s.name)+'">'+
 '<div class="ico">'+icon+'</div>'+
 '<strong>'+esc(s.name)+'</strong>'+
@@ -302,6 +326,8 @@ html+='<article class="service '+(chosen?"selected":"")+'" data-code="'+esc(s.re
 '<div class="service-status">Minimum: '+(s.minimum_order_quantity!=null?Number(s.minimum_order_quantity).toLocaleString():"Not set")+'</div>'+
 '</article>';
 });
+
+html+='</div></section>';
 });
 
 box.innerHTML=html||'<div class="panel"><p>No services are currently listed.</p></div>';
@@ -317,13 +343,27 @@ selectedCode="";
 select.value="";
 }
 
+box.querySelectorAll(".category-toggle").forEach(function(button){
+button.addEventListener("click",function(){
+const group=button.closest(".category-group");
+const isOpen=group.classList.toggle("open");
+button.setAttribute("aria-expanded",isOpen?"true":"false");
+});
+});
+
 box.querySelectorAll("[data-code]").forEach(function(card){
-function choose(){selectService(card.getAttribute("data-code"));}
+function choose(){
+selectService(card.getAttribute("data-code"));
+}
 card.addEventListener("click",choose);
 card.addEventListener("keydown",function(e){
-if(e.key==="Enter"||e.key===" "){e.preventDefault();choose();}
+if(e.key==="Enter"||e.key===" "){
+e.preventDefault();
+choose();
+}
 });
 });
+
 updateEstimate();
 }
 
@@ -421,7 +461,7 @@ app.innerHTML='<main class="wrap">'+
 '<section class="panel"><div class="panel-title"><div class="panel-icon">＋</div><div><h3>Prepare input list</h3><p>Choose a service above or use the selector below.</p></div></div>'+
 '<label class="field" for="service-select">Selected service</label><select id="service-select"><option value="">Loading services…</option></select>'+
 '<label class="field" for="quantity">Quantity for price estimate</label><input id="quantity" type="number" min="1" max="'+LOCAL_PREVIEW_LIMIT+'" value="500" inputmode="numeric">'+
-'<div class="price-box" id="price-estimate">Select a service to view pricing information.</div>'+
+'<div class="price-box" id="price-estimate">Select a service to view its pricing information.</div>'+
 '<label class="field" for="file">Upload TXT or CSV file</label><input id="file" type="file" accept=".txt,.csv,text/plain,text/csv">'+
 '<div class="field-row"><label class="field" for="entries" id="input-label">Input list</label><span class="counter" id="count">0 / '+LOCAL_PREVIEW_LIMIT.toLocaleString()+'</span></div>'+
 '<textarea id="entries" placeholder="Select a service first…" aria-describedby="input-hint"></textarea>'+
