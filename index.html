@@ -10,7 +10,7 @@
 <style>
 :root{color-scheme:dark;--bg:#07111d;--panel:#102338;--line:rgba(151,181,207,.16);--text:#edf6fb;--muted:#91a8ba;--mint:#54e0c1;--red:#ff8791}
 *{box-sizing:border-box}
-body{margin:0;background:linear-gradient(145deg,#081522,#07111d);color:var(--text);font:14px/1.5 system-ui, sans-serif}
+body{margin:0;background:linear-gradient(145deg,#081522,#07111d);color:var(--text);font:14px/1.5 system-ui,sans-serif}
 button,input,select,textarea{font:inherit}
 .wrap{max-width:900px;margin:auto;padding:20px 14px 45px}
 header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0 18px;border-bottom:1px solid var(--line)}
@@ -115,15 +115,19 @@ async function request(path,method="GET",body=null){
       "Accept":"application/json"
     }
   };
+
   if(body!==null){
     options.headers["Content-Type"]="application/json";
     options.body=JSON.stringify(body);
   }
+
   const response=await fetch(API+path,options);
   const data=await response.json();
+
   if(!response.ok||!data.ok){
     throw new Error(data.error||"Request failed ("+response.status+")");
   }
+
   return data;
 }
 
@@ -145,17 +149,19 @@ async function login(){
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({initData:tg.initData})
     });
+
     const data=await response.json();
 
     if(!response.ok||!data.ok)throw new Error(data.error||"Login failed");
 
     token=data.token;
+
     const me=await request("/api/me");
     user=me.user||data.user||{};
+
     await loadCustomerServices();
     renderDashboard();
 
-    // Admin dashboard is displayed only after server-side authorization.
     try{
       const admin=await request("/api/admin/catalogue");
       categories=admin.categories||[];
@@ -235,6 +241,7 @@ function renderDashboard(){
         <button class="btn" id="preview-button">Review input</button>
         <button class="btn secondary" id="clear-button">Clear</button>
       </div>
+
       <div id="preview-result" class="note">No data has been submitted.</div>
       <div class="note">Ordering is disabled. This screen only prepares and reviews your input locally.</div>
     </section>
@@ -263,13 +270,17 @@ function renderDashboard(){
   document.getElementById("service-select").addEventListener("change",function(){
     selectedCode=this.value;
     renderServices();
+    updateEstimate();
   });
+
   document.getElementById("quantity").addEventListener("input",updateEstimate);
   document.getElementById("preview-button").onclick=previewInput;
+
   document.getElementById("clear-button").onclick=function(){
     document.getElementById("entries").value="";
     document.getElementById("preview-result").textContent="Input cleared.";
   };
+
   document.getElementById("orders-refresh").onclick=loadOrders;
   document.getElementById("refresh-session").onclick=refreshSession;
 
@@ -282,9 +293,11 @@ function renderDashboard(){
 function renderServices(){
   const box=document.getElementById("services-list");
   const select=document.getElementById("service-select");
+
   if(!box||!select)return;
 
   const groups={};
+
   services.forEach(s=>{
     const category=s.category||"Other Services";
     if(!groups[category])groups[category]=[];
@@ -292,6 +305,7 @@ function renderServices(){
   });
 
   let html="";
+
   Object.keys(groups).forEach((category,index)=>{
     const items=groups[category];
     const open=index===0||items.some(s=>s.resource_code===selectedCode);
@@ -343,13 +357,16 @@ function renderServices(){
 function updateEstimate(){
   const box=document.getElementById("preview-result");
   const quantity=document.getElementById("quantity");
+
   if(!box||!quantity)return;
 
   const service=services.find(s=>s.resource_code===selectedCode);
+
   if(!service){
     box.textContent="Select a service to view its pricing.";
     return;
   }
+
   if(!service.configured||service.unit_price_cents==null||!service.pricing_unit_quantity){
     box.textContent="Pricing is not configured for this service.";
     return;
@@ -362,12 +379,14 @@ function updateEstimate(){
     box.textContent="Enter a valid quantity.";
     return;
   }
+
   if(minimum&&amount<minimum){
     box.textContent="Minimum quantity is "+minimum.toLocaleString()+".";
     return;
   }
 
   const total=Math.ceil(Number(service.unit_price_cents)*amount/Number(service.pricing_unit_quantity));
+
   box.textContent="Estimated price: "+money(total,service.currency)+
     " · Quantity: "+amount.toLocaleString()+
     " · Estimate only; ordering is disabled.";
@@ -396,12 +415,14 @@ function previewInput(){
     " · Needs review: "+(entries.length-valid)+
     " · Duplicate entries: "+duplicates+
     ". Nothing was uploaded or ordered.";
+
   updateEstimate();
 }
 
 async function loadOrders(){
   const message=document.getElementById("orders-message");
   const list=document.getElementById("orders-list");
+
   if(!message||!list)return;
 
   message.textContent="Loading order history…";
@@ -410,17 +431,21 @@ async function loadOrders(){
   try{
     const data=await request("/api/orders?limit=20&offset=0");
     const orders=data.orders||[];
+
     if(!orders.length){
       message.textContent="No orders found.";
       return;
     }
+
     message.textContent="Recent orders:";
+
     list.innerHTML=orders.map(o=>`
       <div class="item">
         <strong>Order #${esc(o.id)}</strong>
         <small>Service: ${esc(o.resource_code)} · Quantity: ${esc(o.quantity)}</small>
         <small>Status: ${esc(o.status)} · Charge: ${money(o.customer_charge_cents,o.currency)}</small>
       </div>`).join("");
+
   }catch(error){
     message.textContent="Could not load orders: "+error.message;
   }
@@ -576,10 +601,14 @@ function fillServiceDropdowns(){
 
   ["admin-service-select","price-service","visibility-service"].forEach(id=>{
     const el=document.getElementById(id);
-    if(el)el.innerHTML=(id==="admin-service-select"?'<option value="">Create a new service</option>':"")+options;
+
+    if(el){
+      el.innerHTML=(id==="admin-service-select"?'<option value="">Create a new service</option>':"")+options;
+    }
   });
 
   const categorySelect=document.getElementById("svc-category");
+
   if(categorySelect){
     categorySelect.innerHTML=categories.map(c=>
       `<option value="${esc(c.category)}">${esc(c.category)}</option>`
@@ -619,34 +648,56 @@ function renderAdminCategories(){
 
     item.querySelector(".rename-button").onclick=async()=>{
       const newName=item.querySelector(".rename-value").value.trim();
+
       if(!newName)return alert("Enter a category name.");
       if(newName===category)return alert("The category name is unchanged.");
       if(!confirm("Rename "+category+" to "+newName+"?"))return;
+
       await adminAction(async()=>{
         await request("/api/admin/categories","POST",{
-          action:"rename",old_category:category,new_category:newName
+          action:"rename",
+          old_category:category,
+          new_category:newName
         });
+
         await reloadAdmin();
       });
     };
 
     item.querySelector(".order-button").onclick=async()=>{
-      const display_order=Number(item.querySelector(".order-value").value);
+      const orderItems=[...box.querySelectorAll("[data-category]")];
+
+      const ordered=orderItems.map(el=>({
+        name:el.dataset.category,
+        order:Number(el.querySelector(".order-value").value)
+      }));
+
+      if(ordered.some(x=>!Number.isSafeInteger(x.order)||x.order<0)){
+        return alert("Enter valid display orders.");
+      }
+
+      ordered.sort((a,b)=>a.order-b.order);
+
       await adminAction(async()=>{
         await request("/api/admin/categories","POST",{
-          action:"reorder",category,display_order
+          action:"reorder",
+          categories:ordered.map(x=>x.name)
         });
+
         await reloadAdmin();
       });
     };
 
     item.querySelector(".visibility-button").onclick=async()=>{
       const current=categories.find(c=>c.category===category);
+
       await adminAction(async()=>{
         await request("/api/admin/categories","POST",{
-          action:"visibility",category,
+          action:"visibility",
+          category,
           is_listed:Number(current.is_listed)===1?0:1
         });
+
         await reloadAdmin();
       });
     };
@@ -655,6 +706,7 @@ function renderAdminCategories(){
 
 function loadServiceEditor(code){
   const s=services.find(x=>x.resource_code===code);
+
   if(!s){
     document.getElementById("svc-code").value="";
     document.getElementById("svc-name").value="";
@@ -662,7 +714,11 @@ function loadServiceEditor(code){
     document.getElementById("svc-task").value="";
     document.getElementById("svc-order").value="100";
     document.getElementById("svc-input").value="phone";
-    if(categories.length)document.getElementById("svc-category").value=categories[0].category;
+
+    if(categories.length){
+      document.getElementById("svc-category").value=categories[0].category;
+    }
+
     return;
   }
 
@@ -686,12 +742,15 @@ function loadPricingEditor(code){
   document.getElementById("final-price").value=s.final_price_cents??"";
   document.getElementById("minimum-quantity").value=s.minimum_order_quantity??500;
   document.getElementById("currency").value=s.currency||"USDT";
-  document.getElementById("pricing-enabled").checked=Number(s.pricing_enabled??s.enabled)===1||s.enabled===true;
+  document.getElementById("pricing-enabled").checked=
+    Number(s.pricing_enabled??s.enabled)===1||s.enabled===true;
 }
 
 async function adminAction(action){
   const message=document.getElementById("admin-message");
+
   if(message)message.textContent="Saving…";
+
   try{
     await action();
     if(message)message.textContent="Saved successfully.";
@@ -704,13 +763,19 @@ function wireAdmin(){
   renderAdminCategories();
   fillServiceDropdowns();
 
-  document.getElementById("admin-service-select").onchange=e=>loadServiceEditor(e.target.value);
+  document.getElementById("admin-service-select").onchange=e=>{
+    loadServiceEditor(e.target.value);
+  };
+
   document.getElementById("new-service").onclick=()=>{
     document.getElementById("admin-service-select").value="";
     loadServiceEditor("");
   };
 
-  document.getElementById("price-service").onchange=e=>loadPricingEditor(e.target.value);
+  document.getElementById("price-service").onchange=e=>{
+    loadPricingEditor(e.target.value);
+  };
+
   document.getElementById("visibility-service").onchange=e=>{
     const s=services.find(x=>x.resource_code===e.target.value);
     document.getElementById("service-listed").checked=!!s&&Number(s.is_listed)===1;
@@ -719,12 +784,19 @@ function wireAdmin(){
   document.getElementById("create-category").onclick=async()=>{
     const category=document.getElementById("new-category").value.trim();
     const display_order=Number(document.getElementById("new-category-order").value);
+
     if(!category)return alert("Enter a category name.");
+    if(!Number.isSafeInteger(display_order)||display_order<0){
+      return alert("Enter a valid display order.");
+    }
 
     await adminAction(async()=>{
       await request("/api/admin/categories","POST",{
-        action:"create",category,display_order
+        action:"create",
+        category,
+        display_order
       });
+
       document.getElementById("new-category").value="";
       await reloadAdmin();
     });
@@ -748,8 +820,11 @@ function wireAdmin(){
 
     await adminAction(async()=>{
       await request("/api/admin/services","POST",body);
+
       document.getElementById("service-message").textContent="Service details saved.";
+
       await reloadAdmin();
+
       document.getElementById("admin-service-select").value=body.resource_code;
       loadServiceEditor(body.resource_code);
     });
@@ -757,9 +832,11 @@ function wireAdmin(){
 
   document.getElementById("save-pricing").onclick=async()=>{
     const resource_code=document.getElementById("price-service").value;
+
     if(!resource_code)return alert("Select a service first.");
 
     const finalValue=document.getElementById("final-price").value;
+
     const body={
       resource_code,
       provider_cost_cents:Number(document.getElementById("provider-cost").value),
@@ -774,8 +851,11 @@ function wireAdmin(){
 
     await adminAction(async()=>{
       await request("/api/admin/pricing","POST",body);
+
       document.getElementById("pricing-message").textContent="Pricing saved.";
+
       await reloadAdmin();
+
       document.getElementById("price-service").value=resource_code;
       loadPricingEditor(resource_code);
     });
@@ -783,18 +863,27 @@ function wireAdmin(){
 
   document.getElementById("save-visibility").onclick=async()=>{
     const resource_code=document.getElementById("visibility-service").value;
+
     if(!resource_code)return alert("Select a service.");
+
     const is_listed=document.getElementById("service-listed").checked?1:0;
 
     await adminAction(async()=>{
       await request("/api/admin/services/visibility","POST",{
-        resource_code,is_listed
+        resource_code,
+        is_listed
       });
+
       document.getElementById("visibility-message").textContent="Service visibility saved.";
+
       await reloadAdmin();
+
       document.getElementById("visibility-service").value=resource_code;
+
       const s=services.find(x=>x.resource_code===resource_code);
-      document.getElementById("service-listed").checked=!!s&&Number(s.is_listed)===1;
+
+      document.getElementById("service-listed").checked=
+        !!s&&Number(s.is_listed)===1;
     });
   };
 
@@ -803,15 +892,20 @@ function wireAdmin(){
   if(services.length){
     document.getElementById("price-service").value=services[0].resource_code;
     document.getElementById("visibility-service").value=services[0].resource_code;
+
     loadPricingEditor(services[0].resource_code);
-    document.getElementById("service-listed").checked=Number(services[0].is_listed)===1;
+
+    document.getElementById("service-listed").checked=
+      Number(services[0].is_listed)===1;
   }
 }
 
 async function reloadAdmin(){
   const data=await request("/api/admin/catalogue");
+
   categories=data.categories||[];
   services=data.services||[];
+
   renderDashboard();
 }
 
