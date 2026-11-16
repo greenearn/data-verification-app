@@ -146,6 +146,19 @@ function money(cents,currency){
 return (Number(cents||0)/100).toFixed(2)+" "+(currency||"USDT");
 }
 
+/* Read only known balance fields. Never display undefined or guess a balance. */
+function getBalanceDisplay(u){
+if(!u)return "Balance unavailable";
+const fields=["wallet_balance_cents","balance_cents","wallet_cents"];
+for(const key of fields){
+if(u[key]!==undefined&&u[key]!==null&&u[key]!==""){
+const value=Number(u[key]);
+if(Number.isFinite(value))return (value/100).toFixed(2)+" USDT";
+}
+}
+return "Balance unavailable";
+}
+
 function fail(msg){
 app.innerHTML='<div class="login"><div class="logo">DV</div><h2>Secure login needed</h2><p class="muted">'+esc(msg)+'</p><button class="btn secondary" id="retry">Try again</button></div>';
 document.getElementById("retry").onclick=login;
@@ -176,7 +189,6 @@ body:JSON.stringify({initData:tg.initData})
 const d=await r.json();
 if(!r.ok||!d.ok){fail(d.error||"Authentication failed.");return;}
 token=d.token;
-
 const md=await apiGet("/api/me");
 user=md.user||d.user||{};
 dashboard();
@@ -198,7 +210,6 @@ fail("Your session has expired or could not be refreshed. Please log in again.")
 }
 }
 
-/* Load only the authenticated customer's orders. */
 async function loadOrders(){
 const statusBox=document.getElementById("orders-status");
 const listBox=document.getElementById("orders-list");
@@ -242,20 +253,16 @@ if(refreshButton){refreshButton.disabled=false;refreshButton.textContent="Refres
 }
 }
 
-/* Catalogue is read from the authenticated Worker endpoint. */
 async function loadServices(){
 const box=document.getElementById("services-grid");
 const status=document.getElementById("catalogue-status");
 if(!box||!status)return;
-
 status.textContent="Loading service catalogue…";
 try{
 const data=await apiGet("/api/services");
 services=Array.isArray(data.services)?data.services:[];
 renderServices();
-status.textContent=data.ordering_enabled
-?"Catalogue loaded."
-:"Catalogue loaded. Ordering is currently disabled.";
+status.textContent=data.ordering_enabled?"Catalogue loaded.":"Catalogue loaded. Ordering is currently disabled.";
 }catch(e){
 status.textContent="Could not load services: "+e.message;
 box.innerHTML='<div class="panel"><p>Service catalogue could not be loaded. Please refresh the page.</p></div>';
@@ -265,14 +272,13 @@ box.innerHTML='<div class="panel"><p>Service catalogue could not be loaded. Plea
 function serviceState(service){
 if(!service.configured)return "Pricing not configured";
 if(!service.enabled)return "Configured · Not active";
-return "Configured · Order processing unavailable";
+return "Configured · Ordering unavailable";
 }
 
 function renderServices(){
 const box=document.getElementById("services-grid");
 const select=document.getElementById("service-select");
 if(!box||!select)return;
-
 const icons={phoneCheck:"✓",globalCarrier:"⌁",us_carrier_premium:"⌖",email_check:"✉"};
 box.innerHTML=services.map(function(s,index){
 const chosen=s.resource_code===selectedCode;
@@ -281,11 +287,9 @@ const price=s.unit_price_cents!=null
 :"Price unavailable";
 return '<article class="service '+(chosen?"selected":"")+'" data-service-index="'+index+'" tabindex="0" role="button" aria-label="Select '+esc(s.name)+'"><div class="ico">'+(icons[s.resource_code]||"✓")+'</div><strong>'+esc(s.name)+'</strong><p>'+esc(s.description)+'</p><span class="tag">'+esc(serviceState(s))+'</span><div class="service-status">'+esc(price)+'</div></article>';
 }).join("");
-
 select.innerHTML='<option value="">Choose a service</option>'+services.map(function(s){
 return '<option value="'+esc(s.resource_code)+'">'+esc(s.name)+'</option>';
 }).join("");
-
 if(selectedCode&&services.some(s=>s.resource_code===selectedCode)){
 select.value=selectedCode;
 }else{
@@ -318,28 +322,23 @@ const file=document.getElementById("file");
 const count=document.getElementById("count");
 const result=document.getElementById("result");
 if(!s)return;
-
 if(s.input_type==="email"){
 input.textContent="Email addresses";
 hint.textContent="Enter one email address per line.";
 area.placeholder="customer@example.com\nanother@example.com";
-if(file)file.accept=".txt,.csv,text/plain,text/csv";
 }else{
 input.textContent="Phone numbers";
 hint.textContent="Use international format with country code, e.g. +9779812345678.";
 area.placeholder="+9779812345678\n+14155552671";
-if(file)file.accept=".txt,.csv,text/plain,text/csv";
 }
+if(file)file.accept=".txt,.csv,text/plain,text/csv";
 if(count)count.textContent="0 / 100,000";
 if(result)result.classList.remove("show");
 updateEstimate();
 }
 
 function currentEntries(){
-return document.getElementById("entries").value
-.split(/\r?\n/)
-.map(x=>x.trim())
-.filter(Boolean);
+return document.getElementById("entries").value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
 }
 
 function updateEstimate(){
@@ -347,12 +346,8 @@ const s=services.find(x=>x.resource_code===selectedCode);
 const quantityBox=document.getElementById("quantity");
 const box=document.getElementById("price-estimate");
 if(!quantityBox||!box)return;
-
 const quantity=Number(quantityBox.value||0);
-if(!s){
-box.innerHTML="Select a service to view its pricing information.";
-return;
-}
+if(!s){box.innerHTML="Select a service to view its pricing information.";return;}
 if(!s.configured||s.unit_price_cents==null||!s.pricing_unit_quantity){
 box.innerHTML="Pricing is not configured for this service yet.";
 return;
@@ -373,19 +368,17 @@ box.innerHTML='<div class="price-line"><span>Selected service</span><strong>'+es
 
 function dashboard(){
 const name=user.first_name||"Customer";
+const balanceDisplay=getBalanceDisplay(user);
 app.innerHTML='<main class="wrap">'+
 '<header class="top"><div class="brand"><div class="logo">DV</div><div><strong>DATA VERIFICATION</strong><small>SECURE CUSTOMER PORTAL</small></div></div><span class="status">● SECURE SESSION</span></header>'+
 '<nav class="navlinks" aria-label="Dashboard sections"><a href="#services">Services</a><a href="#prepare">Prepare list</a><a href="#consent-section">Consent</a><a href="#activity">Activity</a><a href="#account">Account</a></nav>'+
 '<section class="welcome"><div class="eyebrow">Your secure workspace</div><h1>Welcome, '+esc(name)+'</h1><p>Manage your validation services and orders.</p></section>'+
-'<section class="balance"><div class="muted">AVAILABLE WALLET BALANCE</div><div class="amount">$'+(Number(user.wallet_balance_cents||0)/100).toFixed(2)+' <span style="font-size:14px">USDT</span></div><div class="muted">Your account balance · 1 USD = 1 USDT</div><div class="balance-meta"><div>ACCOUNT STATUS<strong>Verified customer</strong></div><div style="text-align:right">CURRENCY<strong>USDT</strong></div></div></section>'+
-
+'<section class="balance"><div class="muted">AVAILABLE WALLET BALANCE</div><div class="amount">'+esc(balanceDisplay)+'</div><div class="muted">Your account balance · USDT</div><div class="balance-meta"><div>ACCOUNT STATUS<strong>Verified customer</strong></div><div style="text-align:right">CURRENCY<strong>USDT</strong></div></div></section>'+
 '<div class="head section-anchor" id="services"><h2>Verification services</h2><span class="muted">Live catalogue</span></div>'+
 '<div id="catalogue-status" class="orders-message">Connecting to service catalogue…</div>'+
 '<section class="grid" id="services-grid"><div class="panel"><div class="loader"></div><p>Loading services…</p></div></section>'+
-
 '<div class="head section-anchor" id="prepare"><h2>Prepare your validation file</h2><span class="muted">TXT · CSV · Paste</span></div>'+
-'<section class="steps"><div class="step"><b>01 · SELECT</b><span>Choose an available catalogue service</span></div><div class="step"><b>02 · REVIEW</b><span>Check your input and quantity</span></div><div class="step"><b>03 · WAIT</b><span>Ordering is not enabled yet</span></div></section>'+
-
+'<section class="steps"><div class="step"><b>01 · SELECT</b><span>Choose a catalogue service</span></div><div class="step"><b>02 · REVIEW</b><span>Check your input and quantity</span></div><div class="step"><b>03 · WAIT</b><span>Ordering is not enabled yet</span></div></section>'+
 '<section class="panel"><div class="panel-title"><div class="panel-icon">＋</div><div><h3>Prepare input list</h3><p>Choose a service above or use the selector below.</p></div></div>'+
 '<label class="field" for="service-select">Selected service</label><select id="service-select"><option value="">Loading services…</option></select>'+
 '<label class="field" for="quantity">Quantity for price estimate</label><input id="quantity" type="number" min="1" max="100000" value="500" inputmode="numeric">'+
@@ -398,13 +391,10 @@ app.innerHTML='<main class="wrap">'+
 '<div id="result" class="result-card" aria-live="polite"></div>'+
 '<div class="notice">Preview only: your input stays in this browser and is not uploaded to CheckNumber.ai. The Mini App cannot submit orders yet.</div>'+
 '<button class="btn secondary" id="order-disabled" type="button" disabled>Ordering not enabled yet</button></section>'+
-
 '<div class="head section-anchor" id="consent-section"><h2>Consent-based verification</h2></div>'+
 '<section class="panel"><div class="panel-title"><div class="panel-icon">✓</div><div><h3>Consent requirement</h3><p>Only request verification for your own information or data you are authorized to process.</p></div></div><label class="check"><input type="checkbox" id="consent"><span>I confirm that I am authorized to submit the information entered above.</span></label><div class="info" id="consentmsg">This is a local acknowledgement only. It has not been recorded by the server.</div></section>'+
-
 '<div class="head section-anchor" id="activity"><h2>Orders & activity</h2></div>'+
 '<section class="panel"><div class="panel-title"><div class="panel-icon">↗</div><div><h3>Order history</h3><p>View your submitted orders, charges and available results.</p></div></div><div id="orders-status" class="orders-message">Order history is ready to load.</div><div id="orders-list"></div><button class="btn secondary" id="orders-refresh" type="button">Refresh order history</button></section>'+
-
 '<section class="panel section-anchor" id="account"><div class="panel-title"><div class="panel-icon">◎</div><div><h3>Account details</h3><p>Your Telegram-linked customer profile.</p></div></div><div class="account-line"><span>Telegram ID</span><b>'+esc(user.telegram_id||"Verified")+'</b></div><div class="account-line"><span>Username</span><b>'+esc(user.username?"@"+user.username:"Not set")+'</b></div><button class="btn secondary" id="refresh" type="button">Refresh secure session</button></section>'+
 '<footer class="bottom">Data Verification · Secure access · Authorized validation only.</footer></main>';
 
@@ -421,7 +411,6 @@ document.getElementById("consentmsg").textContent=this.checked
 });
 document.getElementById("refresh").onclick=refreshSession;
 document.getElementById("orders-refresh").onclick=loadOrders;
-
 loadServices();
 loadOrders();
 }
@@ -477,28 +466,13 @@ const s=services.find(x=>x.resource_code===selectedCode);
 const out=document.getElementById("result");
 const lines=currentEntries();
 out.classList.add("show");
-
-if(!s){
-out.textContent="Please select a service first.";
-return;
-}
-if(!lines.length){
-out.textContent="Add at least one entry to review your list.";
-return;
-}
-if(lines.length>100000){
-out.textContent="Your list contains "+lines.length.toLocaleString()+" entries. The maximum is 100,000.";
-return;
-}
-
+if(!s){out.textContent="Please select a service first.";return;}
+if(!lines.length){out.textContent="Add at least one entry to review your list.";return;}
+if(lines.length>100000){out.textContent="Your list contains "+lines.length.toLocaleString()+" entries. The maximum is 100,000.";return;}
 const seen=new Set(),duplicates=new Set();
-for(const item of lines){
-if(seen.has(item))duplicates.add(item);
-seen.add(item);
-}
+for(const item of lines){if(seen.has(item))duplicates.add(item);seen.add(item);}
 const duplicateCount=lines.filter(x=>duplicates.has(x)).length;
 let valid=0;
-
 if(s.input_type==="email"){
 valid=lines.filter(x=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x)).length;
 }else{
@@ -506,13 +480,8 @@ valid=lines.filter(x=>/^\+[1-9]\d{6,14}$/.test(x)).length;
 }
 const invalid=lines.length-valid;
 const type=s.input_type==="email"?"basic email syntax":"international phone-number format";
-
 out.innerHTML="<b>Local review complete</b><div class=\"result-grid\"><div class=\"result-stat\"><b>"+lines.length.toLocaleString()+"</b><span>Total entries</span></div><div class=\"result-stat\"><b>"+valid.toLocaleString()+"</b><span>Format looks valid</span></div><div class=\"result-stat\"><b>"+invalid.toLocaleString()+"</b><span>Needs review</span></div></div><p style=\"margin-top:9px;color:#b7cbd7\">Possible repeated entries: <b>"+duplicateCount.toLocaleString()+"</b>. This checks only "+type+". It does not confirm deliverability, activity, ownership, or carrier details. Nothing was uploaded.</p>";
 updateEstimate();
-}
-
-function currentEntries(){
-return document.getElementById("entries").value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
 }
 
 login();
