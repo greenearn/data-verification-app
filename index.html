@@ -1,5 +1,12 @@
+
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b1220"><title>Data Verification</title><script src="https://telegram.org/js/telegram-web-app.js"></script>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>Data Verification</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root{color-scheme:dark;--bg:#07111d;--panel:#0d1b2b;--panel2:#102338;--line:rgba(151,181,207,.14);--text:#edf6fb;--muted:#8fa6b9;--mint:#54e0c1;--mint2:#1db99f;--blue:#80baff;--gold:#e8c88b;--danger:#ff8791}
 *{box-sizing:border-box}
@@ -58,41 +65,351 @@ textarea::placeholder{color:#627b91}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:520px){.wrap{padding:17px 13px 36px}.top{padding-bottom:15px}.brand strong{font-size:10px}.brand small{font-size:9px}.logo{width:40px;height:40px;flex-basis:40px}.status{font-size:9px;padding:5px 8px}.welcome{margin-top:25px}.grid{gap:9px}.service{padding:13px;min-height:150px}.panel{padding:14px}.balance{padding:19px;margin-bottom:25px}}
 @media(max-width:360px){.status{font-size:8px}.brand strong{letter-spacing:.09em}.grid{grid-template-columns:1fr}.service{min-height:0}}
-
-.navlinks{display:flex;gap:8px;overflow-x:auto;padding:13px 1px 2px;scrollbar-width:none}.navlinks a{flex:0 0 auto;text-decoration:none;color:#b8cbd9;background:rgba(132,169,195,.07);border:1px solid var(--line);padding:7px 11px;border-radius:30px;font-size:10px;font-weight:700}
-.balance-meta{display:flex;justify-content:space-between;gap:10px;position:relative;z-index:1;margin-top:13px;padding-top:12px;border-top:1px solid rgba(190,230,225,.13);font-size:10px;color:#b6d1d5}.balance-meta strong{display:block;color:#e9f7f5;font-size:11px;margin-top:2px}
-.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 5px}.step{padding:11px 10px;border:1px solid var(--line);border-radius:13px;background:rgba(11,27,43,.65)}.step b{display:block;color:var(--mint);font-size:10px;margin-bottom:4px}.step span{display:block;color:#a8bdcc;font-size:10px;line-height:1.4}
-.panel-title{display:flex;align-items:center;gap:9px;margin-bottom:6px}.panel-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:10px;background:rgba(84,224,193,.09);color:var(--mint);border:1px solid rgba(84,224,193,.15);font-size:14px;flex:0 0 30px}
-.field-row{display:flex;justify-content:space-between;align-items:center;gap:8px}.counter{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}.action-row{display:grid;grid-template-columns:1fr auto;gap:9px;align-items:center}.action-row .btn{margin-top:10px}.clear-btn{border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.035);color:#b9cbd8;padding:10px 13px;font-size:11px;font-weight:700;cursor:pointer;margin-top:10px}
-.result-card{display:none;margin-top:12px;padding:12px;border-radius:12px;border:1px solid rgba(84,224,193,.2);background:rgba(35,123,105,.09);color:#cde8df;font-size:11px;line-height:1.6}.result-card.show{display:block}.result-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:9px}.result-stat{background:rgba(4,15,27,.45);border-radius:9px;padding:8px}.result-stat b{display:block;font-size:15px;color:#effaf6}.result-stat span{font-size:9px;color:#a2b8c4}.section-anchor{scroll-margin-top:16px}.account-line{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line);font-size:11px}.account-line:last-of-type{border-bottom:0}.account-line span{color:var(--muted)}.account-line b{font-weight:650;overflow-wrap:anywhere;text-align:right}
-@media(max-width:390px){.steps{gap:5px}.step{padding:9px 7px}.step span{font-size:9px}.result-grid{gap:5px}}
-</style></head><body><div id="app"><div class="login"><div class="loader"></div><p class="muted">Connecting securely to Telegram…</p></div></div>
+.navlinks{display:flex;gap:8px;overflow-x:auto;padding:13px 1px 2px;scrollbar-width:none}
+.navlinks a{flex:0 0 auto;text-decoration:none;color:#b8cbd9;background:rgba(132,169,195,.07);border:1px solid var(--line);padding:7px 11px;border-radius:30px;font-size:10px;font-weight:700}
+.balance-meta{display:flex;justify-content:space-between;gap:10px;position:relative;z-index:1;margin-top:13px;padding-top:12px;border-top:1px solid rgba(190,230,225,.13);font-size:10px;color:#b6d1d5}
+.balance-meta strong{display:block;color:#e9f7f5;font-size:11px;margin-top:2px}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 5px}
+.step{padding:11px 10px;border:1px solid var(--line);border-radius:13px;background:rgba(11,27,43,.65)}
+.step b{display:block;color:var(--mint);font-size:10px;margin-bottom:4px}
+.step span{display:block;color:#a8bdcc;font-size:10px;line-height:1.4}
+.panel-title{display:flex;align-items:center;gap:9px;margin-bottom:6px}
+.panel-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:10px;background:rgba(84,224,193,.09);color:var(--mint);border:1px solid rgba(84,224,193,.15);font-size:14px;flex:0 0 30px}
+.field-row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.counter{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+.action-row{display:grid;grid-template-columns:1fr auto;gap:9px;align-items:center}
+.action-row .btn{margin-top:10px}
+.clear-btn{border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.035);color:#b9cbd8;padding:10px 13px;font-size:11px;font-weight:700;cursor:pointer;margin-top:10px}
+.result-card{display:none;margin-top:12px;padding:12px;border-radius:12px;border:1px solid rgba(84,224,193,.2);background:rgba(35,123,105,.09);color:#cde8df;font-size:11px;line-height:1.6}
+.result-card.show{display:block}
+.result-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:9px}
+.result-stat{background:rgba(4,15,27,.45);border-radius:9px;padding:8px}
+.result-stat b{display:block;font-size:15px;color:#effaf6}
+.result-stat span{font-size:9px;color:#a2b8c4}
+.section-anchor{scroll-margin-top:16px}
+.account-line{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line);font-size:11px}
+.account-line:last-of-type{border-bottom:0}
+.account-line span{color:var(--muted)}
+.account-line b{font-weight:650;overflow-wrap:anywhere;text-align:right}
+.order-item{padding:13px;margin-top:10px;border:1px solid var(--line);border-radius:13px;background:rgba(4,15,27,.38)}
+.order-top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
+.order-id{font-size:11px;font-weight:750;color:#e8f4f8;overflow-wrap:anywhere}
+.order-status{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;border:1px solid rgba(84,224,193,.2);border-radius:20px;padding:4px 8px;color:var(--mint);background:rgba(38,150,128,.08)}
+.order-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.order-detail{padding:8px;border-radius:9px;background:rgba(255,255,255,.025);min-width:0}
+.order-detail span{display:block;color:var(--muted);font-size:9px;margin-bottom:3px}
+.order-detail b{display:block;color:#e4eef4;font-size:11px;overflow-wrap:anywhere}
+.order-result{margin-top:9px;padding:9px;border-radius:9px;background:rgba(84,224,193,.06);font-size:10px;color:#bfe6da;overflow-wrap:anywhere}
+.order-date{font-size:9px;color:var(--muted);margin-top:8px}
+.orders-message{font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0}
+.orders-message.error{color:var(--danger)}
+@media(max-width:390px){.steps{gap:5px}.step{padding:9px 7px}.step span{font-size:9px}.result-grid{gap:5px}.order-details{gap:6px}}
+</style>
+</head>
+<body>
+<div id="app">
+<div class="login"><div class="loader"></div><p class="muted">Connecting securely to Telegram…</p></div>
+</div>
 <script>
 (function(){
 "use strict";
-const API="https://data-verification-api.shrestharaj980888.workers.dev",app=document.getElementById("app"),tg=window.Telegram&&Telegram.WebApp?Telegram.WebApp:null;let token="",user=null;
-if(tg){tg.ready();tg.expand();if(tg.setHeaderColor)tg.setHeaderColor("#0b1220");if(tg.setBackgroundColor)tg.setBackgroundColor("#0b1220");}
-function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
-function fail(msg){app.innerHTML='<div class="login"><div class="logo">DV</div><h2>Secure login needed</h2><p class="muted">'+esc(msg)+'</p><button class="btn secondary" id="retry">Try again</button></div>';document.getElementById("retry").onclick=login;}
-async function login(){if(!tg||!tg.initData){fail("Open this page inside Telegram using the bot button.");return;}app.innerHTML='<div class="login"><div class="loader"></div><p class="muted">Verifying your Telegram account…</p></div>';try{const r=await fetch(API+"/api/auth",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({initData:tg.initData})});const d=await r.json();if(!r.ok||!d.ok){fail(d.error||"Authentication failed.");return;}token=d.token;
-const mr=await fetch(API+"/api/me",{method:"GET",headers:{"Authorization":"Bearer "+token}});
-const md=await mr.json();
-if(!mr.ok||!md.ok){token="";fail("Login succeeded, but the customer session could not be verified. Please try again.");return;}
-user=md.user||d.user||{};
-dashboard();}catch(e){fail("Could not reach the secure server. Check your connection.");}}
-async function refreshSession(){
-if(!token){login();return;}
+
+const API="https://data-verification-api.shrestharaj980888.workers.dev";
+const app=document.getElementById("app");
+const tg=window.Telegram&&Telegram.WebApp?Telegram.WebApp:null;
+let token="",user=null;
+
+if(tg){
+tg.ready();
+tg.expand();
+if(tg.setHeaderColor)tg.setHeaderColor("#0b1220");
+if(tg.setBackgroundColor)tg.setBackgroundColor("#0b1220");
+}
+
+function esc(v){
+return String(v==null?"":v)
+.replace(/&/g,"&amp;")
+.replace(/</g,"&lt;")
+.replace(/>/g,"&gt;")
+.replace(/"/g,"&quot;")
+.replace(/'/g,"&#39;");
+}
+
+function fail(msg){
+app.innerHTML='<div class="login"><div class="logo">DV</div><h2>Secure login needed</h2><p class="muted">'+esc(msg)+'</p><button class="btn secondary" id="retry">Try again</button></div>';
+document.getElementById("retry").onclick=login;
+}
+
+async function login(){
+if(!tg||!tg.initData){
+fail("Open this page inside Telegram using the bot button.");
+return;
+}
+app.innerHTML='<div class="login"><div class="loader"></div><p class="muted">Verifying your Telegram account…</p></div>';
 try{
-const r=await fetch(API+"/api/me",{method:"GET",headers:{"Authorization":"Bearer "+token}});
+const r=await fetch(API+"/api/auth",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({initData:tg.initData})
+});
 const d=await r.json();
-if(!r.ok||!d.ok){token="";fail("Your session has expired. Please log in again.");return;}
+if(!r.ok||!d.ok){
+fail(d.error||"Authentication failed.");
+return;
+}
+token=d.token;
+
+const mr=await fetch(API+"/api/me",{
+method:"GET",
+headers:{"Authorization":"Bearer "+token}
+});
+const md=await mr.json();
+if(!mr.ok||!md.ok){
+token="";
+fail("Login succeeded, but the customer session could not be verified. Please try again.");
+return;
+}
+user=md.user||d.user||{};
+dashboard();
+}catch(e){
+fail("Could not reach the secure server. Check your connection.");
+}
+}
+
+async function refreshSession(){
+if(!token){
+login();
+return;
+}
+try{
+const r=await fetch(API+"/api/me",{
+method:"GET",
+headers:{"Authorization":"Bearer "+token}
+});
+const d=await r.json();
+if(!r.ok||!d.ok){
+token="";
+fail("Your session has expired. Please log in again.");
+return;
+}
 user=d.user||user;
 dashboard();
-}catch(e){fail("Could not refresh your secure session. Check your connection.");}
+}catch(e){
+fail("Could not refresh your secure session. Check your connection.");
 }
-function dashboard(){const name=user.first_name||"Customer";app.innerHTML='<main class="wrap"><header class="top"><div class="brand"><div class="logo">DV</div><div><strong>DATA VERIFICATION</strong><small>SECURE CUSTOMER PORTAL</small></div></div><span class="status">● SECURE SESSION</span></header><nav class="navlinks" aria-label="Dashboard sections"><a href="#services">Services</a><a href="#prepare">Prepare list</a><a href="#consent-section">Consent</a><a href="#activity">Activity</a><a href="#account">Account</a></nav><section class="welcome"><div class="eyebrow">Your secure workspace</div><h1>Welcome, '+esc(name)+'</h1><p>Manage your verification services and orders.</p></section><section class="balance"><div class="muted">AVAILABLE WALLET BALANCE</div><div class="amount">$'+(Number(user.wallet_balance_cents||0)/100).toFixed(2)+' <span style="font-size:14px">USDT</span></div><div class="muted">Your account balance · 1 USD = 1 USDT</div><div class="balance-meta"><div>ACCOUNT STATUS<strong>Verified customer</strong></div><div style="text-align:right">CURRENCY<strong>USDT</strong></div></div></section><div class="head section-anchor" id="services"><h2>Verification services</h2><span class="muted">Service centre</span></div><section class="grid"><article class="service"><div class="ico">✓</div><strong>Phone Number Validation</strong><p>Check number format and supported line details.</p><span class="tag">Coming online soon</span></article><article class="service"><div class="ico">♧</div><strong>Consent-based Verification</strong><p>Workflows for people who explicitly agreed.</p><span class="tag">Coming online soon</span></article></section><div class="head section-anchor" id="prepare"><h2>Prepare a validation file</h2><span class="muted">TXT · one number per line</span></div><section class="steps"><div class="step"><b>01 · ADD</b><span>Upload a TXT file or paste numbers</span></div><div class="step"><b>02 · REVIEW</b><span>Check format and duplicates</span></div><div class="step"><b>03 · NEXT</b><span>Submit when service is enabled</span></div></section><section class="panel"><div class="panel-title"><div class="panel-icon">＋</div><div><h3>Phone number list</h3><p>Use international format with country code, e.g. +97798XXXXXXXX.</p></div></div><label class="field" for="file">Upload TXT file</label><input id="file" type="file" accept=".txt,text/plain"><div class="field-row"><label class="field" for="numbers">Or paste phone numbers</label><span class="counter" id="count">0 / 100,000</span></div><textarea id="numbers" placeholder="+9779812345678&#10;+14155552671" aria-describedby="filemsg"></textarea><div class="field-row" style="margin-top:8px"><p id="filemsg" class="muted">One number per line · maximum 100,000 entries.</p><span class="counter">TXT only</span></div><div class="action-row"><button class="btn" id="check" type="button">Review number formats</button><button class="clear-btn" id="clear" type="button">Clear</button></div><div id="result" class="result-card" aria-live="polite"></div><div class="notice">Privacy note: this is a local preview only. Your numbers are not uploaded or submitted to any provider.</div></section><div class="head section-anchor" id="consent-section"><h2>Consent-based verification</h2></div><section class="panel"><div class="panel-title"><div class="panel-icon">✓</div><div><h3>Consent requirement</h3><p>Only request verification for your own number or a person who has explicitly agreed.</p><label class="check"><input type="checkbox" id="consent"><span>I confirm that the person whose number is submitted has explicitly consented, or the number is my own.</span></label><div class="info" id="consentmsg">This is a local acknowledgement only. Server-side consent recording must be connected before launch.</div></section><div class="head section-anchor" id="activity"><h2>Orders & activity</h2></div><section class="panel"><div class="panel-title"><div class="panel-icon">↗</div><div><h3>Order history</h3><p>Submitted orders and completed results will appear here after the order API is connected.</p><span class="tag">Order API not connected</span></div></section><section class="panel section-anchor" id="account"><div class="panel-title"><div class="panel-icon">◎</div><div><h3>Account details</h3><p>Your Telegram-linked customer profile.</p></div></div><div class="account-line"><span>Telegram ID</span><b>'+esc(user.telegram_id||"Verified")+'</b></div><div class="account-line"><span>Username</span><b>'+esc(user.username?"@"+user.username:"Not set")+'</b></div><button class="btn secondary" id="refresh">Refresh secure session</button></section><footer class="bottom">Data Verification · Secure access · Use services only with proper authorization and consent.</footer></main>';
-const numbersBox=document.getElementById("numbers"),countBox=document.getElementById("count");function updateCount(){const n=numbersBox.value.split(/\r?\n/).filter(x=>x.trim()).length;countBox.textContent=n.toLocaleString()+" / 100,000";countBox.style.color=n>100000?"var(--danger)":"var(--muted)";}numbersBox.addEventListener("input",updateCount);document.getElementById("file").onchange=async function(){const f=this.files&&this.files[0];if(!f)return;if(!f.name.toLowerCase().endsWith(".txt")){document.getElementById("filemsg").textContent="Please select a .txt file.";this.value="";return;}try{numbersBox.value=await f.text();document.getElementById("filemsg").textContent="Loaded: "+f.name;updateCount();document.getElementById("result").classList.remove("show");}catch(e){document.getElementById("filemsg").textContent="Could not read this file. Please try again.";}};document.getElementById("clear").onclick=function(){numbersBox.value="";document.getElementById("file").value="";document.getElementById("filemsg").textContent="One number per line · maximum 100,000 entries.";document.getElementById("result").classList.remove("show");updateCount();};document.getElementById("check").onclick=preview;updateCount();document.getElementById("consent").onchange=function(){document.getElementById("consentmsg").textContent=this.checked?"Acknowledgement selected locally; it has not been sent to the server.":"Please confirm consent before requesting verification.";};document.getElementById("refresh").onclick=refreshSession;}
-function preview(){const lines=document.getElementById("numbers").value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),out=document.getElementById("result");out.classList.add("show");if(!lines.length){out.textContent="Add at least one number to review your list.";return;}if(lines.length>100000){out.textContent="Your list contains "+lines.length.toLocaleString()+" entries. The maximum is 100,000. Please split the file.";return;}const seen=new Set(),duplicates=new Set();for(const n of lines){if(seen.has(n))duplicates.add(n);seen.add(n);}const good=lines.filter(x=>/^\+[1-9]\d{6,14}$/.test(x)).length,dupeCount=lines.filter(x=>duplicates.has(x)).length,bad=lines.length-good;out.innerHTML="<b>Review complete</b><div class=\"result-grid\"><div class=\"result-stat\"><b>"+lines.length.toLocaleString()+"</b><span>Total entries</span></div><div class=\"result-stat\"><b>"+good.toLocaleString()+"</b><span>Format looks valid</span></div><div class=\"result-stat\"><b>"+bad.toLocaleString()+"</b><span>Needs review</span></div></div><p style=\"margin-top:9px;color:#b7cbd7\">Possible repeated entries: <b>"+dupeCount.toLocaleString()+"</b>. Format check does not confirm a number is active or who owns it. Nothing was uploaded.</p>";}
+}
+
+/* ORDER HISTORY */
+async function loadOrders(){
+const statusBox=document.getElementById("orders-status");
+const listBox=document.getElementById("orders-list");
+const refreshButton=document.getElementById("orders-refresh");
+
+if(!statusBox||!listBox)return;
+
+statusBox.className="orders-message";
+statusBox.textContent="Loading your order history…";
+listBox.innerHTML="";
+
+if(refreshButton){
+refreshButton.disabled=true;
+refreshButton.textContent="Loading…";
+}
+
+try{
+const response=await fetch(API+"/api/orders?limit=20&offset=0",{
+method:"GET",
+headers:{
+"Authorization":"Bearer "+token,
+"Accept":"application/json"
+}
+});
+
+let data={};
+try{
+data=await response.json();
+}catch(e){
+throw new Error("The server returned an unreadable response.");
+}
+
+if(!response.ok||!data.ok){
+if(response.status===401){
+token="";
+fail("Your secure session has expired. Please open the Mini App again.");
+return;
+}
+throw new Error(data.error||"Could not load order history.");
+}
+
+const orders=Array.isArray(data.orders)?data.orders:[];
+
+if(orders.length===0){
+statusBox.className="orders-message";
+statusBox.textContent="You don't have any orders yet. Your orders will appear here when you start using the service.";
+return;
+}
+
+statusBox.className="orders-message";
+statusBox.textContent="Showing "+orders.length+" recent order"+(orders.length===1?"":"s")+".";
+
+listBox.innerHTML=orders.map(function(order){
+const id=esc(order.id||"—");
+const resource=esc(order.resource_code||"—");
+const quantity=Number(order.quantity||0);
+const charge=Number(order.customer_charge_cents||0);
+const currency=esc(order.currency||"USDT");
+const amount=(Number.isFinite(charge)?(charge/100).toFixed(2):"0.00");
+const state=esc(order.status||"Unknown");
+const reference=order.result_reference
+?'<div class="order-result"><b>Result reference:</b> '+esc(order.result_reference)+'</div>'
+:"";
+let dateText="Date unavailable";
+if(order.created_at){
+const parsedDate=new Date(order.created_at);
+if(!Number.isNaN(parsedDate.getTime())){
+dateText=parsedDate.toLocaleString();
+}else{
+dateText=String(order.created_at);
+}
+}
+
+return '<article class="order-item">'+
+'<div class="order-top">'+
+'<div class="order-id">Order #'+id+'</div>'+
+'<span class="order-status">'+state+'</span>'+
+'</div>'+
+'<div class="order-details">'+
+'<div class="order-detail"><span>Resource</span><b>'+resource+'</b></div>'+
+'<div class="order-detail"><span>Quantity</span><b>'+esc(quantity.toLocaleString())+'</b></div>'+
+'<div class="order-detail"><span>Customer charge</span><b>'+amount+' '+currency+'</b></div>'+
+'<div class="order-detail"><span>Order status</span><b>'+state+'</b></div>'+
+'</div>'+
+reference+
+'<div class="order-date">'+esc(dateText)+'</div>'+
+'</article>';
+}).join("");
+
+}catch(error){
+statusBox.className="orders-message error";
+statusBox.textContent=error.message||"Could not load your order history. Please try again.";
+}finally{
+if(refreshButton){
+refreshButton.disabled=false;
+refreshButton.textContent="Refresh order history";
+}
+}
+}
+
+function dashboard(){
+const name=user.first_name||"Customer";
+
+app.innerHTML='<main class="wrap">'+
+'<header class="top"><div class="brand"><div class="logo">DV</div><div><strong>DATA VERIFICATION</strong><small>SECURE CUSTOMER PORTAL</small></div></div><span class="status">● SECURE SESSION</span></header>'+
+'<nav class="navlinks" aria-label="Dashboard sections"><a href="#services">Services</a><a href="#prepare">Prepare list</a><a href="#consent-section">Consent</a><a href="#activity">Activity</a><a href="#account">Account</a></nav>'+
+'<section class="welcome"><div class="eyebrow">Your secure workspace</div><h1>Welcome, '+esc(name)+'</h1><p>Manage your verification services and orders.</p></section>'+
+'<section class="balance"><div class="muted">AVAILABLE WALLET BALANCE</div><div class="amount">$'+(Number(user.wallet_balance_cents||0)/100).toFixed(2)+' <span style="font-size:14px">USDT</span></div><div class="muted">Your account balance · 1 USD = 1 USDT</div><div class="balance-meta"><div>ACCOUNT STATUS<strong>Verified customer</strong></div><div style="text-align:right">CURRENCY<strong>USDT</strong></div></div></section>'+
+
+'<div class="head section-anchor" id="services"><h2>Verification services</h2><span class="muted">Service centre</span></div>'+
+'<section class="grid"><article class="service"><div class="ico">✓</div><strong>Phone Number Validation</strong><p>Check number format and supported line details.</p><span class="tag">Coming online soon</span></article><article class="service"><div class="ico">♧</div><strong>Consent-based Verification</strong><p>Workflows for people who explicitly agreed.</p><span class="tag">Coming online soon</span></article></section>'+
+
+'<div class="head section-anchor" id="prepare"><h2>Prepare a validation file</h2><span class="muted">TXT · one number per line</span></div>'+
+'<section class="steps"><div class="step"><b>01 · ADD</b><span>Upload a TXT file or paste numbers</span></div><div class="step"><b>02 · REVIEW</b><span>Check format and duplicates</span></div><div class="step"><b>03 · NEXT</b><span>Submit when service is enabled</span></div></section>'+
+
+'<section class="panel"><div class="panel-title"><div class="panel-icon">＋</div><div><h3>Phone number list</h3><p>Use international format with country code, e.g. +97798XXXXXXXX.</p></div></div><label class="field" for="file">Upload TXT file</label><input id="file" type="file" accept=".txt,text/plain"><div class="field-row"><label class="field" for="numbers">Or paste phone numbers</label><span class="counter" id="count">0 / 100,000</span></div><textarea id="numbers" placeholder="+9779812345678&#10;+14155552671" aria-describedby="filemsg"></textarea><div class="field-row" style="margin-top:8px"><p id="filemsg" class="muted">One number per line · maximum 100,000 entries.</p><span class="counter">TXT only</span></div><div class="action-row"><button class="btn" id="check" type="button">Review number formats</button><button class="clear-btn" id="clear" type="button">Clear</button></div><div id="result" class="result-card" aria-live="polite"></div><div class="notice">Privacy note: this is a local preview only. Your numbers are not uploaded or submitted to any provider.</div></section>'+
+
+'<div class="head section-anchor" id="consent-section"><h2>Consent-based verification</h2></div>'+
+'<section class="panel"><div class="panel-title"><div class="panel-icon">✓</div><div><h3>Consent requirement</h3><p>Only request verification for your own number or a person who has explicitly agreed.</p></div></div><label class="check"><input type="checkbox" id="consent"><span>I confirm that the person whose number is submitted has explicitly consented, or the number is my own.</span></label><div class="info" id="consentmsg">This is a local acknowledgement only. Server-side consent recording must be connected before launch.</div></section>'+
+
+'<div class="head section-anchor" id="activity"><h2>Orders & activity</h2></div>'+
+'<section class="panel"><div class="panel-title"><div class="panel-icon">↗</div><div><h3>Order history</h3><p>View your submitted orders, charges and available results.</p></div></div><div id="orders-status" class="orders-message">Order history is ready to load.</div><div id="orders-list"></div><button class="btn secondary" id="orders-refresh" type="button">Refresh order history</button></section>'+
+
+'<section class="panel section-anchor" id="account"><div class="panel-title"><div class="panel-icon">◎</div><div><h3>Account details</h3><p>Your Telegram-linked customer profile.</p></div></div><div class="account-line"><span>Telegram ID</span><b>'+esc(user.telegram_id||"Verified")+'</b></div><div class="account-line"><span>Username</span><b>'+esc(user.username?"@"+user.username:"Not set")+'</b></div><button class="btn secondary" id="refresh">Refresh secure session</button></section>'+
+
+'<footer class="bottom">Data Verification · Secure access · Use services only with proper authorization and consent.</footer></main>';
+
+const numbersBox=document.getElementById("numbers");
+const countBox=document.getElementById("count");
+
+function updateCount(){
+const n=numbersBox.value.split(/\r?\n/).filter(x=>x.trim()).length;
+countBox.textContent=n.toLocaleString()+" / 100,000";
+countBox.style.color=n>100000?"var(--danger)":"var(--muted)";
+}
+
+numbersBox.addEventListener("input",updateCount);
+
+document.getElementById("file").onchange=async function(){
+const f=this.files&&this.files[0];
+if(!f)return;
+if(!f.name.toLowerCase().endsWith(".txt")){
+document.getElementById("filemsg").textContent="Please select a .txt file.";
+this.value="";
+return;
+}
+try{
+numbersBox.value=await f.text();
+document.getElementById("filemsg").textContent="Loaded: "+f.name;
+updateCount();
+document.getElementById("result").classList.remove("show");
+}catch(e){
+document.getElementById("filemsg").textContent="Could not read this file. Please try again.";
+}
+};
+
+document.getElementById("clear").onclick=function(){
+numbersBox.value="";
+document.getElementById("file").value="";
+document.getElementById("filemsg").textContent="One number per line · maximum 100,000 entries.";
+document.getElementById("result").classList.remove("show");
+updateCount();
+};
+
+document.getElementById("check").onclick=preview;
+updateCount();
+
+document.getElementById("consent").onchange=function(){
+document.getElementById("consentmsg").textContent=this.checked
+?"Acknowledgement selected locally; it has not been sent to the server."
+:"Please confirm consent before requesting verification.";
+};
+
+document.getElementById("refresh").onclick=refreshSession;
+document.getElementById("orders-refresh").onclick=loadOrders;
+
+/* Load this customer's order history using the authenticated session */
+loadOrders();
+}
+
+function preview(){
+const lines=document.getElementById("numbers").value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+const out=document.getElementById("result");
+out.classList.add("show");
+
+if(!lines.length){
+out.textContent="Add at least one number to review your list.";
+return;
+}
+
+if(lines.length>100000){
+out.textContent="Your list contains "+lines.length.toLocaleString()+" entries. The maximum is 100,000. Please split the file.";
+return;
+}
+
+const seen=new Set(),duplicates=new Set();
+for(const n of lines){
+if(seen.has(n))duplicates.add(n);
+seen.add(n);
+}
+
+const good=lines.filter(x=>/^\+[1-9]\d{6,14}$/.test(x)).length;
+const dupeCount=lines.filter(x=>duplicates.has(x)).length;
+const bad=lines.length-good;
+
+out.innerHTML="<b>Review complete</b><div class=\"result-grid\"><div class=\"result-stat\"><b>"+lines.length.toLocaleString()+"</b><span>Total entries</span></div><div class=\"result-stat\"><b>"+good.toLocaleString()+"</b><span>Format looks valid</span></div><div class=\"result-stat\"><b>"+bad.toLocaleString()+"</b><span>Needs review</span></div></div><p style=\"margin-top:9px;color:#b7cbd7\">Possible repeated entries: <b>"+dupeCount.toLocaleString()+"</b>. Format check does not confirm a number is active or who owns it. Nothing was uploaded.</p>";
+}
+
 login();
 })();
-</script></body></html>
+</script>
+</body>
+</html>
