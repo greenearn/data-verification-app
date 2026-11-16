@@ -231,7 +231,25 @@ function renderDashboard(){
 
       <label class="field" for="quantity">Quantity for price estimate</label>
       <input id="quantity" type="number" min="1" value="500">
+<label class="field" for="customer-file">Upload your TXT or CSV file (maximum 20 MB)</label>
+<input
+  id="customer-file"
+  type="file"
+  accept=".txt,.csv,text/plain,text/csv"
+>
 
+<p class="note">
+  Upload only data you are authorized to process.
+  Uploading a file does not submit it to the provider or charge your wallet.
+</p>
+
+<button class="btn secondary" id="upload-file-button" type="button">
+  Upload file
+</button>
+
+<div id="upload-file-result" class="note">
+  No file uploaded.
+</div>
       <label class="field" for="entries">Input list — one entry per line</label>
       <textarea id="entries" placeholder="Select a service first…"></textarea>
 
@@ -270,6 +288,49 @@ function renderDashboard(){
     renderServices();
     updateEstimate();
   });
+
+document.getElementById("upload-file-button").onclick = async () => {
+  const fileInput = document.getElementById("customer-file");
+  const resultBox = document.getElementById("upload-file-result");
+  const file = fileInput.files[0];
+
+  if (!selectedCode) {
+    resultBox.textContent = "Please select a service first.";
+    return;
+  }
+
+  if (!file) {
+    resultBox.textContent = "Please choose a TXT or CSV file.";
+    return;
+  }
+if (file.size > 20 * 1024 * 1024) {
+  resultBox.textContent = "File must be smaller than 20 MB.";
+  return;
+}
+  const form = new FormData();
+  form.append("file", file);
+  form.append("resource_code", selectedCode);
+
+  resultBox.textContent = "Uploading file. Please wait...";
+
+  try {
+    const result = await request("/api/uploads", {
+      method: "POST",
+      body: form
+    });
+
+    if (!result.ok) {
+      throw new Error(result.error || "Upload failed");
+    }
+
+    resultBox.textContent =
+      "File uploaded successfully. Upload ID: " + result.upload_id;
+
+  } catch (error) {
+    resultBox.textContent =
+      "Upload failed: " + error.message;
+  }
+};
 
   document.getElementById("quantity").addEventListener("input",updateEstimate);
   document.getElementById("preview-button").onclick=previewInput;
