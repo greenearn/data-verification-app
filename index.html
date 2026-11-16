@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="en">
 <head>
@@ -57,7 +56,6 @@ button{cursor:pointer}
 .hidden{display:none!important}
 .admin-label{color:var(--mint);font-size:10px;font-weight:900;letter-spacing:.15em}
 .item{padding:12px 0;border-bottom:1px solid var(--line)}
-.item:last-child{border-bottom:0}
 .item-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .item strong{font-size:12px}
 .item small{display:block;color:var(--muted);font-size:10px}
@@ -588,6 +586,36 @@ function adminMarkup(){
       <div id="visibility-message" class="muted"></div>
     </div>
 
+    <div class="panel">
+      <h3>CheckNumber.ai File Upload</h3>
+      <p class="muted">
+        Upload TXT or CSV files for validation.
+        No provider submission or payment will occur.
+      </p>
+
+      <label class="field" for="cn-task-type">Select validation service</label>
+      <select id="cn-task-type">
+        <option value="phoneCheck">Phone Number Validation</option>
+        <option value="email_check">Email Deliverability</option>
+        <option value="tg_username">Telegram Username Availability</option>
+      </select>
+
+      <label class="field" for="cn-upload-file">Choose TXT or CSV file</label>
+      <input
+        id="cn-upload-file"
+        type="file"
+        accept=".txt,.csv,text/plain,text/csv"
+      >
+
+      <div class="actions">
+        <button class="btn" id="cn-validate-upload" type="button">
+          Validate File
+        </button>
+      </div>
+
+      <pre id="cn-upload-result" class="note muted" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+    </div>
+
     <div class="note">Safety: customer ordering, provider submissions, deposits, withdrawals and wallet deductions remain disabled.</div>
     <button class="btn secondary" id="reload-admin">Refresh admin catalogue</button>
     <div id="admin-message" class="muted"></div>
@@ -888,6 +916,63 @@ function wireAdmin(){
   };
 
   document.getElementById("reload-admin").onclick=()=>adminAction(reloadAdmin);
+
+  // Admin-only file validation. Uses the same Bearer token as other API calls.
+  // This endpoint validates the file only; it does not submit a provider task.
+  document.getElementById("cn-validate-upload").onclick=async()=>{
+    const fileInput=document.getElementById("cn-upload-file");
+    const taskType=document.getElementById("cn-task-type").value;
+    const resultBox=document.getElementById("cn-upload-result");
+    const button=document.getElementById("cn-validate-upload");
+    const file=fileInput.files&&fileInput.files[0];
+
+    if(!file){
+      resultBox.textContent="Please select a TXT or CSV file.";
+      return;
+    }
+
+    if(!/\.(txt|csv)$/i.test(file.name)){
+      resultBox.textContent="Only .txt and .csv files are allowed.";
+      return;
+    }
+
+    if(file.size>2*1024*1024){
+      resultBox.textContent="File is too large. Maximum size is 2 MB.";
+      return;
+    }
+
+    const formData=new FormData();
+    formData.append("file",file);
+    formData.append("task_type",taskType);
+
+    button.disabled=true;
+    button.textContent="Validating…";
+    resultBox.textContent="Uploading file for validation only…";
+
+    try{
+      const response=await fetch(API+"/api/admin/checknumber/validate-upload",{
+        method:"POST",
+        headers:{
+          "Authorization":"Bearer "+token,
+          "Accept":"application/json"
+        },
+        body:formData
+      });
+
+      const data=await response.json();
+
+      if(!response.ok||!data.ok){
+        throw new Error(data.error||"Upload validation failed ("+response.status+")");
+      }
+
+      resultBox.textContent=JSON.stringify(data,null,2);
+    }catch(error){
+      resultBox.textContent="Error: "+error.message;
+    }finally{
+      button.disabled=false;
+      button.textContent="Validate File";
+    }
+  };
 
   if(services.length){
     document.getElementById("price-service").value=services[0].resource_code;
