@@ -105,29 +105,35 @@ function money(cents,currency){
   return (Number(cents||0)/100).toFixed(2)+" "+(currency||"USDT");
 }
 
-async function request(path,method="GET",body=null){
-  const options={
+
+async function request(path, method = "GET", body = null) {
+  const options = {
     method,
-    headers:{
-      "Authorization":"Bearer "+token,
-      "Accept":"application/json"
+    headers: {
+      "Authorization": "Bearer " + token,
+      "Accept": "application/json"
     }
   };
 
-  if(body!==null){
-    options.headers["Content-Type"]="application/json";
-    options.body=JSON.stringify(body);
+  if (body !== null) {
+    if (body instanceof FormData) {
+      options.body = body;
+    } else {
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify(body);
+    }
   }
 
-  const response=await fetch(API+path,options);
-  const data=await response.json();
+  const response = await fetch(API + path, options);
+  const data = await response.json();
 
-  if(!response.ok||!data.ok){
-    throw new Error(data.error||"Request failed ("+response.status+")");
+  if (!response.ok || !data.ok) {
+    throw new Error(data.error || "Request failed (" + response.status + ")");
   }
 
   return data;
 }
+
 
 function showError(message){
   app.innerHTML='<main class="wrap"><div class="panel"><h2>Connection problem</h2><p class="error">'+esc(message)+'</p><button class="btn" onclick="location.reload()">Try again</button></div></main>';
