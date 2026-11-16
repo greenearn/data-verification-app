@@ -13,7 +13,7 @@
 html{background:var(--bg);scroll-behavior:smooth}
 body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 12% -12%,rgba(34,112,119,.24),transparent 38%),radial-gradient(ellipse at 100% 4%,rgba(39,91,145,.19),transparent 32%),linear-gradient(180deg,#081522 0%,#07111d 55%,#091522 100%);color:var(--text);font:14px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:.01em}
 body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.16;background-image:linear-gradient(rgba(145,177,199,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(145,177,199,.055) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to bottom,black,transparent 72%)}
-button,input,textarea{font:inherit}
+button,input,textarea,select{font:inherit}
 .wrap{position:relative;max-width:820px;margin:auto;padding:25px 19px 48px}
 .top,.brand,.head{display:flex;align-items:center;justify-content:space-between;gap:14px}
 .top{padding:3px 2px 19px;border-bottom:1px solid var(--line)}
@@ -37,7 +37,8 @@ button,input,textarea{font:inherit}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .service,.panel{background:linear-gradient(145deg,rgba(16,34,52,.96),rgba(11,27,43,.98));border:1px solid var(--line);border-radius:17px;box-shadow:0 10px 28px rgba(0,0,0,.12)}
 .service{min-height:145px;padding:17px;transition:border-color .2s,transform .2s,background .2s}
-.service:hover{border-color:rgba(84,224,193,.3);transform:translateY(-2px);background:linear-gradient(145deg,#112b3e,#0c1d30)}
+.service:hover{border-color:rgba(84,224,193,.3);transform:translateY(-2px)}
+.service.selected{border-color:rgba(84,224,193,.65);background:linear-gradient(145deg,#123344,#0c2032)}
 .ico{width:36px;height:36px;display:grid;place-items:center;border-radius:12px;background:rgba(84,224,193,.09);border:1px solid rgba(84,224,193,.15);font-size:18px;color:var(--mint);margin-bottom:12px}
 .service strong,.panel h3{font-size:12px;font-weight:750;letter-spacing:.005em}
 .service p{font-size:11px;color:var(--muted);margin:5px 0 12px;line-height:1.5}
@@ -46,12 +47,14 @@ button,input,textarea{font:inherit}
 .panel h3{margin:0 0 5px}
 .panel p{font-size:11px;line-height:1.6}
 .field{display:block;font-size:11px;font-weight:700;letter-spacing:.025em;margin:14px 0 7px;color:#c6d8e5}
-textarea,input[type=file]{width:100%;background:rgba(4,15,27,.72);border:1px solid rgba(142,174,200,.2);border-radius:12px;padding:12px 13px;color:var(--text);font:12px/1.5 inherit;outline:none;transition:border-color .2s,box-shadow .2s}
-textarea:focus,input[type=file]:focus{border-color:rgba(84,224,193,.55);box-shadow:0 0 0 3px rgba(84,224,193,.08)}
+textarea,input[type=file],input[type=number],select{width:100%;background:rgba(4,15,27,.72);border:1px solid rgba(142,174,200,.2);border-radius:12px;padding:12px 13px;color:var(--text);font:12px/1.5 inherit;outline:none;transition:border-color .2s,box-shadow .2s}
+textarea:focus,input:focus,select:focus{border-color:rgba(84,224,193,.55);box-shadow:0 0 0 3px rgba(84,224,193,.08)}
 textarea{min-height:116px;resize:vertical}
 textarea::placeholder{color:#627b91}
+select option{background:#102338;color:white}
 .btn{width:100%;padding:12px 15px;border:1px solid transparent;border-radius:11px;background:linear-gradient(110deg,#5ce4c6,#39c8b4);color:#06201e;font-size:12px;font-weight:800;letter-spacing:.02em;margin-top:11px;cursor:pointer;box-shadow:0 7px 18px rgba(42,190,164,.12);transition:filter .2s,transform .2s}
 .btn:hover{filter:brightness(1.06);transform:translateY(-1px)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none;filter:none}
 .secondary{background:rgba(128,166,194,.09);border-color:rgba(142,174,200,.17);color:#d9e8f2;box-shadow:none}
 .notice,.info{border-radius:11px;padding:11px 12px;font-size:10px;line-height:1.55;margin-top:13px}
 .notice{border:1px solid rgba(232,200,139,.2);background:rgba(115,83,31,.13);color:#e6d1a7}
@@ -63,8 +66,6 @@ textarea::placeholder{color:#627b91}
 .error{color:var(--danger);font-size:12px}
 .loader{width:26px;height:26px;border:2px solid #34516b;border-top-color:var(--mint);border-radius:50%;animation:spin .8s linear infinite;margin:20px auto}
 @keyframes spin{to{transform:rotate(360deg)}}
-@media(max-width:520px){.wrap{padding:17px 13px 36px}.top{padding-bottom:15px}.brand strong{font-size:10px}.brand small{font-size:9px}.logo{width:40px;height:40px;flex-basis:40px}.status{font-size:9px;padding:5px 8px}.welcome{margin-top:25px}.grid{gap:9px}.service{padding:13px;min-height:150px}.panel{padding:14px}.balance{padding:19px;margin-bottom:25px}}
-@media(max-width:360px){.status{font-size:8px}.brand strong{letter-spacing:.09em}.grid{grid-template-columns:1fr}.service{min-height:0}}
 .navlinks{display:flex;gap:8px;overflow-x:auto;padding:13px 1px 2px;scrollbar-width:none}
 .navlinks a{flex:0 0 auto;text-decoration:none;color:#b8cbd9;background:rgba(132,169,195,.07);border:1px solid var(--line);padding:7px 11px;border-radius:30px;font-size:10px;font-weight:700}
 .balance-meta{display:flex;justify-content:space-between;gap:10px;position:relative;z-index:1;margin-top:13px;padding-top:12px;border-top:1px solid rgba(190,230,225,.13);font-size:10px;color:#b6d1d5}
@@ -103,13 +104,21 @@ textarea::placeholder{color:#627b91}
 .order-date{font-size:9px;color:var(--muted);margin-top:8px}
 .orders-message{font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0}
 .orders-message.error{color:var(--danger)}
+.price-box{margin-top:12px;padding:13px;border:1px solid rgba(84,224,193,.2);border-radius:12px;background:rgba(35,123,105,.08)}
+.price-line{display:flex;justify-content:space-between;gap:12px;padding:5px 0;font-size:11px;color:#b9cbd8}
+.price-line strong{color:#effaf6;text-align:right}
+.price-total{border-top:1px solid var(--line);margin-top:7px;padding-top:10px;font-size:12px}
+.service-status{font-size:10px;color:var(--muted);margin-top:9px}
+@media(max-width:520px){.wrap{padding:17px 13px 36px}.top{padding-bottom:15px}.brand strong{font-size:10px}.brand small{font-size:9px}.logo{width:40px;height:40px;flex-basis:40px}.status{font-size:9px;padding:5px 8px}.welcome{margin-top:25px}.grid{gap:9px}.service{padding:13px;min-height:150px}.panel{padding:14px}.balance{padding:19px;margin-bottom:25px}}
 @media(max-width:390px){.steps{gap:5px}.step{padding:9px 7px}.step span{font-size:9px}.result-grid{gap:5px}.order-details{gap:6px}}
+@media(max-width:360px){.status{font-size:8px}.brand strong{letter-spacing:.09em}.grid{grid-template-columns:1fr}.service{min-height:0}}
 </style>
 </head>
 <body>
 <div id="app">
 <div class="login"><div class="loader"></div><p class="muted">Connecting securely to Telegram…</p></div>
 </div>
+
 <script>
 (function(){
 "use strict";
@@ -117,7 +126,7 @@ textarea::placeholder{color:#627b91}
 const API="https://data-verification-api.shrestharaj980888.workers.dev";
 const app=document.getElementById("app");
 const tg=window.Telegram&&Telegram.WebApp?Telegram.WebApp:null;
-let token="",user=null;
+let token="",user=null,services=[],selectedCode="";
 
 if(tg){
 tg.ready();
@@ -128,16 +137,28 @@ if(tg.setBackgroundColor)tg.setBackgroundColor("#0b1220");
 
 function esc(v){
 return String(v==null?"":v)
-.replace(/&/g,"&amp;")
-.replace(/</g,"&lt;")
-.replace(/>/g,"&gt;")
-.replace(/"/g,"&quot;")
+.replace(/&/g,"&amp;").replace(/</g,"&lt;")
+.replace(/>/g,"&gt;").replace(/"/g,"&quot;")
 .replace(/'/g,"&#39;");
+}
+
+function money(cents,currency){
+return (Number(cents||0)/100).toFixed(2)+" "+(currency||"USDT");
 }
 
 function fail(msg){
 app.innerHTML='<div class="login"><div class="logo">DV</div><h2>Secure login needed</h2><p class="muted">'+esc(msg)+'</p><button class="btn secondary" id="retry">Try again</button></div>';
 document.getElementById("retry").onclick=login;
+}
+
+async function apiGet(path){
+const r=await fetch(API+path,{
+method:"GET",
+headers:{"Authorization":"Bearer "+token,"Accept":"application/json"}
+});
+const d=await r.json();
+if(!r.ok||!d.ok)throw new Error(d.error||"Request failed");
+return d;
 }
 
 async function login(){
@@ -153,259 +174,345 @@ headers:{"Content-Type":"application/json"},
 body:JSON.stringify({initData:tg.initData})
 });
 const d=await r.json();
-if(!r.ok||!d.ok){
-fail(d.error||"Authentication failed.");
-return;
-}
+if(!r.ok||!d.ok){fail(d.error||"Authentication failed.");return;}
 token=d.token;
 
-const mr=await fetch(API+"/api/me",{
-method:"GET",
-headers:{"Authorization":"Bearer "+token}
-});
-const md=await mr.json();
-if(!mr.ok||!md.ok){
-token="";
-fail("Login succeeded, but the customer session could not be verified. Please try again.");
-return;
-}
+const md=await apiGet("/api/me");
 user=md.user||d.user||{};
 dashboard();
 }catch(e){
-fail("Could not reach the secure server. Check your connection.");
+token="";
+fail("Could not complete secure login. Please try again.");
 }
 }
 
 async function refreshSession(){
-if(!token){
-login();
-return;
-}
+if(!token){login();return;}
 try{
-const r=await fetch(API+"/api/me",{
-method:"GET",
-headers:{"Authorization":"Bearer "+token}
-});
-const d=await r.json();
-if(!r.ok||!d.ok){
-token="";
-fail("Your session has expired. Please log in again.");
-return;
-}
+const d=await apiGet("/api/me");
 user=d.user||user;
 dashboard();
 }catch(e){
-fail("Could not refresh your secure session. Check your connection.");
+token="";
+fail("Your session has expired or could not be refreshed. Please log in again.");
 }
 }
 
-/* ORDER HISTORY */
+/* Load only the authenticated customer's orders. */
 async function loadOrders(){
 const statusBox=document.getElementById("orders-status");
 const listBox=document.getElementById("orders-list");
 const refreshButton=document.getElementById("orders-refresh");
-
 if(!statusBox||!listBox)return;
 
 statusBox.className="orders-message";
 statusBox.textContent="Loading your order history…";
 listBox.innerHTML="";
-
-if(refreshButton){
-refreshButton.disabled=true;
-refreshButton.textContent="Loading…";
-}
+if(refreshButton){refreshButton.disabled=true;refreshButton.textContent="Loading…";}
 
 try{
-const response=await fetch(API+"/api/orders?limit=20&offset=0",{
-method:"GET",
-headers:{
-"Authorization":"Bearer "+token,
-"Accept":"application/json"
-}
-});
-
-let data={};
-try{
-data=await response.json();
-}catch(e){
-throw new Error("The server returned an unreadable response.");
-}
-
-if(!response.ok||!data.ok){
-if(response.status===401){
-token="";
-fail("Your secure session has expired. Please open the Mini App again.");
-return;
-}
-throw new Error(data.error||"Could not load order history.");
-}
-
+const data=await apiGet("/api/orders?limit=20&offset=0");
 const orders=Array.isArray(data.orders)?data.orders:[];
-
-if(orders.length===0){
-statusBox.className="orders-message";
+if(!orders.length){
 statusBox.textContent="You don't have any orders yet. Your orders will appear here when you start using the service.";
 return;
 }
-
-statusBox.className="orders-message";
 statusBox.textContent="Showing "+orders.length+" recent order"+(orders.length===1?"":"s")+".";
-
 listBox.innerHTML=orders.map(function(order){
 const id=esc(order.id||"—");
 const resource=esc(order.resource_code||"—");
 const quantity=Number(order.quantity||0);
 const charge=Number(order.customer_charge_cents||0);
 const currency=esc(order.currency||"USDT");
-const amount=(Number.isFinite(charge)?(charge/100).toFixed(2):"0.00");
 const state=esc(order.status||"Unknown");
-const reference=order.result_reference
-?'<div class="order-result"><b>Result reference:</b> '+esc(order.result_reference)+'</div>'
-:"";
+const reference=order.result_reference?'<div class="order-result"><b>Result reference:</b> '+esc(order.result_reference)+'</div>':"";
 let dateText="Date unavailable";
 if(order.created_at){
-const parsedDate=new Date(order.created_at);
-if(!Number.isNaN(parsedDate.getTime())){
-dateText=parsedDate.toLocaleString();
-}else{
-dateText=String(order.created_at);
+const parsed=new Date(order.created_at);
+dateText=!Number.isNaN(parsed.getTime())?parsed.toLocaleString():String(order.created_at);
+}
+return '<article class="order-item"><div class="order-top"><div class="order-id">Order #'+id+'</div><span class="order-status">'+state+'</span></div><div class="order-details"><div class="order-detail"><span>Resource</span><b>'+resource+'</b></div><div class="order-detail"><span>Quantity</span><b>'+esc(quantity.toLocaleString())+'</b></div><div class="order-detail"><span>Customer charge</span><b>'+money(charge,currency)+'</b></div><div class="order-detail"><span>Order status</span><b>'+state+'</b></div></div>'+reference+'<div class="order-date">'+esc(dateText)+'</div></article>';
+}).join("");
+}catch(e){
+if(e.message==="unauthorized"){token="";fail("Your secure session has expired. Please open the Mini App again.");return;}
+statusBox.className="orders-message error";
+statusBox.textContent=e.message||"Could not load order history.";
+}finally{
+if(refreshButton){refreshButton.disabled=false;refreshButton.textContent="Refresh order history";}
 }
 }
 
-return '<article class="order-item">'+
-'<div class="order-top">'+
-'<div class="order-id">Order #'+id+'</div>'+
-'<span class="order-status">'+state+'</span>'+
-'</div>'+
-'<div class="order-details">'+
-'<div class="order-detail"><span>Resource</span><b>'+resource+'</b></div>'+
-'<div class="order-detail"><span>Quantity</span><b>'+esc(quantity.toLocaleString())+'</b></div>'+
-'<div class="order-detail"><span>Customer charge</span><b>'+amount+' '+currency+'</b></div>'+
-'<div class="order-detail"><span>Order status</span><b>'+state+'</b></div>'+
-'</div>'+
-reference+
-'<div class="order-date">'+esc(dateText)+'</div>'+
-'</article>';
+/* Catalogue is read from the authenticated Worker endpoint. */
+async function loadServices(){
+const box=document.getElementById("services-grid");
+const status=document.getElementById("catalogue-status");
+if(!box||!status)return;
+
+status.textContent="Loading service catalogue…";
+try{
+const data=await apiGet("/api/services");
+services=Array.isArray(data.services)?data.services:[];
+renderServices();
+status.textContent=data.ordering_enabled
+?"Catalogue loaded."
+:"Catalogue loaded. Ordering is currently disabled.";
+}catch(e){
+status.textContent="Could not load services: "+e.message;
+box.innerHTML='<div class="panel"><p>Service catalogue could not be loaded. Please refresh the page.</p></div>';
+}
+}
+
+function serviceState(service){
+if(!service.configured)return "Pricing not configured";
+if(!service.enabled)return "Configured · Not active";
+return "Configured · Order processing unavailable";
+}
+
+function renderServices(){
+const box=document.getElementById("services-grid");
+const select=document.getElementById("service-select");
+if(!box||!select)return;
+
+const icons={phoneCheck:"✓",globalCarrier:"⌁",us_carrier_premium:"⌖",email_check:"✉"};
+box.innerHTML=services.map(function(s,index){
+const chosen=s.resource_code===selectedCode;
+const price=s.unit_price_cents!=null
+?money(s.unit_price_cents,s.currency)+" / "+Number(s.pricing_unit_quantity||0).toLocaleString()
+:"Price unavailable";
+return '<article class="service '+(chosen?"selected":"")+'" data-service-index="'+index+'" tabindex="0" role="button" aria-label="Select '+esc(s.name)+'"><div class="ico">'+(icons[s.resource_code]||"✓")+'</div><strong>'+esc(s.name)+'</strong><p>'+esc(s.description)+'</p><span class="tag">'+esc(serviceState(s))+'</span><div class="service-status">'+esc(price)+'</div></article>';
 }).join("");
 
-}catch(error){
-statusBox.className="orders-message error";
-statusBox.textContent=error.message||"Could not load your order history. Please try again.";
-}finally{
-if(refreshButton){
-refreshButton.disabled=false;
-refreshButton.textContent="Refresh order history";
+select.innerHTML='<option value="">Choose a service</option>'+services.map(function(s){
+return '<option value="'+esc(s.resource_code)+'">'+esc(s.name)+'</option>';
+}).join("");
+
+if(selectedCode&&services.some(s=>s.resource_code===selectedCode)){
+select.value=selectedCode;
+}else{
+selectedCode="";
+select.value="";
 }
+box.querySelectorAll("[data-service-index]").forEach(function(card){
+function choose(){
+const s=services[Number(card.getAttribute("data-service-index"))];
+if(s)selectService(s.resource_code);
 }
+card.addEventListener("click",choose);
+card.addEventListener("keydown",function(e){
+if(e.key==="Enter"||e.key===" "){e.preventDefault();choose();}
+});
+});
+updateEstimate();
+}
+
+function selectService(code){
+selectedCode=code;
+const s=services.find(x=>x.resource_code===code);
+const select=document.getElementById("service-select");
+if(select)select.value=code;
+renderServices();
+const input=document.getElementById("input-label");
+const hint=document.getElementById("input-hint");
+const area=document.getElementById("entries");
+const file=document.getElementById("file");
+const count=document.getElementById("count");
+const result=document.getElementById("result");
+if(!s)return;
+
+if(s.input_type==="email"){
+input.textContent="Email addresses";
+hint.textContent="Enter one email address per line.";
+area.placeholder="customer@example.com\nanother@example.com";
+if(file)file.accept=".txt,.csv,text/plain,text/csv";
+}else{
+input.textContent="Phone numbers";
+hint.textContent="Use international format with country code, e.g. +9779812345678.";
+area.placeholder="+9779812345678\n+14155552671";
+if(file)file.accept=".txt,.csv,text/plain,text/csv";
+}
+if(count)count.textContent="0 / 100,000";
+if(result)result.classList.remove("show");
+updateEstimate();
+}
+
+function currentEntries(){
+return document.getElementById("entries").value
+.split(/\r?\n/)
+.map(x=>x.trim())
+.filter(Boolean);
+}
+
+function updateEstimate(){
+const s=services.find(x=>x.resource_code===selectedCode);
+const quantityBox=document.getElementById("quantity");
+const box=document.getElementById("price-estimate");
+if(!quantityBox||!box)return;
+
+const quantity=Number(quantityBox.value||0);
+if(!s){
+box.innerHTML="Select a service to view its pricing information.";
+return;
+}
+if(!s.configured||s.unit_price_cents==null||!s.pricing_unit_quantity){
+box.innerHTML="Pricing is not configured for this service yet.";
+return;
+}
+const minimum=Number(s.minimum_order_quantity||0);
+if(!Number.isSafeInteger(quantity)||quantity<1){
+box.innerHTML="Enter a quantity to calculate an estimate.";
+return;
+}
+const total=Math.ceil(Number(s.unit_price_cents)*quantity/Number(s.pricing_unit_quantity));
+box.innerHTML='<div class="price-line"><span>Selected service</span><strong>'+esc(s.name)+'</strong></div>'+
+'<div class="price-line"><span>Quantity</span><strong>'+quantity.toLocaleString()+'</strong></div>'+
+'<div class="price-line"><span>Minimum quantity</span><strong>'+minimum.toLocaleString()+'</strong></div>'+
+'<div class="price-line"><span>Price per pricing unit</span><strong>'+money(s.unit_price_cents,s.currency)+' / '+Number(s.pricing_unit_quantity).toLocaleString()+'</strong></div>'+
+'<div class="price-line price-total"><span>Estimated customer price</span><strong>'+money(total,s.currency)+'</strong></div>'+
+'<div class="service-status">Estimate only. Final pricing must be confirmed by the server before any order is accepted.</div>';
 }
 
 function dashboard(){
 const name=user.first_name||"Customer";
-
 app.innerHTML='<main class="wrap">'+
 '<header class="top"><div class="brand"><div class="logo">DV</div><div><strong>DATA VERIFICATION</strong><small>SECURE CUSTOMER PORTAL</small></div></div><span class="status">● SECURE SESSION</span></header>'+
 '<nav class="navlinks" aria-label="Dashboard sections"><a href="#services">Services</a><a href="#prepare">Prepare list</a><a href="#consent-section">Consent</a><a href="#activity">Activity</a><a href="#account">Account</a></nav>'+
-'<section class="welcome"><div class="eyebrow">Your secure workspace</div><h1>Welcome, '+esc(name)+'</h1><p>Manage your verification services and orders.</p></section>'+
+'<section class="welcome"><div class="eyebrow">Your secure workspace</div><h1>Welcome, '+esc(name)+'</h1><p>Manage your validation services and orders.</p></section>'+
 '<section class="balance"><div class="muted">AVAILABLE WALLET BALANCE</div><div class="amount">$'+(Number(user.wallet_balance_cents||0)/100).toFixed(2)+' <span style="font-size:14px">USDT</span></div><div class="muted">Your account balance · 1 USD = 1 USDT</div><div class="balance-meta"><div>ACCOUNT STATUS<strong>Verified customer</strong></div><div style="text-align:right">CURRENCY<strong>USDT</strong></div></div></section>'+
 
-'<div class="head section-anchor" id="services"><h2>Verification services</h2><span class="muted">Service centre</span></div>'+
-'<section class="grid"><article class="service"><div class="ico">✓</div><strong>Phone Number Validation</strong><p>Check number format and supported line details.</p><span class="tag">Coming online soon</span></article><article class="service"><div class="ico">♧</div><strong>Consent-based Verification</strong><p>Workflows for people who explicitly agreed.</p><span class="tag">Coming online soon</span></article></section>'+
+'<div class="head section-anchor" id="services"><h2>Verification services</h2><span class="muted">Live catalogue</span></div>'+
+'<div id="catalogue-status" class="orders-message">Connecting to service catalogue…</div>'+
+'<section class="grid" id="services-grid"><div class="panel"><div class="loader"></div><p>Loading services…</p></div></section>'+
 
-'<div class="head section-anchor" id="prepare"><h2>Prepare a validation file</h2><span class="muted">TXT · one number per line</span></div>'+
-'<section class="steps"><div class="step"><b>01 · ADD</b><span>Upload a TXT file or paste numbers</span></div><div class="step"><b>02 · REVIEW</b><span>Check format and duplicates</span></div><div class="step"><b>03 · NEXT</b><span>Submit when service is enabled</span></div></section>'+
+'<div class="head section-anchor" id="prepare"><h2>Prepare your validation file</h2><span class="muted">TXT · CSV · Paste</span></div>'+
+'<section class="steps"><div class="step"><b>01 · SELECT</b><span>Choose an available catalogue service</span></div><div class="step"><b>02 · REVIEW</b><span>Check your input and quantity</span></div><div class="step"><b>03 · WAIT</b><span>Ordering is not enabled yet</span></div></section>'+
 
-'<section class="panel"><div class="panel-title"><div class="panel-icon">＋</div><div><h3>Phone number list</h3><p>Use international format with country code, e.g. +97798XXXXXXXX.</p></div></div><label class="field" for="file">Upload TXT file</label><input id="file" type="file" accept=".txt,text/plain"><div class="field-row"><label class="field" for="numbers">Or paste phone numbers</label><span class="counter" id="count">0 / 100,000</span></div><textarea id="numbers" placeholder="+9779812345678&#10;+14155552671" aria-describedby="filemsg"></textarea><div class="field-row" style="margin-top:8px"><p id="filemsg" class="muted">One number per line · maximum 100,000 entries.</p><span class="counter">TXT only</span></div><div class="action-row"><button class="btn" id="check" type="button">Review number formats</button><button class="clear-btn" id="clear" type="button">Clear</button></div><div id="result" class="result-card" aria-live="polite"></div><div class="notice">Privacy note: this is a local preview only. Your numbers are not uploaded or submitted to any provider.</div></section>'+
+'<section class="panel"><div class="panel-title"><div class="panel-icon">＋</div><div><h3>Prepare input list</h3><p>Choose a service above or use the selector below.</p></div></div>'+
+'<label class="field" for="service-select">Selected service</label><select id="service-select"><option value="">Loading services…</option></select>'+
+'<label class="field" for="quantity">Quantity for price estimate</label><input id="quantity" type="number" min="1" max="100000" value="500" inputmode="numeric">'+
+'<div class="price-box" id="price-estimate">Select a service to view pricing information.</div>'+
+'<label class="field" for="file">Upload TXT or CSV file</label><input id="file" type="file" accept=".txt,.csv,text/plain,text/csv">'+
+'<div class="field-row"><label class="field" for="entries" id="input-label">Input list</label><span class="counter" id="count">0 / 100,000</span></div>'+
+'<textarea id="entries" placeholder="Select a service first…" aria-describedby="input-hint"></textarea>'+
+'<div class="field-row" style="margin-top:8px"><p id="input-hint" class="muted">One entry per line · maximum 100,000 entries.</p><span class="counter">TXT / CSV</span></div>'+
+'<div class="action-row"><button class="btn" id="review" type="button">Review input list</button><button class="clear-btn" id="clear" type="button">Clear</button></div>'+
+'<div id="result" class="result-card" aria-live="polite"></div>'+
+'<div class="notice">Preview only: your input stays in this browser and is not uploaded to CheckNumber.ai. The Mini App cannot submit orders yet.</div>'+
+'<button class="btn secondary" id="order-disabled" type="button" disabled>Ordering not enabled yet</button></section>'+
 
 '<div class="head section-anchor" id="consent-section"><h2>Consent-based verification</h2></div>'+
-'<section class="panel"><div class="panel-title"><div class="panel-icon">✓</div><div><h3>Consent requirement</h3><p>Only request verification for your own number or a person who has explicitly agreed.</p></div></div><label class="check"><input type="checkbox" id="consent"><span>I confirm that the person whose number is submitted has explicitly consented, or the number is my own.</span></label><div class="info" id="consentmsg">This is a local acknowledgement only. Server-side consent recording must be connected before launch.</div></section>'+
+'<section class="panel"><div class="panel-title"><div class="panel-icon">✓</div><div><h3>Consent requirement</h3><p>Only request verification for your own information or data you are authorized to process.</p></div></div><label class="check"><input type="checkbox" id="consent"><span>I confirm that I am authorized to submit the information entered above.</span></label><div class="info" id="consentmsg">This is a local acknowledgement only. It has not been recorded by the server.</div></section>'+
 
 '<div class="head section-anchor" id="activity"><h2>Orders & activity</h2></div>'+
 '<section class="panel"><div class="panel-title"><div class="panel-icon">↗</div><div><h3>Order history</h3><p>View your submitted orders, charges and available results.</p></div></div><div id="orders-status" class="orders-message">Order history is ready to load.</div><div id="orders-list"></div><button class="btn secondary" id="orders-refresh" type="button">Refresh order history</button></section>'+
 
-'<section class="panel section-anchor" id="account"><div class="panel-title"><div class="panel-icon">◎</div><div><h3>Account details</h3><p>Your Telegram-linked customer profile.</p></div></div><div class="account-line"><span>Telegram ID</span><b>'+esc(user.telegram_id||"Verified")+'</b></div><div class="account-line"><span>Username</span><b>'+esc(user.username?"@"+user.username:"Not set")+'</b></div><button class="btn secondary" id="refresh">Refresh secure session</button></section>'+
+'<section class="panel section-anchor" id="account"><div class="panel-title"><div class="panel-icon">◎</div><div><h3>Account details</h3><p>Your Telegram-linked customer profile.</p></div></div><div class="account-line"><span>Telegram ID</span><b>'+esc(user.telegram_id||"Verified")+'</b></div><div class="account-line"><span>Username</span><b>'+esc(user.username?"@"+user.username:"Not set")+'</b></div><button class="btn secondary" id="refresh" type="button">Refresh secure session</button></section>'+
+'<footer class="bottom">Data Verification · Secure access · Authorized validation only.</footer></main>';
 
-'<footer class="bottom">Data Verification · Secure access · Use services only with proper authorization and consent.</footer></main>';
+document.getElementById("service-select").addEventListener("change",function(){selectService(this.value);});
+document.getElementById("quantity").addEventListener("input",updateEstimate);
+document.getElementById("entries").addEventListener("input",updateCount);
+document.getElementById("file").addEventListener("change",handleFile);
+document.getElementById("review").addEventListener("click",preview);
+document.getElementById("clear").addEventListener("click",clearInput);
+document.getElementById("consent").addEventListener("change",function(){
+document.getElementById("consentmsg").textContent=this.checked
+?"Authorization acknowledgement selected locally; it has not been sent to the server."
+:"Please confirm that you are authorized to submit this information.";
+});
+document.getElementById("refresh").onclick=refreshSession;
+document.getElementById("orders-refresh").onclick=loadOrders;
 
-const numbersBox=document.getElementById("numbers");
-const countBox=document.getElementById("count");
-
-function updateCount(){
-const n=numbersBox.value.split(/\r?\n/).filter(x=>x.trim()).length;
-countBox.textContent=n.toLocaleString()+" / 100,000";
-countBox.style.color=n>100000?"var(--danger)":"var(--muted)";
+loadServices();
+loadOrders();
 }
 
-numbersBox.addEventListener("input",updateCount);
+function updateCount(){
+const box=document.getElementById("entries");
+const count=document.getElementById("count");
+if(!box||!count)return;
+const n=box.value.split(/\r?\n/).filter(x=>x.trim()).length;
+count.textContent=n.toLocaleString()+" / 100,000";
+count.style.color=n>100000?"var(--danger)":"var(--muted)";
+}
 
-document.getElementById("file").onchange=async function(){
-const f=this.files&&this.files[0];
-if(!f)return;
-if(!f.name.toLowerCase().endsWith(".txt")){
-document.getElementById("filemsg").textContent="Please select a .txt file.";
+async function handleFile(){
+const file=document.getElementById("file").files[0];
+if(!file)return;
+const name=file.name.toLowerCase();
+if(!name.endsWith(".txt")&&!name.endsWith(".csv")){
+document.getElementById("input-hint").textContent="Please select a TXT or CSV file.";
 this.value="";
 return;
 }
 try{
-numbersBox.value=await f.text();
-document.getElementById("filemsg").textContent="Loaded: "+f.name;
+let text=await file.text();
+let lines=text.split(/\r?\n/);
+if(name.endsWith(".csv")){
+lines=lines.map(function(line){
+const first=line.split(",")[0]||"";
+return first.trim().replace(/^"|"$/g,"");
+});
+}
+const first=lines[0]||"";
+if(/^(phone|phone_number|number|email|email_address|address)$/i.test(first.trim()))lines.shift();
+document.getElementById("entries").value=lines.join("\n").trim();
+document.getElementById("input-hint").textContent="Loaded: "+file.name+" · CSV reads the first column.";
 updateCount();
 document.getElementById("result").classList.remove("show");
 }catch(e){
-document.getElementById("filemsg").textContent="Could not read this file. Please try again.";
+document.getElementById("input-hint").textContent="Could not read this file. Please try again.";
 }
-};
+}
 
-document.getElementById("clear").onclick=function(){
-numbersBox.value="";
+function clearInput(){
+document.getElementById("entries").value="";
 document.getElementById("file").value="";
-document.getElementById("filemsg").textContent="One number per line · maximum 100,000 entries.";
+document.getElementById("input-hint").textContent="One entry per line · maximum 100,000 entries.";
 document.getElementById("result").classList.remove("show");
 updateCount();
-};
-
-document.getElementById("check").onclick=preview;
-updateCount();
-
-document.getElementById("consent").onchange=function(){
-document.getElementById("consentmsg").textContent=this.checked
-?"Acknowledgement selected locally; it has not been sent to the server."
-:"Please confirm consent before requesting verification.";
-};
-
-document.getElementById("refresh").onclick=refreshSession;
-document.getElementById("orders-refresh").onclick=loadOrders;
-
-/* Load this customer's order history using the authenticated session */
-loadOrders();
 }
 
 function preview(){
-const lines=document.getElementById("numbers").value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+const s=services.find(x=>x.resource_code===selectedCode);
 const out=document.getElementById("result");
+const lines=currentEntries();
 out.classList.add("show");
 
-if(!lines.length){
-out.textContent="Add at least one number to review your list.";
+if(!s){
+out.textContent="Please select a service first.";
 return;
 }
-
+if(!lines.length){
+out.textContent="Add at least one entry to review your list.";
+return;
+}
 if(lines.length>100000){
-out.textContent="Your list contains "+lines.length.toLocaleString()+" entries. The maximum is 100,000. Please split the file.";
+out.textContent="Your list contains "+lines.length.toLocaleString()+" entries. The maximum is 100,000.";
 return;
 }
 
 const seen=new Set(),duplicates=new Set();
-for(const n of lines){
-if(seen.has(n))duplicates.add(n);
-seen.add(n);
+for(const item of lines){
+if(seen.has(item))duplicates.add(item);
+seen.add(item);
+}
+const duplicateCount=lines.filter(x=>duplicates.has(x)).length;
+let valid=0;
+
+if(s.input_type==="email"){
+valid=lines.filter(x=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x)).length;
+}else{
+valid=lines.filter(x=>/^\+[1-9]\d{6,14}$/.test(x)).length;
+}
+const invalid=lines.length-valid;
+const type=s.input_type==="email"?"basic email syntax":"international phone-number format";
+
+out.innerHTML="<b>Local review complete</b><div class=\"result-grid\"><div class=\"result-stat\"><b>"+lines.length.toLocaleString()+"</b><span>Total entries</span></div><div class=\"result-stat\"><b>"+valid.toLocaleString()+"</b><span>Format looks valid</span></div><div class=\"result-stat\"><b>"+invalid.toLocaleString()+"</b><span>Needs review</span></div></div><p style=\"margin-top:9px;color:#b7cbd7\">Possible repeated entries: <b>"+duplicateCount.toLocaleString()+"</b>. This checks only "+type+". It does not confirm deliverability, activity, ownership, or carrier details. Nothing was uploaded.</p>";
+updateEstimate();
 }
 
-const good=lines.filter(x=>/^\+[1-9]\d{6,14}$/.test(x)).length;
-const dupeCount=lines.filter(x=>duplicates.has(x)).length;
-const bad=lines.length-good;
-
-out.innerHTML="<b>Review complete</b><div class=\"result-grid\"><div class=\"result-stat\"><b>"+lines.length.toLocaleString()+"</b><span>Total entries</span></div><div class=\"result-stat\"><b>"+good.toLocaleString()+"</b><span>Format looks valid</span></div><div class=\"result-stat\"><b>"+bad.toLocaleString()+"</b><span>Needs review</span></div></div><p style=\"margin-top:9px;color:#b7cbd7\">Possible repeated entries: <b>"+dupeCount.toLocaleString()+"</b>. Format check does not confirm a number is active or who owns it. Nothing was uploaded.</p>";
+function currentEntries(){
+return document.getElementById("entries").value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
 }
 
 login();
