@@ -170,7 +170,7 @@ async function login(){
     try{
       const admin=await request("/api/admin/catalogue");
       categories=admin.categories||[];
-      services=admin.services||services;
+    adminServices=admin.services||adminServices;
       adminMode=true;
       renderDashboard();
     }catch(error){
