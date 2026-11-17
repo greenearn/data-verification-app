@@ -807,6 +807,25 @@ function adminMarkup(){
       <pre id="cn-upload-result" class="note muted" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
     </div>
 
+    <div class="panel">
+      <h3>Admin Upload Management</h3>
+      <p class="muted">
+        View customer-uploaded files, selected services, upload dates and expiry status.
+      </p>
+
+      <div class="actions">
+        <button class="btn secondary" id="refresh-admin-uploads" type="button">
+          Refresh uploads
+        </button>
+      </div>
+
+      <div id="admin-uploads-message" class="muted">
+        Upload history has not been loaded.
+      </div>
+
+      <div id="admin-uploads-list"></div>
+    </div>
+
     <div class="note">Safety: customer ordering, provider submissions, deposits, withdrawals and wallet deductions remain disabled.</div>
     <button class="btn secondary" id="reload-admin">Refresh admin catalogue</button>
     <div id="admin-message" class="muted"></div>
