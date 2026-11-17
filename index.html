@@ -1127,7 +1127,8 @@ function wireAdmin(){
 
   document.getElementById("reload-admin").onclick=()=>adminAction(reloadAdmin);
 
-  // Load admin upload history
+  
+  // Load admin upload history and manage review status
   async function loadAdminUploads(){
     const message=document.getElementById("admin-uploads-message");
     const box=document.getElementById("admin-uploads-list");
@@ -1149,8 +1150,7 @@ function wireAdmin(){
 
       const uploads=data.uploads||[];
 
-      message.textContent=
-        "Total uploads: "+Number(data.pagination?.total||0);
+      message.textContent="Total uploads: "+Number(data.pagination?.total||0);
 
       if(!uploads.length){
         box.innerHTML='<p class="muted">No uploaded files found.</p>';
@@ -1168,43 +1168,87 @@ function wireAdmin(){
           ?new Date(upload.created_at.replace(" ","T")+"Z").toLocaleString()
           :"Not available";
 
+        const reviewed=upload.reviewed_at
+          ?new Date(upload.reviewed_at).toLocaleString()
+          :"Not reviewed";
+
+        const currentStatus=upload.status||"uploaded";
+
+        const statuses=["uploaded","reviewed","rejected","expired"];
+
+        const statusOptions=statuses.map(status=>
+          `<option value="${status}" ${currentStatus===status?"selected":""}>${status.charAt(0).toUpperCase()+status.slice(1)}</option>`
+        ).join("");
+
         return `
-          <div class="item">
+          <div class="item" data-upload-id="${Number(upload.id)}">
             <div class="item-top">
               <strong>${esc(upload.file_name||"Unnamed file")}</strong>
-              <span class="pill">${esc(upload.status||"unknown")}</span>
+              <span class="pill">${esc(currentStatus)}</span>
             </div>
 
-            <div class="muted">
-              Upload ID: ${Number(upload.id)}
-            </div>
+            <div class="muted">Upload ID: ${Number(upload.id)}</div>
+            <div class="muted">Customer ID: ${Number(upload.user_id)}</div>
+            <div class="muted">Service: ${esc(upload.resource_code||"Not specified")}</div>
+            <div class="muted">File type: ${esc(upload.mime_type||"Unknown")}</div>
+            <div class="muted">File size: ${size} KB</div>
+            <div class="muted">Uploaded: ${esc(created)}</div>
+            <div class="muted">Expires: ${esc(expiry)}</div>
+
+            <div class="muted">Last reviewed: ${esc(reviewed)}</div>
 
             <div class="muted">
-              Customer ID: ${Number(upload.user_id)}
+              Reviewed by admin ID: ${upload.reviewed_by==null?"Not reviewed":Number(upload.reviewed_by)}
             </div>
 
-            <div class="muted">
-              Service: ${esc(upload.resource_code||"Not specified")}
-            </div>
+            <label class="field">Upload status</label>
+            <select class="upload-status">
+              ${statusOptions}
+            </select>
 
-            <div class="muted">
-              File type: ${esc(upload.mime_type||"Unknown")}
-            </div>
+            <label class="field">Private admin note</label>
+            <textarea class="upload-admin-note" maxlength="1000" placeholder="Enter a private review note">${esc(upload.admin_note||"")}</textarea>
 
-            <div class="muted">
-              File size: ${size} KB
-            </div>
-
-            <div class="muted">
-              Uploaded: ${esc(created)}
-            </div>
-
-            <div class="muted">
-              Expires: ${esc(expiry)}
-            </div>
+            <button class="btn save-upload-status" type="button">
+              Save Status
+            </button>
           </div>
         `;
       }).join("");
+
+      box.querySelectorAll("[data-upload-id]").forEach(item=>{
+        const saveButton=item.querySelector(".save-upload-status");
+
+        saveButton.onclick=async()=>{
+          const uploadId=Number(item.dataset.uploadId);
+          const status=item.querySelector(".upload-status").value;
+          const adminNote=item.querySelector(".upload-admin-note").value.trim();
+
+          saveButton.disabled=true;
+          saveButton.textContent="Saving…";
+
+          try{
+            const result=await request("/api/admin/uploads/status","POST",{
+              upload_id:uploadId,
+              status,
+              admin_note:adminNote
+            });
+
+            if(!result.ok){
+              throw new Error(result.error||"Unable to update upload");
+            }
+
+            await loadAdminUploads();
+
+            message.textContent="Upload #"+uploadId+" status saved successfully.";
+
+          }catch(error){
+            alert("Could not save upload status: "+error.message);
+            saveButton.disabled=false;
+            saveButton.textContent="Save Status";
+          }
+        };
+      });
 
     }catch(error){
       message.textContent="Error: "+error.message;
@@ -1212,6 +1256,7 @@ function wireAdmin(){
       if(button)button.disabled=false;
     }
   }
+
 
   const uploadRefreshButton=
     document.getElementById("refresh-admin-uploads");
