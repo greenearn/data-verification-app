@@ -881,7 +881,7 @@ function wireAdmin(){
   };
 
   document.getElementById("visibility-service").onchange=e=>{
-    const s=services.find(x=>x.resource_code===e.target.value);
+  const s=adminServices.find(x=>x.resource_code===e.target.value);
     document.getElementById("service-listed").checked=!!s&&Number(s.is_listed)===1;
   };
 
@@ -984,7 +984,7 @@ function wireAdmin(){
 
       document.getElementById("visibility-service").value=resource_code;
 
-      const s=services.find(x=>x.resource_code===resource_code);
+ const s=adminServices.find(x=>x.resource_code===resource_code);
 
       document.getElementById("service-listed").checked=
         !!s&&Number(s.is_listed)===1;
@@ -1050,16 +1050,15 @@ function wireAdmin(){
     }
   };
 
-  if(services.length){
-    document.getElementById("price-service").value=services[0].resource_code;
-    document.getElementById("visibility-service").value=services[0].resource_code;
+ if(adminServices.length){
+    document.getElementById("price-service").value=adminServices[0].resource_code;
+    document.getElementById("visibility-service").value=adminServices[0].resource_code;
 
-    loadPricingEditor(services[0].resource_code);
+    loadPricingEditor(adminServices[0].resource_code);
 
     document.getElementById("service-listed").checked=
-      Number(services[0].is_listed)===1;
+      Number(adminServices[0].is_listed)===1;
   }
-}
 
 async function reloadAdmin(){
   const data=await request("/api/admin/catalogue");
