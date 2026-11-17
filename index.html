@@ -1127,6 +1127,101 @@ function wireAdmin(){
 
   document.getElementById("reload-admin").onclick=()=>adminAction(reloadAdmin);
 
+  // Load admin upload history
+  async function loadAdminUploads(){
+    const message=document.getElementById("admin-uploads-message");
+    const box=document.getElementById("admin-uploads-list");
+    const button=document.getElementById("refresh-admin-uploads");
+
+    if(!message||!box)return;
+
+    message.textContent="Loading uploaded files…";
+    box.innerHTML="";
+
+    if(button)button.disabled=true;
+
+    try{
+      const data=await request("/api/admin/uploads?limit=50&offset=0");
+
+      if(!data.ok){
+        throw new Error(data.error||"Unable to load uploads");
+      }
+
+      const uploads=data.uploads||[];
+
+      message.textContent=
+        "Total uploads: "+Number(data.pagination?.total||0);
+
+      if(!uploads.length){
+        box.innerHTML='<p class="muted">No uploaded files found.</p>';
+        return;
+      }
+
+      box.innerHTML=uploads.map(upload=>{
+        const size=(Number(upload.file_size||0)/1024).toFixed(1);
+
+        const expiry=upload.expires_at
+          ?new Date(upload.expires_at).toLocaleString()
+          :"Not available";
+
+        const created=upload.created_at
+          ?new Date(upload.created_at.replace(" ","T")+"Z").toLocaleString()
+          :"Not available";
+
+        return `
+          <div class="item">
+            <div class="item-top">
+              <strong>${esc(upload.file_name||"Unnamed file")}</strong>
+              <span class="pill">${esc(upload.status||"unknown")}</span>
+            </div>
+
+            <div class="muted">
+              Upload ID: ${Number(upload.id)}
+            </div>
+
+            <div class="muted">
+              Customer ID: ${Number(upload.user_id)}
+            </div>
+
+            <div class="muted">
+              Service: ${esc(upload.resource_code||"Not specified")}
+            </div>
+
+            <div class="muted">
+              File type: ${esc(upload.mime_type||"Unknown")}
+            </div>
+
+            <div class="muted">
+              File size: ${size} KB
+            </div>
+
+            <div class="muted">
+              Uploaded: ${esc(created)}
+            </div>
+
+            <div class="muted">
+              Expires: ${esc(expiry)}
+            </div>
+          </div>
+        `;
+      }).join("");
+
+    }catch(error){
+      message.textContent="Error: "+error.message;
+    }finally{
+      if(button)button.disabled=false;
+    }
+  }
+
+  const uploadRefreshButton=
+    document.getElementById("refresh-admin-uploads");
+
+  if(uploadRefreshButton){
+    uploadRefreshButton.onclick=loadAdminUploads;
+  }
+
+  loadAdminUploads();
+
   document.getElementById("cn-validate-upload").onclick=async()=>{
     const fileInput=document.getElementById("cn-upload-file");
     const taskType=document.getElementById("cn-task-type").value;
