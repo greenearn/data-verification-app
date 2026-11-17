@@ -48,8 +48,8 @@ button{cursor:pointer}
 .secondary{background:#20364a;color:#e1edf5;border:1px solid var(--line)}
 .danger{background:#48252e;color:#ffd9dd;border:1px solid #75404a}
 .row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.actions{display:flex;gap:8px;flex-wrap:wrap}
-.actions .btn{flex:1}
+.actions{display:flex;gap:8px;flex-wrap:wrap;position:relative;z-index:5}
+.actions .btn{flex:1;position:relative;z-index:6;pointer-events:auto!important;touch-action:manipulation;cursor:pointer}
 .note{padding:11px;border-radius:10px;background:#142b3c;color:#bcd2e2;font-size:11px;margin:10px 0}
 .success{color:var(--mint)}
 .error{color:var(--red)}
@@ -464,10 +464,22 @@ function renderDashboard(){
     const link = document.createElement("a");
     link.href = url;
     link.download = fileName;
+    link.style.position = "fixed";
+    link.style.left = "-9999px";
     document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+
+    try {
+      link.click();
+      generatorMessage.textContent = "Download requested: " + fileName;
+    } catch (error) {
+      generatorMessage.textContent =
+        "The download was blocked by this app view. Open the Mini App in your browser and try again.";
+    }
+
+    setTimeout(function () {
+      link.remove();
+      URL.revokeObjectURL(url);
+    }, 1500);
   }
 
   function shuffledCopy(items) {
