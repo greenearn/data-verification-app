@@ -192,6 +192,63 @@ function balanceText(){
   return money(cents,"USDT");
 }
 
+async function loadOrders(){
+  const message = document.getElementById("orders-message");
+  const list = document.getElementById("orders-list");
+  const refreshButton = document.getElementById("orders-refresh");
+
+  if(!message || !list) return;
+
+  if(refreshButton) refreshButton.disabled = true;
+
+  message.textContent = "Loading order history...";
+  list.innerHTML = "";
+
+  try{
+    const result = await request("/api/orders?limit=20&offset=0");
+
+    const orders = result.orders || [];
+
+    if(!orders.length){
+      message.textContent = "No order history found.";
+      list.innerHTML = "";
+      return;
+    }
+
+    message.textContent =
+      "Showing " + orders.length + " of " +
+      (result.pagination?.total || orders.length) + " orders.";
+
+    list.innerHTML = orders.map(order => {
+      const amount = order.customer_charge_cents == null
+        ? "Not available"
+        : money(
+            Number(order.customer_charge_cents),
+            order.currency || "USD"
+          );
+
+      return `
+        <div class="item">
+          <strong>Order #${esc(String(order.id))}</strong>
+          <div>Service: ${esc(order.resource_code || "Unknown")}</div>
+          <div>Quantity: ${esc(String(order.quantity ?? "—"))}</div>
+          <div>Amount: ${esc(amount)}</div>
+          <div>Status: ${esc(order.status || "Unknown")}</div>
+          <small>Created: ${esc(String(order.created_at || "—"))}</small>
+        </div>
+      `;
+    }).join("");
+
+  }catch(error){
+    message.textContent =
+      "Could not load order history: " + error.message;
+
+    list.innerHTML = "";
+  }finally{
+    if(refreshButton) refreshButton.disabled = false;
+  }
+}
+
 function renderDashboard(){
   const name=user.first_name||"Customer";
 
@@ -383,11 +440,11 @@ document.getElementById("customer-file").addEventListener("change", async functi
   document.getElementById("preview-result").textContent="Input cleared.";
 };
 
-  document.getElementById("orders-refresh").onclick=loadOrders;
-  document.getElementById("refresh-session").onclick=refreshSession;
+ document.getElementById("orders-refresh").onclick=loadOrders;
+document.getElementById("refresh-session").onclick=refreshSession;
 
-  loadOrders();
-  updateEstimate();
+loadOrders();
+updateEstimate();
 
   if(adminMode)wireAdmin();
 }
