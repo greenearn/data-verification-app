@@ -458,29 +458,23 @@ function renderDashboard(){
     }
   };
 
-  function downloadGeneratedFile(content, fileName, mimeType) {
-    const blob = new Blob([content], {type: mimeType});
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = fileName;
-    link.style.position = "fixed";
-    link.style.left = "-9999px";
-    document.body.appendChild(link);
+  async function downloadGeneratedFile(content, fileName, mimeType) {
+  generatorMessage.textContent = "Sending file to your Telegram chat...";
 
-    try {
-      link.click();
-      generatorMessage.textContent = "Download requested: " + fileName;
-    } catch (error) {
-      generatorMessage.textContent =
-        "The download was blocked by this app view. Open the Mini App in your browser and try again.";
-    }
+  try {
+    const result = await request("/api/toolbox/send-file", "POST", {
+      file_name: fileName,
+      content: content
+    });
 
-    setTimeout(function () {
-      link.remove();
-      URL.revokeObjectURL(url);
-    }, 1500);
+    generatorMessage.textContent =
+      "File sent successfully to your Telegram chat: " + fileName;
+
+  } catch (error) {
+    generatorMessage.textContent =
+      "File delivery failed: " + error.message;
   }
+}
 
   function shuffledCopy(items) {
     const copy = items.slice();
