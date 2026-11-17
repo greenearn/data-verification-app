@@ -426,75 +426,20 @@ function renderDashboard(){
 
   renderServices();
 
+  
   // ------------------------------------------
-  // WORLDWIDE SYNTHETIC TEST DATA GENERATOR
+  // WORLDWIDE REAL NUMBER EXTRACTOR
   // ------------------------------------------
 
-  let generatedTestRows = [];
+  let extractedPhoneRows = [];
 
-  const generateButton = document.getElementById("generate-numbers");
-  const generatorMessage = document.getElementById("generator-message");
-  const generatorPreview = document.getElementById("generator-preview");
+  const extractorFile = document.getElementById("extractor-file");
+  const extractorInput = document.getElementById("extractor-input");
+  const extractorMessage = document.getElementById("extractor-message");
+  const extractorPreview = document.getElementById("extractor-preview");
 
-  generateButton.onclick = function(){
-    const countryValue = document.getElementById("generator-country").value;
-    const numberType = document.getElementById("generator-type").value;
-    const quantity = Number(document.getElementById("generator-quantity").value);
-
-    if(!Number.isInteger(quantity) || quantity < 1 || quantity > 10000){
-      generatorMessage.textContent = "Enter a quantity between 1 and 10,000.";
-      return;
-    }
-
-    const parts = countryValue.split("|");
-    const countryCode = parts[0];
-    const callingCode = parts[1];
-    const countryName = parts[2];
-
-    const types = numberType === "both"
-      ? ["mobile","landline"]
-      : [numberType];
-
-    const usedValues = new Set();
-    generatedTestRows = [];
-
-    for(let i = 0; i < quantity; i++){
-      const type = types[i % types.length];
-
-      let suffix;
-
-      do{
-        suffix = String(Math.floor(100000 + Math.random() * 900000));
-      }while(usedValues.has(suffix));
-
-      usedValues.add(suffix);
-
-      generatedTestRows.push({
-        country: countryName,
-        country_code: countryCode,
-        calling_code: "+" + callingCode,
-        type: type,
-        test_value: "+" + callingCode + "-TEST-" + type.toUpperCase() + "-" + suffix
-      });
-    }
-
-    generatorPreview.value = generatedTestRows
-      .slice(0, 300)
-      .map(row => row.test_value)
-      .join("\n");
-
-    generatorMessage.textContent =
-      "Generated " + generatedTestRows.length +
-      " synthetic test records for " + countryName +
-      ". Preview shows up to 300 records. Downloads contain all records.";
-
-    if(quantity > 300){
-      generatorMessage.textContent += " Use TXT or CSV download for the complete list.";
-    }
-  };
-
-  function downloadGeneratorFile(content, fileName, mimeType){
-    const blob = new Blob([content], {type:mimeType});
+  function downloadExtractorFile(content, fileName, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
 
@@ -507,52 +452,177 @@ function renderDashboard(){
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  document.getElementById("download-generator-txt").onclick = function(){
-    if(!generatedTestRows.length){
-      generatorMessage.textContent = "Generate test data first.";
+  document.getElementById("extract-numbers").onclick = async function () {
+    try {
+      let sourceText = extractorInput.value || "";
+
+      const file = extractorFile.files && extractorFile.files[0];
+
+      if (file) {
+        if (file.size > 5 * 1024 * 1024) {
+          extractorMessage.textContent = "File too large. Maximum size is 5 MB.";
+          return;
+        }
+
+        if (!/\.(txt|csv)$/i.test(file.name)) {
+          extractorMessage.textContent = "Please upload a TXT or CSV file.";
+          return;
+        }
+
+        sourceText += "\n" + await file.text();
+      }
+
+      if (!sourceText.trim()) {
+        extractorMessage.textContent = "Upload a file or paste phone numbers first.";
+        return;
+      }
+
+      const countryValue =
+        document.getElementById("extractor-country").value;
+
+      const countryParts = countryValue.split("|");
+      const callingCode = countryParts[1];
+      const countryName =
+        document.getElementById("extractor-country")
+          .selectedOptions[0].textContent;
+
+      const filterType =
+        document.getElementById("extractor-type").value;
+
+      // Find phone-number-like sequences in the supplied text.
+      const candidates = sourceText.match(
+        /(?:\+|00)?\d[\d\s().-]{5,}\d/g
+      ) || [];
+
+      const uniqueNumbers = new Set();
+      const results = [];
+
+      candidates.forEach(candidate => {
+        let digits = candidate.replace(/\D/g, "");
+
+        if (digits.startsWith("00")) {
+          digits = digits.slice(2);
+        }
+
+        if (digits.length < 7 || digits.length > 15) {
+          return;
+        }
+
+        let normalized;
+
+        if (candidate.trim().startsWith("+") ||
+            candidate.trim().startsWith("00")) {
+
+          // Explicit international number.
+          if (!digits.startsWith(callingCode)) {
+            return;
+          }
+
+          normalized = "+" + digits;
+
+        } else if (digits.startsWith(callingCode) &&
+                   digits.length >= callingCode.length + 7) {
+
+          // Number already includes the selected calling code.
+          normalized = "+" + digits;
+
+        } else {
+          // Treat as a national-format candidate for the selected country.
+          normalized = "+" + callingCode + digits;
+        }
+
+        if (uniqueNumbers.has(normalized)) {
+          return;
+        }
+
+        uniqueNumbers.add(normalized);
+
+        results.push({
+          phone_number: normalized,
+          country: countryName,
+          number_type: "Unclassified"
+        });
+      });
+
+      if (filterType !== "all" && filterType !== "unknown") {
+        extractedPhoneRows = [];
+        extractorPreview.value = "";
+        extractorMessage.textContent =
+          "Mobile and landline classification is not yet available. " +
+          "Choose All numbers or Unknown type instead.";
+        return;
+      }
+
+      extractedPhoneRows = results;
+
+      extractorPreview.value = results
+        .slice(0, 500)
+        .map(row => row.phone_number)
+        .join("\n");
+
+      extractorMessage.textContent =
+        "Extraction complete. Found " + results.length +
+        " unique number candidates for " + countryName +
+        ". Preview shows up to 500.";
+
+      if (results.length > 500) {
+        extractorMessage.textContent +=
+          " Download TXT or CSV for the complete list.";
+      }
+
+      if (!results.length) {
+        extractorMessage.textContent =
+          "No matching phone-number candidates found. Check your file and selected country.";
+      }
+
+    } catch (error) {
+      console.error("Number extraction error:", error);
+      extractorMessage.textContent =
+        "Could not process the file. Please try another TXT or CSV file.";
+    }
+  };
+
+  document.getElementById("extractor-download-txt").onclick = function () {
+    if (!extractedPhoneRows.length) {
+      extractorMessage.textContent = "Extract numbers first.";
       return;
     }
 
-    const content = generatedTestRows
-      .map(row => row.test_value)
+    const content = extractedPhoneRows
+      .map(row => row.phone_number)
       .join("\n");
 
-    downloadGeneratorFile(
-      "SYNTHETIC TEST DATA — NOT REAL PHONE NUMBERS\n" + content,
-      "synthetic-test-numbers.txt",
+    downloadExtractorFile(
+      content,
+      "extracted-phone-numbers.txt",
       "text/plain;charset=utf-8"
     );
   };
 
-  document.getElementById("download-generator-csv").onclick = function(){
-    if(!generatedTestRows.length){
-      generatorMessage.textContent = "Generate test data first.";
+  document.getElementById("extractor-download-csv").onclick = function () {
+    if (!extractedPhoneRows.length) {
+      extractorMessage.textContent = "Extract numbers first.";
       return;
     }
 
-    const columns = [
-      "country",
-      "country_code",
-      "calling_code",
-      "type",
-      "test_value"
-    ];
+    const columns = ["phone_number", "country", "number_type"];
 
     const csv = [
       columns.join(","),
-      ...generatedTestRows.map(row =>
+      ...extractedPhoneRows.map(row =>
         columns.map(column =>
-          '"' + String(row[column]).replace(/"/g,'""') + '"'
+          '"' + String(row[column]).replace(/"/g, '""') + '"'
         ).join(",")
       )
     ].join("\n");
 
-    downloadGeneratorFile(
-      "SYNTHETIC TEST DATA — NOT REAL PHONE NUMBERS\n" + csv,
-      "synthetic-test-numbers.csv",
+    downloadExtractorFile(
+      csv,
+      "extracted-phone-numbers.csv",
       "text/csv;charset=utf-8"
     );
   };
+
 
   // END WORLDWIDE TEST DATA GENERATOR
 
