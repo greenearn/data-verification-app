@@ -821,7 +821,27 @@ function adminMarkup(){
           Refresh uploads
         </button>
       </div>
+<div class="form-group">
+  <label class="field" for="upload-search">Search uploads</label>
+  <input
+    id="upload-search"
+    type="text"
+    placeholder="Search filename, Upload ID or Customer ID"
+  >
+</div>
 
+<div class="form-group">
+  <label class="field" for="upload-status-filter">Filter by status</label>
+  <select id="upload-status-filter">
+    <option value="all">All statuses</option>
+    <option value="uploaded">Uploaded</option>
+    <option value="attached">Attached</option>
+    <option value="reviewed">Reviewed</option>
+    <option value="rejected">Rejected</option>
+    <option value="expired">Expired</option>
+    </select>
+</div>
+  <p id="upload-filter-count" class="muted"></p>
       <div id="admin-uploads-message" class="muted">
         Upload history has not been loaded.
       </div>
@@ -1184,7 +1204,13 @@ function wireAdmin(){
         ).join("");
 
         return `
-          <div class="item" data-upload-id="${Number(upload.id)}">
+         <div
+  class="item"
+  data-upload-id="${Number(upload.id)}"
+  data-customer-id="${Number(upload.user_id)}"
+  data-file-name="${esc(upload.file_name||"").toLowerCase()}"
+  data-status="${esc(currentStatus)}"
+>
             <div class="item-top">
               <strong>${esc(upload.file_name||"Unnamed file")}</strong>
               <span class="pill">${esc(currentStatus)}</span>
@@ -1218,7 +1244,59 @@ function wireAdmin(){
           </div>
         `;
       }).join("");
+      function filterAdminUploads(){
+        const search=document.getElementById("upload-search");
+        const filter=document.getElementById("upload-status-filter");
 
+        const query=(search?.value||"").trim().toLowerCase();
+        const selectedStatus=filter?.value||"all";
+
+        const items=box.querySelectorAll("[data-upload-id]");
+
+        let visible=0;
+
+        items.forEach(item=>{
+          const uploadId=item.dataset.uploadId||"";
+          const customerId=item.dataset.customerId||"";
+          const fileName=item.dataset.fileName||"";
+          const status=item.dataset.status||"";
+
+          const matchesSearch=
+            !query ||
+            uploadId.includes(query) ||
+            customerId.includes(query) ||
+            fileName.includes(query);
+
+          const matchesStatus=
+            selectedStatus==="all" ||
+            status===selectedStatus;
+
+          const show=matchesSearch&&matchesStatus;
+
+          item.style.display=show?"":"none";
+
+          if(show)visible++;
+        });
+
+        const count=document.getElementById("upload-filter-count");
+
+        if(count){
+          count.textContent="Showing "+visible+" of "+items.length+" uploads";
+        }
+      }
+
+      const searchInput=document.getElementById("upload-search");
+      const statusFilter=document.getElementById("upload-status-filter");
+
+      if(searchInput){
+        searchInput.oninput=filterAdminUploads;
+      }
+
+      if(statusFilter){
+        statusFilter.onchange=filterAdminUploads;
+      }
+
+      filterAdminUploads();
       box.querySelectorAll("[data-upload-id]").forEach(item=>{
         const saveButton=item.querySelector(".save-upload-status");
 
