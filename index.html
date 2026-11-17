@@ -265,13 +265,15 @@ function renderDashboard(){
       <span class="status">SECURE SESSION</span>
     </header>
 
-    <nav class="nav">
-      <a href="#services">Services</a>
-      <a href="#prepare">Prepare list</a>
-      <a href="#orders">Orders</a>
-      <a href="#account">Account</a>
-      ${adminMode?'<a href="#admin">Admin dashboard</a>':""}
-    </nav>
+   
+<nav class="nav">
+  <a href="#services">Services</a>
+  <a href="#prepare">Prepare list</a>
+  <a href="#toolbox">Toolbox</a>
+  <a href="#orders">Orders</a>
+  <a href="#account">Account</a>
+  ${adminMode?'<a href="#admin">Admin dashboard</a>':""}
+</nav>
 
     <h1>Welcome, ${esc(name)}</h1>
     <p>Manage your validation services and account.</p>
