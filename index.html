@@ -329,81 +329,81 @@ function renderDashboard(){
       <div class="note">Ordering is disabled. This screen only prepares and reviews your input locally.</div>
     </section>
 
+
 <section id="toolbox" class="panel">
-  <h2>Worldwide Number Generator</h2>
-  <p>Generate synthetic phone-number test data by country.</p>
+  <h2>Worldwide Real Number Extractor</h2>
+  <p>Extract and organize phone numbers from your authorized TXT or CSV contact lists.</p>
 
   <div class="note">
-    Test data only. Generated values contain TEST markers and are
-    not real, callable phone numbers or marketing contacts.
+    Only upload contact data you are authorized to use. This tool does not discover or generate private people's phone numbers.
   </div>
 
-  <label class="field" for="generator-country">Select country</label>
-  <select id="generator-country">
-    <option value="NP|977|Nepal">Nepal (+977)</option>
-    <option value="IN|91|India">India (+91)</option>
-    <option value="US|1|United States">United States (+1)</option>
-    <option value="GB|44|United Kingdom">United Kingdom (+44)</option>
-    <option value="TH|66|Thailand">Thailand (+66)</option>
-    <option value="CN|86|China">China (+86)</option>
-    <option value="MY|60|Malaysia">Malaysia (+60)</option>
-    <option value="SG|65|Singapore">Singapore (+65)</option>
-    <option value="AE|971|United Arab Emirates">UAE (+971)</option>
-    <option value="BD|880|Bangladesh">Bangladesh (+880)</option>
-    <option value="PK|92|Pakistan">Pakistan (+92)</option>
-    <option value="PH|63|Philippines">Philippines (+63)</option>
-    <option value="ID|62|Indonesia">Indonesia (+62)</option>
-    <option value="JP|81|Japan">Japan (+81)</option>
-    <option value="KR|82|South Korea">South Korea (+82)</option>
-    <option value="AU|61|Australia">Australia (+61)</option>
-    <option value="CA|1|Canada">Canada (+1)</option>
-    <option value="DE|49|Germany">Germany (+49)</option>
-    <option value="FR|33|France">France (+33)</option>
-    <option value="BR|55|Brazil">Brazil (+55)</option>
+  <label class="field" for="extractor-country">Country</label>
+  <select id="extractor-country">
+    <option value="NP|977">Nepal (+977)</option>
+    <option value="IN|91">India (+91)</option>
+    <option value="US|1">United States (+1)</option>
+    <option value="GB|44">United Kingdom (+44)</option>
+    <option value="TH|66">Thailand (+66)</option>
+    <option value="CN|86">China (+86)</option>
+    <option value="MY|60">Malaysia (+60)</option>
+    <option value="SG|65">Singapore (+65)</option>
+    <option value="AE|971">UAE (+971)</option>
+    <option value="BD|880">Bangladesh (+880)</option>
+    <option value="PK|92">Pakistan (+92)</option>
+    <option value="PH|63">Philippines (+63)</option>
+    <option value="ID|62">Indonesia (+62)</option>
+    <option value="JP|81">Japan (+81)</option>
+    <option value="KR|82">South Korea (+82)</option>
+    <option value="AU|61">Australia (+61)</option>
+    <option value="CA|1">Canada (+1)</option>
+    <option value="DE|49">Germany (+49)</option>
+    <option value="FR|33">France (+33)</option>
+    <option value="BR|55">Brazil (+55)</option>
   </select>
 
-  <label class="field" for="generator-type">Number type</label>
-  <select id="generator-type">
-    <option value="mobile">Mobile</option>
-    <option value="landline">Landline</option>
-    <option value="both">Both</option>
+  <label class="field" for="extractor-file">Upload contact file</label>
+  <input id="extractor-file" type="file" accept=".txt,.csv,text/plain,text/csv">
+
+  <label class="field" for="extractor-input">Or paste phone numbers</label>
+  <textarea
+    id="extractor-input"
+    placeholder="Paste your authorized phone-number list here. One number per line, or numbers inside CSV text."
+  ></textarea>
+
+  <label class="field" for="extractor-type">Number type</label>
+  <select id="extractor-type">
+    <option value="all">All numbers</option>
+    <option value="mobile">Mobile (where identifiable)</option>
+    <option value="landline">Landline (where identifiable)</option>
+    <option value="unknown">Unknown type</option>
   </select>
 
-  <label class="field" for="generator-quantity">Quantity</label>
-  <input
-    id="generator-quantity"
-    type="number"
-    min="1"
-    max="10000"
-    value="100"
-  >
-
-  <p class="muted">Maximum 10,000 synthetic records per generation.</p>
-
-  <button class="btn" id="generate-numbers" type="button">
-    Generate test data
+  <button class="btn" id="extract-numbers" type="button">
+    Extract and filter numbers
   </button>
 
-  <div id="generator-message" class="note">
-    No test data generated yet.
+  <div id="extractor-message" class="note">
+    Select a file or paste your contact list to begin.
   </div>
 
-  <label class="field" for="generator-preview">Generated results</label>
+  <label class="field" for="extractor-preview">Extracted numbers</label>
   <textarea
-    id="generator-preview"
+    id="extractor-preview"
     readonly
-    placeholder="Your generated test data will appear here."
+    placeholder="Extracted numbers will appear here."
   ></textarea>
 
   <div class="actions">
-    <button class="btn secondary" id="download-generator-txt" type="button">
+    <button class="btn secondary" id="extractor-download-txt" type="button">
       Download TXT
     </button>
-    <button class="btn secondary" id="download-generator-csv" type="button">
+    <button class="btn secondary" id="extractor-download-csv" type="button">
       Download CSV
     </button>
   </div>
 </section>
+
 
     <section id="orders" class="panel">
       <h2>Order history</h2>
