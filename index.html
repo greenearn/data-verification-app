@@ -380,14 +380,26 @@ function renderServices(){
     items.forEach(s=>{
       const selected=s.resource_code===selectedCode;
       const status=!s.configured?"Pricing not configured":
-        !s.enabled?"Not active":
-        !s.can_order?"Ordering unavailable":"Available";
+  !s.enabled?"Not active":
+  !s.can_order?"Ordering unavailable":"Available";
+
+const priceText = s.configured && s.unit_price_cents != null
+  ? "Price: " + money(
+      Math.ceil(
+        Number(s.unit_price_cents) *
+        Number(s.minimum_order_quantity) /
+        Number(s.pricing_unit_quantity)
+      ),
+      s.currency
+    ) + " / minimum order"
+  : "Price not configured";
 
       html+=`<article class="service ${selected?"selected":""}" data-code="${esc(s.resource_code)}">
         <strong>${esc(s.name)}</strong>
         <p>${esc(s.description)}</p>
         <span class="pill">${esc(status)}</span>
         <p>Minimum quantity: ${s.minimum_order_quantity==null?"Not set":Number(s.minimum_order_quantity).toLocaleString()}</p>
+        <p>${esc(priceText)}</p>
       </article>`;
     });
 
