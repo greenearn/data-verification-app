@@ -331,81 +331,60 @@ function renderDashboard(){
 
 
 <section id="toolbox" class="panel">
-  <h2>Worldwide Real Number Extractor</h2>
-  <p>Extract and organize phone numbers from your authorized TXT or CSV contact lists.</p>
+  <h2>Worldwide Test Number Generator</h2>
+  <p>Generate and download country-specific fictional test numbers.</p>
 
-  <div class="note">
-    Only upload contact data you are authorized to use. This tool does not discover or generate private people's phone numbers.
-  </div>
-
-  <label class="field" for="extractor-country">Country</label>
-  <select id="extractor-country">
-    <option value="NP|977">Nepal (+977)</option>
-    <option value="IN|91">India (+91)</option>
-    <option value="US|1">United States (+1)</option>
-    <option value="GB|44">United Kingdom (+44)</option>
-    <option value="TH|66">Thailand (+66)</option>
-    <option value="CN|86">China (+86)</option>
-    <option value="MY|60">Malaysia (+60)</option>
-    <option value="SG|65">Singapore (+65)</option>
-    <option value="AE|971">UAE (+971)</option>
-    <option value="BD|880">Bangladesh (+880)</option>
-    <option value="PK|92">Pakistan (+92)</option>
-    <option value="PH|63">Philippines (+63)</option>
-    <option value="ID|62">Indonesia (+62)</option>
-    <option value="JP|81">Japan (+81)</option>
-    <option value="KR|82">South Korea (+82)</option>
-    <option value="AU|61">Australia (+61)</option>
-    <option value="CA|1">Canada (+1)</option>
-    <option value="DE|49">Germany (+49)</option>
-    <option value="FR|33">France (+33)</option>
-    <option value="BR|55">Brazil (+55)</option>
+  <label class="field" for="generator-country">Country</label>
+  <select id="generator-country">
+    <option value="NP">Nepal (+977) — range not available</option>
+    <option value="IN">India (+91) — range not available</option>
+    <option value="US">United States (+1) — type-specific range not available</option>
+    <option value="GB">United Kingdom (+44)</option>
+    <option value="AU">Australia (+61)</option>
+    <option value="TH" disabled>Thailand (+66) — range not available</option>
+    <option value="CN" disabled>China (+86) — range not available</option>
+    <option value="MY" disabled>Malaysia (+60) — range not available</option>
+    <option value="SG" disabled>Singapore (+65) — range not available</option>
+    <option value="AE" disabled>UAE (+971) — range not available</option>
+    <option value="BD" disabled>Bangladesh (+880) — range not available</option>
+    <option value="PK" disabled>Pakistan (+92) — range not available</option>
+    <option value="PH" disabled>Philippines (+63) — range not available</option>
+    <option value="ID" disabled>Indonesia (+62) — range not available</option>
+    <option value="JP" disabled>Japan (+81) — range not available</option>
+    <option value="KR" disabled>South Korea (+82) — range not available</option>
+    <option value="DE" disabled>Germany (+49) — range not available</option>
+    <option value="FR" disabled>France (+33) — range not available</option>
+    <option value="BR" disabled>Brazil (+55) — range not available</option>
+    <option value="CA" disabled>Canada (+1) — type-specific range not available</option>
   </select>
 
-  <label class="field" for="extractor-file">Upload contact file</label>
-  <input id="extractor-file" type="file" accept=".txt,.csv,text/plain,text/csv">
-
-  <label class="field" for="extractor-input">Or paste phone numbers</label>
-  <textarea
-    id="extractor-input"
-    placeholder="Paste your authorized phone-number list here. One number per line, or numbers inside CSV text."
-  ></textarea>
-
-  <label class="field" for="extractor-type">Number type</label>
-  <select id="extractor-type">
-    <option value="all">All numbers</option>
-    <option value="mobile">Mobile (where identifiable)</option>
-    <option value="landline">Landline (where identifiable)</option>
-    <option value="unknown">Unknown type</option>
+  <label class="field" for="generator-type">Number type</label>
+  <select id="generator-type">
+    <option value="mobile">Mobile</option>
+    <option value="landline">Landline</option>
+    <option value="both">Both</option>
   </select>
 
-  <button class="btn" id="extract-numbers" type="button">
-    Extract and filter numbers
-  </button>
-
-  <div id="extractor-message" class="note">
-    Select a file or paste your contact list to begin.
-  </div>
-
-  <label class="field" for="extractor-preview">Extracted numbers</label>
-  <textarea
-    id="extractor-preview"
-    readonly
-    placeholder="Extracted numbers will appear here."
-  ></textarea>
+  <label class="field" for="generator-quantity">Quantity</label>
+  <input id="generator-quantity" type="number" min="1" max="80000" value="100" inputmode="numeric">
 
   <div class="actions">
-    <button class="btn secondary" id="extractor-download-txt" type="button">
-      Download TXT
-    </button>
-    <button class="btn secondary" id="extractor-download-csv" type="button">
-      Download CSV
-    </button>
+    <button class="btn" id="generate-numbers" type="button">Generate numbers</button>
+  </div>
+
+  <div id="generator-message" class="note">Choose a supported country, number type and quantity.</div>
+
+  <label class="field" for="generator-preview">Generated numbers</label>
+  <textarea id="generator-preview" readonly placeholder="Your generated test numbers will appear here."></textarea>
+
+  <div class="actions">
+    <button class="btn secondary" id="generator-download-txt" type="button">Download TXT</button>
+    <button class="btn secondary" id="generator-download-csv" type="button">Download CSV</button>
   </div>
 </section>
 
 
-    <section id="orders" class="panel">
+<section id="orders" class="panel">
       <h2>Order history</h2>
       <p id="orders-message">Loading order history…</p>
       <div id="orders-list"></div>
@@ -428,203 +407,180 @@ function renderDashboard(){
 
   
   // ------------------------------------------
-  // WORLDWIDE REAL NUMBER EXTRACTOR
+  // WORLDWIDE TEST NUMBER GENERATOR
   // ------------------------------------------
 
-  let extractedPhoneRows = [];
+  let generatedPhoneRows = [];
 
-  const extractorFile = document.getElementById("extractor-file");
-  const extractorInput = document.getElementById("extractor-input");
-  const extractorMessage = document.getElementById("extractor-message");
-  const extractorPreview = document.getElementById("extractor-preview");
+  const generatorCountry = document.getElementById("generator-country");
+  const generatorType = document.getElementById("generator-type");
+  const generatorQuantity = document.getElementById("generator-quantity");
+  const generatorMessage = document.getElementById("generator-message");
+  const generatorPreview = document.getElementById("generator-preview");
 
-  function downloadExtractorFile(content, fileName, mimeType) {
-    const blob = new Blob([content], { type: mimeType });
+  // These pools contain only ranges published for fictional/creative use.
+  // They are not subscriber-number allocations.
+  const officialTestPools = {
+    GB: {
+      callingCode: "44",
+      country: "United Kingdom",
+      source: "Ofcom drama-number ranges",
+      mobile: Array.from({length: 1000}, (_, i) =>
+        "+447700900" + String(i).padStart(3, "0")
+      ),
+      landline: Array.from({length: 1000}, (_, i) =>
+        "+441632960" + String(i).padStart(3, "0")
+      )
+    },
+    AU: {
+      callingCode: "61",
+      country: "Australia",
+      source: "ACMA fictional-use ranges",
+      mobile: [
+        "0491570006","0491570156","0491570157","0491570158","0491570159",
+        "0491570110","0491570313","0491570737","0491571266","0491571491",
+        "0491571804","0491572549","0491572665","0491572983","0491573770",
+        "0491573087","0491574118","0491574632","0491575254","0491575789",
+        "0491576398","0491576801","0491577426","0491577644","0491578957",
+        "0491578148","0491578888","0491579212","0491579760","0491579455"
+      ].map(n => "+61" + n.slice(1)),
+      landline: (() => {
+        const rows = [];
+        ["2","3","7","8"].forEach(area => {
+          ["5550","7010"].forEach(prefix => {
+            for (let i = 0; i < 10000; i++) {
+              rows.push("+61" + area + prefix + String(i).padStart(4, "0"));
+            }
+          });
+        });
+        return rows;
+      })()
+    }
+  };
+
+  function downloadGeneratedFile(content, fileName, mimeType) {
+    const blob = new Blob([content], {type: mimeType});
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-
     link.href = url;
     link.download = fileName;
     document.body.appendChild(link);
     link.click();
     link.remove();
-
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    URL.revokeObjectURL(url);
   }
 
-  document.getElementById("extract-numbers").onclick = async function () {
-    try {
-      let sourceText = extractorInput.value || "";
-
-      const file = extractorFile.files && extractorFile.files[0];
-
-      if (file) {
-        if (file.size > 5 * 1024 * 1024) {
-          extractorMessage.textContent = "File too large. Maximum size is 5 MB.";
-          return;
-        }
-
-        if (!/\.(txt|csv)$/i.test(file.name)) {
-          extractorMessage.textContent = "Please upload a TXT or CSV file.";
-          return;
-        }
-
-        sourceText += "\n" + await file.text();
-      }
-
-      if (!sourceText.trim()) {
-        extractorMessage.textContent = "Upload a file or paste phone numbers first.";
-        return;
-      }
-
-      const countryValue =
-        document.getElementById("extractor-country").value;
-
-      const countryParts = countryValue.split("|");
-      const callingCode = countryParts[1];
-      const countryName =
-        document.getElementById("extractor-country")
-          .selectedOptions[0].textContent;
-
-      const filterType =
-        document.getElementById("extractor-type").value;
-
-      // Find phone-number-like sequences in the supplied text.
-      const candidates = sourceText.match(
-        /(?:\+|00)?\d[\d\s().-]{5,}\d/g
-      ) || [];
-
-      const uniqueNumbers = new Set();
-      const results = [];
-
-      candidates.forEach(candidate => {
-        let digits = candidate.replace(/\D/g, "");
-
-        if (digits.startsWith("00")) {
-          digits = digits.slice(2);
-        }
-
-        if (digits.length < 7 || digits.length > 15) {
-          return;
-        }
-
-        let normalized;
-
-        if (candidate.trim().startsWith("+") ||
-            candidate.trim().startsWith("00")) {
-
-          // Explicit international number.
-          if (!digits.startsWith(callingCode)) {
-            return;
-          }
-
-          normalized = "+" + digits;
-
-        } else if (digits.startsWith(callingCode) &&
-                   digits.length >= callingCode.length + 7) {
-
-          // Number already includes the selected calling code.
-          normalized = "+" + digits;
-
-        } else {
-          // Treat as a national-format candidate for the selected country.
-          normalized = "+" + callingCode + digits;
-        }
-
-        if (uniqueNumbers.has(normalized)) {
-          return;
-        }
-
-        uniqueNumbers.add(normalized);
-
-        results.push({
-          phone_number: normalized,
-          country: countryName,
-          number_type: "Unclassified"
-        });
-      });
-
-      if (filterType !== "all" && filterType !== "unknown") {
-        extractedPhoneRows = [];
-        extractorPreview.value = "";
-        extractorMessage.textContent =
-          "Mobile and landline classification is not yet available. " +
-          "Choose All numbers or Unknown type instead.";
-        return;
-      }
-
-      extractedPhoneRows = results;
-
-      extractorPreview.value = results
-        .slice(0, 500)
-        .map(row => row.phone_number)
-        .join("\n");
-
-      extractorMessage.textContent =
-        "Extraction complete. Found " + results.length +
-        " unique number candidates for " + countryName +
-        ". Preview shows up to 500.";
-
-      if (results.length > 500) {
-        extractorMessage.textContent +=
-          " Download TXT or CSV for the complete list.";
-      }
-
-      if (!results.length) {
-        extractorMessage.textContent =
-          "No matching phone-number candidates found. Check your file and selected country.";
-      }
-
-    } catch (error) {
-      console.error("Number extraction error:", error);
-      extractorMessage.textContent =
-        "Could not process the file. Please try another TXT or CSV file.";
+  function shuffledCopy(items) {
+    const copy = items.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
     }
-  };
+    return copy;
+  }
 
-  document.getElementById("extractor-download-txt").onclick = function () {
-    if (!extractedPhoneRows.length) {
-      extractorMessage.textContent = "Extract numbers first.";
+  document.getElementById("generate-numbers").onclick = function () {
+    generatedPhoneRows = [];
+    generatorPreview.value = "";
+
+    const countryCode = generatorCountry.value;
+    const type = generatorType.value;
+    const quantity = Number(generatorQuantity.value);
+    const countryData = officialTestPools[countryCode];
+
+    if (!countryData) {
+      generatorMessage.textContent =
+        "An officially published fictional-number range is not available for this country yet.";
       return;
     }
 
-    const content = extractedPhoneRows
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 80000) {
+      generatorMessage.textContent = "Enter a quantity between 1 and 80,000.";
+      return;
+    }
+
+    let pool = [];
+    if (type === "both") {
+      pool = countryData.mobile.map(phone_number => ({
+        phone_number, number_type: "mobile"
+      })).concat(countryData.landline.map(phone_number => ({
+        phone_number, number_type: "landline"
+      })));
+    } else {
+      pool = (countryData[type] || []).map(phone_number => ({
+        phone_number, number_type: type
+      }));
+    }
+
+    if (!pool.length) {
+      generatorMessage.textContent = "No published test numbers are available for this number type.";
+      return;
+    }
+
+    if (quantity > pool.length) {
+      generatorMessage.textContent =
+        "This selection has " + pool.length +
+        " unique official test numbers available. Reduce the quantity to " +
+        pool.length + " or less.";
+      return;
+    }
+
+    const selected = shuffledCopy(pool).slice(0, quantity);
+    generatedPhoneRows = selected.map(row => ({
+      phone_number: row.phone_number,
+      country: countryData.country,
+      calling_code: "+" + countryData.callingCode,
+      number_type: row.number_type,
+      source: countryData.source
+    }));
+
+    generatorPreview.value = generatedPhoneRows
+      .slice(0, 500)
       .map(row => row.phone_number)
       .join("\n");
 
-    downloadExtractorFile(
-      content,
-      "extracted-phone-numbers.txt",
+    generatorMessage.textContent =
+      "Generated " + generatedPhoneRows.length + " unique " +
+      countryData.country + " " + type + " test numbers. " +
+      "Available pool: " + pool.length + ".";
+    if (generatedPhoneRows.length > 500) {
+      generatorMessage.textContent += " Preview shows the first 500; downloads include the full list.";
+    }
+  };
+
+  document.getElementById("generator-download-txt").onclick = function () {
+    if (!generatedPhoneRows.length) {
+      generatorMessage.textContent = "Generate numbers first.";
+      return;
+    }
+    downloadGeneratedFile(
+      generatedPhoneRows.map(row => row.phone_number).join("\n"),
+      "test-phone-numbers.txt",
       "text/plain;charset=utf-8"
     );
   };
 
-  document.getElementById("extractor-download-csv").onclick = function () {
-    if (!extractedPhoneRows.length) {
-      extractorMessage.textContent = "Extract numbers first.";
+  document.getElementById("generator-download-csv").onclick = function () {
+    if (!generatedPhoneRows.length) {
+      generatorMessage.textContent = "Generate numbers first.";
       return;
     }
-
-    const columns = ["phone_number", "country", "number_type"];
-
+    const columns = ["phone_number","country","calling_code","number_type","source"];
     const csv = [
       columns.join(","),
-      ...extractedPhoneRows.map(row =>
-        columns.map(column =>
-          '"' + String(row[column]).replace(/"/g, '""') + '"'
-        ).join(",")
-      )
+      ...generatedPhoneRows.map(row => columns.map(key =>
+        '"' + String(row[key]).replace(/"/g, '""') + '"'
+      ).join(","))
     ].join("\n");
 
-    downloadExtractorFile(
+    downloadGeneratedFile(
       csv,
-      "extracted-phone-numbers.csv",
+      "test-phone-numbers.csv",
       "text/csv;charset=utf-8"
     );
   };
 
-
-  // END WORLDWIDE TEST DATA GENERATOR
+  // END WORLDWIDE TEST NUMBER GENERATOR
 
   document.getElementById("service-select").addEventListener("change",function(){
     selectedCode=this.value;
