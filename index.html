@@ -1065,7 +1065,7 @@ async function reloadAdmin(){
   const data=await request("/api/admin/catalogue");
 
   categories=data.categories||[];
-  services=data.services||[];
+  adminServices=data.services||[];
 
   renderDashboard();
 }
