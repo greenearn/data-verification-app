@@ -926,7 +926,8 @@ document.getElementById("submit-number-request").onclick = async function () {
     message.textContent =
       "Request #" + result.request_id +
       " submitted successfully. The admin team has been notified.";
-
+    await loadRequestHistory();
+    await loadNotifications();
   } catch (error) {
     message.textContent = "Request failed: " + error.message;
   } finally {
@@ -1632,8 +1633,7 @@ function wireAdmin(){
   const requestList = document.getElementById("number-requests-list");
   const requestMessage = document.getElementById("number-requests-message");
   const refreshRequests = document.getElementById("refresh-number-requests");
-
-  async function loadNumberRequests() {
+async function loadNumberRequests() {
     requestMessage.textContent = "Loading requests...";
     requestList.innerHTML = "";
     refreshRequests.disabled = true;
@@ -1664,6 +1664,23 @@ function wireAdmin(){
             <div class="muted">Type: ${esc(r.number_type)}</div>
             <div class="muted">Username: ${esc(r.username || "Not provided")}</div>
             <div class="muted">Telegram ID: ${esc(r.telegram_id)}</div>
+            <div class="muted">Submitted: ${esc(formatDate(r.created_at))}</div>
+
+            ${r.admin_file_name ? `
+              <div>Uploaded file: ${esc(r.admin_file_name)}</div>
+            ` : ""}
+
+            ${r.admin_note ? `
+              <div>Admin note: ${esc(r.admin_note)}</div>
+            ` : ""}
+
+            ${r.completed_at ? `
+              <div>Completed: ${esc(formatDate(r.completed_at))}</div>
+            ` : ""}
+
+            ${r.rejected_at ? `
+              <div>Rejected: ${esc(formatDate(r.rejected_at))}</div>
+            ` : ""}
 
             ${
               r.status === "pending" ? `
@@ -1675,6 +1692,14 @@ function wireAdmin(){
 
                 <button class="btn upload-number-request" data-id="${id}" type="button">
                   Upload and send to user
+                </button>
+
+                <label class="field" for="request-reason-${id}">Rejection reason</label>
+                <input id="request-reason-${id}" type="text" maxlength="1000"
+                       placeholder="Enter reason for rejection">
+
+                <button class="btn danger reject-number-request" data-id="${id}" type="button">
+                  Reject request
                 </button>
               ` : `
                 <div class="muted">This request has already been processed.</div>
@@ -1690,7 +1715,6 @@ function wireAdmin(){
       refreshRequests.disabled = false;
     }
   }
-
   refreshRequests.onclick = loadNumberRequests;
 
   requestList.addEventListener("click", async event => {
