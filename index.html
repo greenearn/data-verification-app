@@ -670,8 +670,41 @@ function renderDashboard(){
       "text/csv;charset=utf-8"
     );
   };
-  document.getElementById("submit-number-request").onclick = function () {
-  alert("Request button click detected!");
+ document.getElementById("submit-number-request").onclick = async function () {
+  const countryCode = document.getElementById("number-request-country").value;
+  const numberType = document.getElementById("number-request-type").value;
+  const quantity = Number(document.getElementById("number-request-quantity").value);
+  const message = document.getElementById("number-request-message");
+  const button = this;
+
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10000) {
+    message.textContent = "Enter a quantity between 1 and 10,000.";
+    return;
+  }
+
+  button.disabled = true;
+  message.textContent = "Sending your request to the admin team...";
+
+  try {
+    const result = await request(
+      "/api/toolbox/number-file-request",
+      "POST",
+      {
+        country_code: countryCode,
+        number_type: numberType,
+        quantity: quantity
+      }
+    );
+
+    message.textContent =
+      "Request #" + result.request_id +
+      " submitted successfully. The admin team has been notified.";
+
+  } catch (error) {
+    message.textContent = "Request failed: " + error.message;
+  } finally {
+    button.disabled = false;
+  }
 };
 
   // END WORLDWIDE TEST NUMBER GENERATOR
