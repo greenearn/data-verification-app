@@ -670,15 +670,12 @@ function renderDashboard(){
       "text/csv;charset=utf-8"
     );
   };
- app.onclick = async function (event) {
-document.getElementById("number-request-message").textContent = "APP CLICK DETECTED";
-  const button = event.target.closest("#submit-number-request");
-  if (!button) return;
-
+document.getElementById("submit-number-request").onclick = async function () {
   const countryCode = document.getElementById("number-request-country").value;
   const numberType = document.getElementById("number-request-type").value;
   const quantity = Number(document.getElementById("number-request-quantity").value);
   const message = document.getElementById("number-request-message");
+  const button = this;
 
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10000) {
     message.textContent = "Enter a quantity between 1 and 10,000.";
