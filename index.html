@@ -97,7 +97,11 @@ let adminServices=[];
 let categories=[];
 let selectedCode="";
 let adminMode=false;
-
+let notificationPollTimer = null;
+let notificationIds = new Set();
+let notificationsInitialized = false;
+let notificationSoundEnabled = localStorage.getItem("dv_notification_sound") !== "off";
+let notificationAudioContext = null;
 if(tg){
   tg.ready();
   tg.expand();
@@ -262,7 +266,187 @@ async function loadOrders(){
     if(refreshButton) refreshButton.disabled = false;
   }
 }
+function formatDate(value){
+  if(!value)return "—";
+  let dateString=String(value);
+  if(!/[zZ]|[+-]\d{2}:\d{2}$/.test(dateString)){
+    dateString=dateString.replace(" ","T")+"Z";
+  }
+  const date=new Date(dateString);
+  return isNaN(date.getTime())?String(value):date.toLocaleString();
+}
 
+function playNotificationSound(){
+  try{
+    const AudioContext=window.AudioContext||window.webkitAudioContext;
+    if(!AudioContext)return;
+
+    if(!notificationAudioContext){
+      notificationAudioContext=new AudioContext();
+    }
+
+    if(notificationAudioContext.state==="suspended"){
+      notificationAudioContext.resume();
+    }
+
+    const oscillator=notificationAudioContext.createOscillator();
+    const gain=notificationAudioContext.createGain();
+
+    oscillator.type="sine";
+    oscillator.frequency.value=880;
+    gain.gain.setValueAtTime(0.08,notificationAudioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(
+      0.001,
+      notificationAudioContext.currentTime+0.25
+    );
+
+    oscillator.connect(gain);
+    gain.connect(notificationAudioContext.destination);
+    oscillator.start();
+    oscillator.stop(notificationAudioContext.currentTime+0.25);
+  }catch(error){
+    console.warn("Notification sound unavailable:",error);
+  }
+}
+
+function renderNotifications(data){
+  const count=document.getElementById("notification-count");
+  const list=document.getElementById("notification-list");
+
+  if(!count||!list)return;
+
+  const notifications=data.notifications||[];
+  const unread=Number(data.unread_count||0);
+
+  count.textContent=unread>99?"99+":String(unread);
+
+  if(!notifications.length){
+    list.innerHTML='<p class="muted">No notifications yet.</p>';
+    return;
+  }
+
+  list.innerHTML=notifications.map(item=>`
+    <div class="notification-entry ${item.read_at?"":"unread"}"
+         data-notification-id="${esc(item.id)}">
+      <strong>${esc(item.title||"Notification")}</strong>
+      <p>${esc(item.message||"")}</p>
+      <small>${esc(formatDate(item.created_at))}</small>
+      <div><small>${item.read_at?"Read":"Unread — click to mark as read"}</small></div>
+    </div>
+  `).join("");
+}
+
+async function loadNotifications(isPoll=false){
+  try{
+    const data=await request("/api/notifications");
+    const notifications=data.notifications||[];
+
+    if(isPoll&&notificationsInitialized){
+      const hasNew=notifications.some(item=>
+        !notificationIds.has(String(item.id))
+      );
+
+      if(hasNew&&notificationSoundEnabled){
+        playNotificationSound();
+      }
+    }
+
+    notificationIds=new Set(
+      notifications.map(item=>String(item.id))
+    );
+
+    notificationsInitialized=true;
+    renderNotifications(data);
+  }catch(error){
+    const list=document.getElementById("notification-list");
+    if(list)list.innerHTML=
+      '<p class="error">Could not load notifications: '+
+      esc(error.message)+'</p>';
+  }
+}
+
+function wireNotifications(){
+  const toggle=document.getElementById("notification-toggle");
+  const panel=document.getElementById("notification-panel");
+  const refresh=document.getElementById("notification-refresh");
+  const sound=document.getElementById("notification-sound-toggle");
+  const markAll=document.getElementById("notification-mark-all");
+  const list=document.getElementById("notification-list");
+
+  if(!toggle||!panel||!refresh||!sound||!markAll||!list)return;
+
+  toggle.onclick=()=>{
+    const opened=panel.classList.toggle("open");
+    toggle.setAttribute("aria-expanded",String(opened));
+    if(opened)loadNotifications();
+  };
+
+  refresh.onclick=()=>loadNotifications();
+
+  sound.textContent="Sound: "+(notificationSoundEnabled?"On":"Off");
+
+  sound.onclick=()=>{
+    notificationSoundEnabled=!notificationSoundEnabled;
+    localStorage.setItem(
+      "dv_notification_sound",
+      notificationSoundEnabled?"on":"off"
+    );
+    sound.textContent="Sound: "+(notificationSoundEnabled?"On":"Off");
+  };
+
+  list.onclick=async event=>{
+    const entry=event.target.closest(".notification-entry");
+    if(!entry||!entry.classList.contains("unread"))return;
+
+    const id=Number(entry.dataset.notificationId);
+    if(!Number.isInteger(id)||id<=0)return;
+
+    try{
+      await request("/api/notifications/read","POST",{
+        notification_id:id
+      });
+      await loadNotifications();
+    }catch(error){
+      alert("Could not mark notification as read: "+error.message);
+    }
+  };
+
+  markAll.onclick=async()=>{
+    const unreadEntries=[
+      ...list.querySelectorAll(".notification-entry.unread")
+    ];
+
+    if(!unreadEntries.length)return;
+
+    markAll.disabled=true;
+
+    try{
+      for(const entry of unreadEntries){
+        const id=Number(entry.dataset.notificationId);
+        if(Number.isInteger(id)&&id>0){
+          await request("/api/notifications/read","POST",{
+            notification_id:id
+          });
+        }
+      }
+      await loadNotifications();
+    }catch(error){
+      alert("Could not mark all notifications as read: "+error.message);
+    }finally{
+      markAll.disabled=false;
+    }
+  };
+
+  loadNotifications();
+
+  if(notificationPollTimer){
+    clearInterval(notificationPollTimer);
+  }
+
+  notificationPollTimer=setInterval(()=>{
+    loadNotifications(true);
+  },45000);
+}
 function renderDashboard(){
   const name=user.first_name||"Customer";
 
@@ -460,7 +644,19 @@ function renderDashboard(){
     Submit your request for admin review.
   </div>
 </div>
-
+<section id="request-history" class="panel">
+  <h3>My File Requests</h3>
+  <label class="field" for="request-history-filter">Filter requests</label>
+  <select id="request-history-filter" class="history-filter">
+    <option value="all">All</option>
+    <option value="pending">Pending</option>
+    <option value="completed">Completed</option>
+    <option value="rejected">Rejected</option>
+  </select>
+  <button class="btn secondary" id="request-history-refresh" type="button">Refresh history</button>
+  <div id="request-history-message" class="muted">Loading your requests…</div>
+  <div id="request-history-list"></div>
+</section>
 <section id="orders" class="panel">
       <h2>Order history</h2>
       <p id="orders-message">Loading order history…</p>
