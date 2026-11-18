@@ -55,6 +55,18 @@ button{cursor:pointer}
 .muted{color:var(--muted);font-size:11px}
 .hidden{display:none!important}
 .admin-label{color:var(--mint);font-size:10px;font-weight:900;letter-spacing:.15em}
+  /* NOTIFICATIONS AND REQUEST HISTORY */
+.notification-area{position:relative;margin-left:auto}
+.notification-button{background:#13283a;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:12px}
+.notification-count{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:20px;background:#ff6878;color:#fff;font-size:10px;font-weight:900;margin-left:4px}
+.notification-panel{display:none;position:absolute;right:0;top:44px;width:min(340px,85vw);max-height:380px;overflow-y:auto;background:#102338;border:1px solid var(--line);border-radius:13px;padding:12px;z-index:50;box-shadow:0 12px 35px #0008}
+.notification-panel.open{display:block}
+.notification-entry{padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.notification-entry.unread{border-left:3px solid var(--mint);padding-left:9px}
+.notification-entry strong{font-size:12px}
+.notification-entry p{margin:4px 0}
+.notification-tools{display:flex;gap:7px;flex-wrap:wrap}
+.history-filter{max-width:220px}
 .item{padding:12px 0;border-bottom:1px solid var(--line)}
 .item-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .item strong{font-size:12px}
