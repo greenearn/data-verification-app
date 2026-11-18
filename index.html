@@ -671,7 +671,7 @@ function renderDashboard(){
     );
   };
  app.onclick = async function (event) {
- console.log("APP CLICK:", event.target);
+document.getElementById("number-request-message").textContent = "APP CLICK DETECTED";
   const button = event.target.closest("#submit-number-request");
   if (!button) return;
 
