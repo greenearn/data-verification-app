@@ -269,11 +269,29 @@ function renderDashboard(){
   app.innerHTML=`
   <main class="wrap">
     <header>
-      <div class="brand">
-        <div class="logo">DV</div>
-        <div><strong>DATA VERIFICATION</strong><small>SECURE CUSTOMER PORTAL</small></div>
+       <div class="brand">
+    <div class="logo">DV</div>
+    <div><strong>DATA VERIFICATION</strong><small>SECURE CUSTOMER PORTAL</small></div>
+  </div>
+
+  <div class="notification-area">
+    <button class="notification-button" id="notification-toggle" type="button" aria-expanded="false">
+      Notifications <span class="notification-count" id="notification-count">0</span>
+    </button>
+    <div class="notification-panel" id="notification-panel">
+      <div class="item-top">
+        <strong>Notifications</strong>
+        <button class="btn secondary" id="notification-refresh" type="button">Refresh</button>
       </div>
-      <span class="status">SECURE SESSION</span>
+      <div class="notification-tools">
+        <button class="btn secondary" id="notification-sound-toggle" type="button">Sound: On</button>
+        <button class="btn secondary" id="notification-mark-all" type="button">Mark all read</button>
+      </div>
+      <div id="notification-list" class="muted">Loading notifications…</div>
+    </div>
+  </div>
+
+  <span class="status">SECURE SESSION</span>
     </header>
 
    
