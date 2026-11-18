@@ -670,46 +670,44 @@ function renderDashboard(){
       "text/csv;charset=utf-8"
     );
   };
- const requestButton = document.getElementById("submit-number-request");
+ app.onclick = async function (event) {
+  const button = event.target.closest("#submit-number-request");
+  if (!button) return;
 
-if (requestButton) {
-  requestButton.addEventListener("click", async function () {
-    const countryCode = document.getElementById("number-request-country").value;
-    const numberType = document.getElementById("number-request-type").value;
-    const quantity = Number(document.getElementById("number-request-quantity").value);
-    const message = document.getElementById("number-request-message");
+  const countryCode = document.getElementById("number-request-country").value;
+  const numberType = document.getElementById("number-request-type").value;
+  const quantity = Number(document.getElementById("number-request-quantity").value);
+  const message = document.getElementById("number-request-message");
 
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10000) {
-      message.textContent = "Enter a quantity between 1 and 10,000.";
-      return;
-    }
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10000) {
+    message.textContent = "Enter a quantity between 1 and 10,000.";
+    return;
+  }
 
-  alert("Request handler is running!");
-requestButton.disabled = true;
-    message.textContent = "Sending your request to the admin team...";
+  button.disabled = true;
+  message.textContent = "Sending your request to the admin team...";
 
-    try {
-      const result = await request(
-        "/api/toolbox/number-file-request",
-        "POST",
-        {
-          country_code: countryCode,
-          number_type: numberType,
-          quantity: quantity
-        }
-      );
+  try {
+    const result = await request(
+      "/api/toolbox/number-file-request",
+      "POST",
+      {
+        country_code: countryCode,
+        number_type: numberType,
+        quantity: quantity
+      }
+    );
 
-      message.textContent =
-        "Request #" + result.request_id +
-        " submitted successfully. The admin team has been notified.";
+    message.textContent =
+      "Request #" + result.request_id +
+      " submitted successfully. The admin team has been notified.";
 
-    } catch (error) {
-      message.textContent = "Request failed: " + error.message;
-    } finally {
-      requestButton.disabled = false;
-    }
-  });
-}
+  } catch (error) {
+    message.textContent = "Request failed: " + error.message;
+  } finally {
+    button.disabled = false;
+  }
+};
   // END WORLDWIDE TEST NUMBER GENERATOR
 
   document.getElementById("service-select").addEventListener("change",function(){
