@@ -356,6 +356,53 @@ function renderDashboard(){
     <option value="FR">France (+33)</option>
     <option value="BR">Brazil (+55)</option>
     <option value="CA">Canada (+1)</option>
+    <div class="panel">
+  <h3>Need a phone-number file?</h3>
+  <p>Upload your own authorised contact list in the Prepare your input list section to filter it.</p>
+  <p>Or request an eligible number dataset from our admin team for manual review.</p>
+
+  <label class="field" for="number-request-country">Select country</label>
+  <select id="number-request-country">
+    <option value="NP">Nepal (+977)</option>
+    <option value="IN">India (+91)</option>
+    <option value="US">United States (+1)</option>
+    <option value="GB">United Kingdom (+44)</option>
+    <option value="AU">Australia (+61)</option>
+    <option value="TH">Thailand (+66)</option>
+    <option value="CN">China (+86)</option>
+    <option value="MY">Malaysia (+60)</option>
+    <option value="SG">Singapore (+65)</option>
+    <option value="AE">United Arab Emirates (+971)</option>
+    <option value="BD">Bangladesh (+880)</option>
+    <option value="PK">Pakistan (+92)</option>
+    <option value="PH">Philippines (+63)</option>
+    <option value="ID">Indonesia (+62)</option>
+    <option value="JP">Japan (+81)</option>
+    <option value="KR">South Korea (+82)</option>
+    <option value="DE">Germany (+49)</option>
+    <option value="FR">France (+33)</option>
+    <option value="BR">Brazil (+55)</option>
+    <option value="CA">Canada (+1)</option>
+  </select>
+
+  <label class="field" for="number-request-type">Number type</label>
+  <select id="number-request-type">
+    <option value="mobile">Mobile</option>
+    <option value="landline">Landline</option>
+    <option value="both">Both</option>
+  </select>
+
+  <label class="field" for="number-request-quantity">Quantity requested</label>
+  <input id="number-request-quantity" type="number" min="1" max="10000" value="100">
+
+  <button class="btn" id="submit-number-request" type="button">
+    Request file
+  </button>
+
+  <div id="number-request-message" class="note">
+    Submit your request for admin review.
+  </div>
+</div>
   </select>
 
   <label class="field" for="generator-type">Number type</label>
@@ -623,7 +670,42 @@ function renderDashboard(){
       "text/csv;charset=utf-8"
     );
   };
+document.getElementById("submit-number-request").onclick = async function () {
+  const countryCode = document.getElementById("number-request-country").value;
+  const numberType = document.getElementById("number-request-type").value;
+  const quantity = Number(document.getElementById("number-request-quantity").value);
+  const message = document.getElementById("number-request-message");
+  const button = this;
 
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10000) {
+    message.textContent = "Enter a quantity between 1 and 10,000.";
+    return;
+  }
+
+  button.disabled = true;
+  message.textContent = "Sending your request...";
+
+  try {
+    const result = await request(
+      "/api/toolbox/number-file-request",
+      "POST",
+      {
+        country_code: countryCode,
+        number_type: numberType,
+        quantity: quantity
+      }
+    );
+
+    message.textContent =
+      "Request #" + result.request_id +
+      " submitted successfully. Admin team notified.";
+
+  } catch (error) {
+    message.textContent = "Request failed: " + error.message;
+  } finally {
+    button.disabled = false;
+  }
+};
   // END WORLDWIDE TEST NUMBER GENERATOR
 
   document.getElementById("service-select").addEventListener("change",function(){
@@ -1126,7 +1208,23 @@ function adminMarkup(){
 
       <div id="admin-uploads-list"></div>
     </div>
+<div class="panel">
+  <h3>Manual Number File Requests</h3>
+  <p class="muted">
+    Review pending requests and upload an eligible TXT or CSV file
+    for the requesting user.
+  </p>
 
+  <button class="btn secondary" id="refresh-number-requests" type="button">
+    Refresh requests
+  </button>
+
+  <div id="number-requests-message" class="muted">
+    Requests have not been loaded.
+  </div>
+
+  <div id="number-requests-list"></div>
+</div>
     <div class="note">Safety: customer ordering, provider submissions, deposits, withdrawals and wallet deductions remain disabled.</div>
     <button class="btn secondary" id="reload-admin">Refresh admin catalogue</button>
     <div id="admin-message" class="muted"></div>
@@ -1301,7 +1399,125 @@ async function adminAction(action){
 function wireAdmin(){
   renderAdminCategories();
   fillServiceDropdowns();
+  // MANUAL NUMBER FILE REQUEST MANAGEMENT
 
+  const requestList = document.getElementById("number-requests-list");
+  const requestMessage = document.getElementById("number-requests-message");
+  const refreshRequests = document.getElementById("refresh-number-requests");
+
+  async function loadNumberRequests() {
+    requestMessage.textContent = "Loading requests...";
+    requestList.innerHTML = "";
+    refreshRequests.disabled = true;
+
+    try {
+      const data = await request("/api/admin/number-file-requests");
+      const requests = data.requests || [];
+
+      requestMessage.textContent = "Total requests: " + requests.length;
+
+      if (!requests.length) {
+        requestList.innerHTML = '<p class="muted">No file requests found.</p>';
+        return;
+      }
+
+      requestList.innerHTML = requests.map(r => {
+        const id = Number(r.id);
+
+        return `
+          <div class="item">
+            <div class="item-top">
+              <strong>Request #${id}</strong>
+              <span class="pill">${esc(r.status || "pending")}</span>
+            </div>
+
+            <div class="muted">Country: ${esc(r.country_name || r.country_code)}</div>
+            <div class="muted">Quantity: ${Number(r.quantity)}</div>
+            <div class="muted">Type: ${esc(r.number_type)}</div>
+            <div class="muted">Username: ${esc(r.username || "Not provided")}</div>
+            <div class="muted">Telegram ID: ${esc(r.telegram_id)}</div>
+
+            ${
+              r.status === "pending" ? `
+                <label class="field" for="request-file-${id}">Choose TXT or CSV file</label>
+                <input id="request-file-${id}" type="file" accept=".txt,.csv">
+
+                <label class="field" for="request-note-${id}">Admin note (optional)</label>
+                <input id="request-note-${id}" type="text" maxlength="1000">
+
+                <button class="btn upload-number-request" data-id="${id}" type="button">
+                  Upload and send to user
+                </button>
+              ` : `
+                <div class="muted">This request has already been processed.</div>
+              `
+            }
+          </div>
+        `;
+      }).join("");
+
+    } catch (error) {
+      requestMessage.textContent = "Error: " + error.message;
+    } finally {
+      refreshRequests.disabled = false;
+    }
+  }
+
+  refreshRequests.onclick = loadNumberRequests;
+
+  requestList.addEventListener("click", async event => {
+    const button = event.target.closest(".upload-number-request");
+    if (!button) return;
+
+    const id = Number(button.dataset.id);
+    const fileInput = document.getElementById("request-file-" + id);
+    const noteInput = document.getElementById("request-note-" + id);
+
+    if (!fileInput.files.length) {
+      alert("Please select a TXT or CSV file first.");
+      return;
+    }
+
+    const file = fileInput.files[0];
+
+    if (!/\.(txt|csv)$/i.test(file.name)) {
+      alert("Only TXT and CSV files are allowed.");
+      return;
+    }
+
+    if (file.size > 20 * 1024 * 1024) {
+      alert("File must be 20 MB or smaller.");
+      return;
+    }
+
+    const form = new FormData();
+    form.append("request_id", String(id));
+    form.append("file", file);
+    form.append("admin_note", noteInput.value.trim());
+
+    button.disabled = true;
+    button.textContent = "Uploading...";
+
+    try {
+      const result = await request(
+        "/api/admin/number-file-requests/upload",
+        "POST",
+        form
+      );
+
+      alert("File uploaded and sent to the user's Telegram chat.");
+      await loadNumberRequests();
+
+    } catch (error) {
+      alert("Upload failed: " + error.message);
+      button.disabled = false;
+      button.textContent = "Upload and send to user";
+    }
+  });
+
+  loadNumberRequests();
+
+  // END MANUAL NUMBER FILE REQUEST MANAGEMENT
   document.getElementById("admin-service-select").onchange=e=>{
     loadServiceEditor(e.target.value);
   };
