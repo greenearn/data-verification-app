@@ -447,6 +447,64 @@ function wireNotifications(){
     loadNotifications(true);
   },45000);
 }
+  async function loadRequestHistory(){
+  const message=document.getElementById("request-history-message");
+  const list=document.getElementById("request-history-list");
+  const filter=document.getElementById("request-history-filter");
+
+  if(!message||!list||!filter)return;
+
+  message.textContent="Loading your file requests…";
+  list.innerHTML="";
+
+  try{
+    const result=await request(
+      "/api/toolbox/number-file-requests/history?status="+
+      encodeURIComponent(filter.value)
+    );
+
+    const requests=result.requests||[];
+
+    if(!requests.length){
+      message.textContent="No file requests found.";
+      return;
+    }
+
+    message.textContent="Showing "+requests.length+" request(s).";
+
+    list.innerHTML=requests.map(item=>`
+      <div class="item">
+        <div class="item-top">
+          <strong>Request #${esc(item.id)}</strong>
+          <strong>${esc((item.status||"pending").toUpperCase())}</strong>
+        </div>
+        <div>Country: ${esc(item.country_code||"—")}</div>
+        <div>Type: ${esc(item.number_type||"—")}</div>
+        <div>Quantity: ${esc(item.quantity??"—")}</div>
+        <small>Submitted: ${esc(formatDate(item.created_at))}</small>
+        ${item.admin_file_name?`<div>File: ${esc(item.admin_file_name)}</div>`:""}
+        ${item.admin_note?`<div>Admin note: ${esc(item.admin_note)}</div>`:""}
+        ${item.completed_at?`<small>Completed: ${esc(formatDate(item.completed_at))}</small>`:""}
+        ${item.rejected_at?`<small>Rejected: ${esc(formatDate(item.rejected_at))}</small>`:""}
+      </div>
+    `).join("");
+
+  }catch(error){
+    message.textContent="Could not load file requests: "+error.message;
+  }
+}
+
+function wireRequestHistory(){
+  const filter=document.getElementById("request-history-filter");
+  const refresh=document.getElementById("request-history-refresh");
+
+  if(!filter||!refresh)return;
+
+  filter.onchange=loadRequestHistory;
+  refresh.onclick=loadRequestHistory;
+
+  loadRequestHistory();
+}
 function renderDashboard(){
   const name=user.first_name||"Customer";
 
