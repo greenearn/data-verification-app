@@ -1717,7 +1717,50 @@ async function loadNumberRequests() {
   }
   refreshRequests.onclick = loadNumberRequests;
 
-  requestList.addEventListener("click", async event => {
+   requestList.addEventListener("click", async event => {
+
+    // HANDLE REJECTION
+    const rejectButton = event.target.closest(".reject-number-request");
+
+    if (rejectButton) {
+      const id = Number(rejectButton.dataset.id);
+      const reasonInput = document.getElementById("request-reason-" + id);
+      const reason = reasonInput.value.trim();
+
+      if (!reason) {
+        alert("Please enter a rejection reason.");
+        return;
+      }
+
+      if (!confirm("Reject request #" + id + "?")) return;
+
+      rejectButton.disabled = true;
+      rejectButton.textContent = "Rejecting...";
+
+      try {
+        await request(
+          "/api/admin/number-file-requests/reject",
+          "POST",
+          {
+            request_id: id,
+            reason: reason
+          }
+        );
+
+        alert("Request rejected successfully.");
+        await loadNumberRequests();
+        await loadNotifications();
+
+      } catch (error) {
+        alert("Rejection failed: " + error.message);
+        rejectButton.disabled = false;
+        rejectButton.textContent = "Reject request";
+      }
+
+      return;
+    }
+
+    // EXISTING UPLOAD HANDLER
     const button = event.target.closest(".upload-number-request");
     if (!button) return;
 
