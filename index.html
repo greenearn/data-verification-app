@@ -1034,11 +1034,20 @@ document.getElementById("submit-number-request").onclick = async function () {
       resultBox.textContent="File must be smaller than 20 MB.";
       return;
     }
+const consentBox = document.getElementById("phone-consent");
 
+if (selectedCode === "phoneCheck" && !consentBox.checked) {
+  resultBox.textContent =
+    "Please confirm that you have permission to submit these phone numbers.";
+  return;
+}
     const form=new FormData();
     form.append("file",file);
     form.append("resource_code",selectedCode);
-
+if (selectedCode === "phoneCheck") {
+  form.append("consent_confirmed", "yes");
+  form.append("consent_version", "phone-validation-v1");
+}
     resultBox.textContent="Uploading file. Please wait...";
 
     try{
