@@ -575,9 +575,23 @@ function renderDashboard(){
       <input id="customer-file" type="file" accept=".txt,.csv,text/plain,text/csv">
 
       <p class="note">
-        Upload only data you are authorized to process.
-        Uploading a file does not submit it to the provider or charge your wallet.
-      </p>
+  Upload only data you are authorized to process.
+  Uploading a file does not submit it to the provider or charge your wallet.
+</p>
+
+<label class="note" style="display:flex;gap:10px;align-items:flex-start;margin:15px 0;">
+  <input
+    type="checkbox"
+    id="phone-consent"
+    style="width:18px;height:18px;margin-top:3px;flex-shrink:0;"
+  >
+  <span>
+    I confirm that I own these phone numbers or have obtained
+    permission from their owners to submit them for phone-number
+    validation. I authorize processing of these numbers for this
+    stated purpose.
+  </span>
+</label>
 
       <button class="btn secondary" id="upload-file-button" type="button">Upload file</button>
       <div id="upload-file-result" class="note">No file uploaded.</div>
