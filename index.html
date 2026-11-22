@@ -539,6 +539,7 @@ function renderDashboard(){
    
 <nav class="nav">
   <a href="#services">Services</a>
+  <a href="#wallet">Wallet</a>
   <a href="#prepare">Prepare list</a>
   <a href="#toolbox">Toolbox</a>
   <a href="#orders">Orders</a>
@@ -553,6 +554,42 @@ function renderDashboard(){
       <small>AVAILABLE WALLET BALANCE</small>
       <strong>${esc(balanceText())}</strong>
       <small>Account balance · USDT</small>
+    </section>
+
+    <section id="wallet" class="panel">
+      <div class="item-top">
+        <h2>My Wallet</h2>
+        <span class="pill">USDT</span>
+      </div>
+      <div class="balance" style="margin:12px 0">
+        <small>AVAILABLE BALANCE</small>
+        <strong>${esc(balanceText())}</strong>
+        <small>Wallet funds</small>
+      </div>
+      <div class="grid">
+        <a class="service" href="#wallet-deposit" style="text-decoration:none;color:inherit">
+          <strong>＋ Deposit</strong>
+          <p>Add funds to your wallet</p>
+        </a>
+        <a class="service" href="#wallet-withdraw" style="text-decoration:none;color:inherit">
+          <strong>↗ Withdraw</strong>
+          <p>Request a withdrawal</p>
+        </a>
+      </div>
+      <div id="wallet-deposit" class="item">
+        <h3>Deposit funds</h3>
+        <p>Payment methods and verified payment instructions must be configured by the administrator before deposits can be accepted.</p>
+        <div class="note">For your safety, do not send USDT or money to any address until an official payment address is displayed inside this app.</div>
+        <p class="muted">Deposit request and history APIs are available; the payment instructions and proof-submission screen are the next setup step.</p>
+      </div>
+      <div id="wallet-withdraw" class="item">
+        <h3>Withdraw funds</h3>
+        <p>Withdrawals are not enabled yet. The withdrawal request, address validation, admin review and wallet-ledger safeguards must be completed before this feature can accept requests.</p>
+      </div>
+      <div class="item">
+        <h3>Transaction history</h3>
+        <p class="muted">Wallet transaction history will appear here after the ledger display is connected.</p>
+      </div>
     </section>
 
     <section id="services">
