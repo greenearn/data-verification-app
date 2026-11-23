@@ -159,6 +159,24 @@ function showError(message){
   app.innerHTML='<main class="wrap"><div class="panel"><h2>Connection problem</h2><p class="error">'+esc(message)+'</p><button class="btn" onclick="location.reload()">Try again</button></div></main>';
 }
 
+function renderLoginScreen(messageText="Open the Mini App using Telegram to continue."){
+  app.innerHTML=`
+    <main class="wrap">
+      <header>
+        <div class="brand"><div class="logo">DV</div><div><strong>DATA VERIFICATION</strong><small>SECURE CUSTOMER PORTAL</small></div></div>
+        <span class="status">SECURE LOGIN</span>
+      </header>
+      <section class="panel" style="margin-top:28px">
+        <h2>Sign up / Log in</h2>
+        <p>${esc(messageText)}</p>
+        <p>Continue with Telegram. Your account is created automatically if this is your first visit.</p>
+        <button class="btn" id="telegram-login-button" type="button">Continue with Telegram</button>
+      </section>
+    </main>`;
+  const button=document.getElementById("telegram-login-button");
+  if(button)button.onclick=login;
+}
+
 async function login(){
   if(!tg||!tg.initData){
     showError("Please open this Mini App from your Telegram bot.");
@@ -904,43 +922,31 @@ function renderDashboard(){
     </section>
 
    <section id="account" class="panel">
-  <h2>Account & Admin Access</h2>
-
+  <h2>Account & Security</h2>
   <div class="item">
-    <small>Telegram ID</small>
+    <small>Login method</small>
+    <strong>Telegram secure login</strong>
+    <p>New users are registered automatically the first time they open this Mini App through Telegram. No separate password is required.</p>
+  </div>
+  <div class="item">
+    <small>Telegram User ID</small>
     <strong>${esc(user.telegram_id||"Verified")}</strong>
   </div>
-
   <div class="item">
     <small>Username</small>
     <strong>${esc(user.username?"@"+user.username:"Not set")}</strong>
   </div>
-
-  <button class="btn secondary" id="refresh-session" type="button">
-    Refresh session
-  </button>
-
-  <div class="panel">
-    <h3>Administrator Registration</h3>
-    <p>Register the first administrator using the private setup code.</p>
-    <label class="field" for="admin-setup-code">Private setup code</label>
-    <input id="admin-setup-code" type="password"
-           placeholder="Enter private setup code">
-    <button class="btn" id="admin-signup" type="button">
-      Register as Administrator
-    </button>
-    <p id="admin-auth-message" class="muted"></p>
+  <div class="item">
+    <small>Account role</small>
+    <strong>${adminMode?esc(adminRole==="main_admin"?"Main Admin":adminRole==="full_admin"?"Full Admin":"Sub Admin"):"Customer"}</strong>
+    ${adminMode&&adminRole==="full_admin"?'<p>Full Admin has all operational permissions. Administrator role management remains protected for the Main Admin.</p>':""}
+    ${adminMode&&adminRole==="sub_admin"?'<p>Sub Admin access is limited to the permissions assigned by the Main Admin.</p>':""}
   </div>
-
-  <div class="panel">
-    <h3>Admin Session</h3>
-    <p id="admin-session-status">
-      ${adminMode?"Administrator access verified":"Not signed in as administrator"}
-    </p>
-    <button class="btn danger" id="admin-logout" type="button">
-      Logout
-    </button>
+  <div class="actions">
+    <button class="btn secondary" id="refresh-session" type="button">Refresh session</button>
+    <button class="btn danger" id="account-logout" type="button">Log out</button>
   </div>
+  <p id="account-auth-message" class="muted">Your session is protected by Telegram verification.</p>
 </section>
 
     ${adminMode?adminMarkup():""}
@@ -949,6 +955,32 @@ function renderDashboard(){
   </main>`;
 
   renderServices();
+
+  const refreshSessionButton=document.getElementById("refresh-session");
+  if(refreshSessionButton)refreshSessionButton.onclick=refreshSession;
+
+  const logoutButton=document.getElementById("account-logout");
+  if(logoutButton)logoutButton.onclick=async()=>{
+    logoutButton.disabled=true;
+    logoutButton.textContent="Logging out…";
+    const message=document.getElementById("account-auth-message");
+    try{
+      await request("/api/auth/logout","POST",{});
+      token="";
+      user={};
+      adminMode=false;
+      adminRole=null;
+      adminPermissions=[];
+      if(notificationPollTimer){clearInterval(notificationPollTimer);notificationPollTimer=null;}
+      if(window.walletBalanceTimer){clearInterval(window.walletBalanceTimer);window.walletBalanceTimer=null;}
+      renderLoginScreen("You have securely logged out.");
+    }catch(error){
+      if(message)message.textContent="Logout failed: "+error.message;
+      logoutButton.disabled=false;
+      logoutButton.textContent="Log out";
+    }
+  };
+
   wireNotifications();
   wireRequestHistory();
   wireWallet();
@@ -1600,7 +1632,7 @@ function adminMarkup(){
         <h3>Administrator Management</h3>
         <button class="btn secondary" id="admin-management-refresh" type="button">Refresh</button>
       </div>
-      <p class="muted">Only the Main Admin can manage administrator access. The Main Admin account is protected.</p>
+      <p class="muted">Add or manage administrators by their numeric Telegram User ID. The invited person must open this Mini App through Telegram; access is attached to that exact ID. Full Admin receives all operational permissions. Sub Admin receives only the permissions selected below. Only the protected Main Admin can manage administrator roles.</p>
       <label class="field" for="managed-admin-telegram-id">Administrator Telegram ID</label>
       <input id="managed-admin-telegram-id" inputmode="numeric" maxlength="20" placeholder="Enter numeric Telegram ID">
       <label class="field" for="managed-admin-role">Administrator role</label>
