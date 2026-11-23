@@ -209,7 +209,22 @@ function balanceText(){
   if(cents===undefined||cents===null)return "Balance unavailable";
   return money(cents,"USDT");
 }
+async function refreshWalletBalance(){
+  try{
+    const data=await request("/api/me");
+    user=data.user||user;
 
+    const balance=balanceText();
+
+    const mainBalance=document.getElementById("main-wallet-balance");
+    const walletBalance=document.getElementById("wallet-section-balance");
+
+    if(mainBalance)mainBalance.textContent=balance;
+    if(walletBalance)walletBalance.textContent=balance;
+  }catch(error){
+    console.error("Wallet balance refresh failed:",error);
+  }
+}
 async function loadOrders(){
   const message = document.getElementById("orders-message");
   const list = document.getElementById("orders-list");
