@@ -1924,7 +1924,7 @@ function wireAdmin(){
       const id=Number(button.dataset.id);
       const note=document.getElementById("deposit-note-"+id)?.value.trim()||"";
       const action=approveButton?"approve":"reject";
-      if(action==="approve"&&!confirm("Have you independently verified this exact payment on the correct network? Approving will credit "+money(Number(depositsList.querySelector('[data-deposit-id="'+id+'"]')?.textContent.match(/([0-9]+(?:\\.[0-9]+)?) USDT/)?.[1]||0)*100,"USDT")+" to the customer's wallet."))return;
+      if(action==="approve"&&!confirm("Have you independently verified this exact payment on the correct network? Approving will immediately credit the requested amount to the customer's wallet."))return;
       if(action==="reject"&&!confirm("Reject deposit request #"+id+"?"))return;
       button.disabled=true;
       button.textContent=action==="approve"?"Approving…":"Rejecting…";
