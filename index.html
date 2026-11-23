@@ -893,12 +893,45 @@ function renderDashboard(){
       <button class="btn secondary" id="orders-refresh">Refresh history</button>
     </section>
 
-    <section id="account" class="panel">
-      <h2>Account details</h2>
-      <div class="item"><small>Telegram ID</small><strong>${esc(user.telegram_id||"Verified")}</strong></div>
-      <div class="item"><small>Username</small><strong>${esc(user.username?"@"+user.username:"Not set")}</strong></div>
-      <button class="btn secondary" id="refresh-session">Refresh session</button>
-    </section>
+   <section id="account" class="panel">
+  <h2>Account & Admin Access</h2>
+
+  <div class="item">
+    <small>Telegram ID</small>
+    <strong>${esc(user.telegram_id||"Verified")}</strong>
+  </div>
+
+  <div class="item">
+    <small>Username</small>
+    <strong>${esc(user.username?"@"+user.username:"Not set")}</strong>
+  </div>
+
+  <button class="btn secondary" id="refresh-session" type="button">
+    Refresh session
+  </button>
+
+  <div class="panel">
+    <h3>Administrator Registration</h3>
+    <p>Register the first administrator using the private setup code.</p>
+    <label class="field" for="admin-setup-code">Private setup code</label>
+    <input id="admin-setup-code" type="password"
+           placeholder="Enter private setup code">
+    <button class="btn" id="admin-signup" type="button">
+      Register as Administrator
+    </button>
+    <p id="admin-auth-message" class="muted"></p>
+  </div>
+
+  <div class="panel">
+    <h3>Admin Session</h3>
+    <p id="admin-session-status">
+      ${adminMode?"Administrator access verified":"Not signed in as administrator"}
+    </p>
+    <button class="btn danger" id="admin-logout" type="button">
+      Logout
+    </button>
+  </div>
+</section>
 
     ${adminMode?adminMarkup():""}
 
@@ -1282,7 +1315,53 @@ document.getElementById("refresh-session").onclick=refreshSession;
 
 loadOrders();
 updateEstimate();
+  const signupButton = document.getElementById("admin-signup");
+  const logoutButton = document.getElementById("admin-logout");
 
+  if(signupButton){
+    signupButton.onclick = async () => {
+      const setupCode = document.getElementById("admin-setup-code").value.trim();
+      const message = document.getElementById("admin-auth-message");
+
+      if(!setupCode){
+        message.textContent = "Enter your private setup code.";
+        return;
+      }
+
+      signupButton.disabled = true;
+      message.textContent = "Registering administrator...";
+
+      try{
+        await request("/api/admin/signup", "POST", {
+          setup_code: setupCode
+        });
+
+        message.textContent = "Administrator registered successfully.";
+        await reloadAdmin();
+      }catch(error){
+        message.textContent = "Registration failed: " + error.message;
+      }finally{
+        signupButton.disabled = false;
+      }
+    };
+  }
+
+  if(logoutButton){
+    logoutButton.onclick = async () => {
+      if(!confirm("Are you sure you want to log out?")) return;
+
+      try{
+        await request("/api/auth/logout", "POST", {});
+      }catch(error){
+        console.warn("Server logout:", error.message);
+      }
+
+      token = "";
+      user = {};
+      adminMode = false;
+      location.reload();
+    };
+  }
   if(adminMode)wireAdmin();
 }
 
