@@ -460,7 +460,7 @@ async function requireAdmin(request, env) {
 
 async function requireAdminManager(request, env) {
   const user = await requireAdmin(request, env);
-  if (!["main_admin", "full_admin"].includes(user.admin_role)) {
+  if (user.admin_role !== "main_admin") {
     throw new Error("admin_management_required");
   }
   return user;
@@ -3966,7 +3966,7 @@ if (
         const action = String(body.action || "").trim().toLowerCase();
         const targetId = String(body.telegram_id || "").trim();
 
-        if (!/^\\d{5,20}$/.test(targetId)) {
+        if (!/^\d{5,20}$/.test(targetId)) {
           return json({ ok: false, error: "invalid_telegram_id" }, 400, origin);
         }
 
@@ -4046,6 +4046,15 @@ if (
             SET is_active = ?, updated_at = CURRENT_TIMESTAMP
             WHERE telegram_id = ? AND role != 'main_admin'
           `).bind(active, targetId).run();
+
+          if (action === "revoke") {
+            await env.DB.prepare(`
+              DELETE FROM sessions
+              WHERE user_id IN (
+                SELECT id FROM users WHERE telegram_id = ?
+              )
+            `).bind(targetId).run();
+          }
 
           await writeAdminAudit(
             env, actor.telegram_id, targetId,
