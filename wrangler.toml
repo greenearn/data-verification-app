@@ -1,0 +1,8 @@
+name = "data-verification-api"
+main = "worker.js"
+compatibility_date = "2026-11-24"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "data-verification-test"
+database_id = "ee708fbc-1638-4169-8044-2930c37945ec"
