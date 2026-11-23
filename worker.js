@@ -445,7 +445,7 @@ async function requireAdmin(request, env) {
 
     if (!permission || !Array.isArray(permissions) ||
         !permissions.includes(permission)) {
-      throw new Error("admin_permission_denied");
+      throw new Error("admin_access_required");
     }
   }
 
