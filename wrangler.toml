@@ -6,3 +6,7 @@ compatibility_date = "2026-11-24"
 binding = "DB"
 database_name = "data-verification-test"
 database_id = "ee708fbc-1638-4169-8044-2930c37945ec"
+
+[[previews.d1_databases]]
+binding = "DB"
+database_id = "0891dea4-f0e8-4831-ace4-51399ad7a347"
