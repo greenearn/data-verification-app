@@ -3820,7 +3820,16 @@ if (
   url.pathname === "/api/admin/number-file-requests/reject" &&
   request.method === "POST"
 ) {
-  const admin = await requireAdmin(request, env);
+  let admin;
+  try {
+    admin = await requireAdmin(request, env);
+  } catch (error) {
+    const unauthorized = error.message === "unauthorized";
+    return json({
+      ok: false,
+      error: unauthorized ? "unauthorized" : "admin_access_required"
+    }, unauthorized ? 401 : 403, origin);
+  }
   const body = await request.json();
 
   const requestId = Number(body.request_id);
