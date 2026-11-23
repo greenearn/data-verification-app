@@ -908,7 +908,13 @@ function renderDashboard(){
   wireNotifications();
   wireRequestHistory();
   wireWallet();
-  
+  if(window.walletBalanceTimer){
+  clearInterval(window.walletBalanceTimer);
+}
+
+window.walletBalanceTimer=setInterval(()=>{
+  refreshWalletBalance();
+},30000);
   // ------------------------------------------
   // WORLDWIDE TEST NUMBER GENERATOR
   // ------------------------------------------
