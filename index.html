@@ -553,7 +553,8 @@ async function wireWallet(){
             <div class="muted">Network: ${esc(d.payment_method||"Not specified")}</div>
             <div class="muted">Reference: ${esc(d.payment_reference||"Not provided")}</div>
             <div class="muted">Submitted: ${esc(formatDate(d.created_at))}</div>
-            ${d.admin_note?`<div class="muted">Admin note: ${esc(d.admin_note)}</div>`:""}
+${d.reviewed_at?`<div class="muted">Reviewed: ${esc(formatDate(d.reviewed_at))}</div>`:""}
+${d.admin_note?`<div class="muted">Admin note: ${esc(d.admin_note)}</div>`:""}
           </div>
         `;
       }).join("");
