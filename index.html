@@ -2042,6 +2042,8 @@ function applyAdminUiPermissions(){
     ["Service pricing","catalogue_manage"],
     ["Publish / hide a service","catalogue_manage"],
     ["CheckNumber.ai File Upload","checknumber_validate"],
+    ["Provider Balance","provider_balance"],
+    ["Telegram Storage Connection","storage_test"],
     ["Admin Upload Management","uploads_manage"],
     ["Manual Number File Requests","number_requests"]
   ];
@@ -2222,6 +2224,40 @@ function wireAdmin(){
   wireAdminManagement();
   renderAdminCategories();
   fillServiceDropdowns();
+
+  const providerBalanceButton=document.getElementById("provider-balance-refresh");
+  const providerBalanceResult=document.getElementById("provider-balance-result");
+  if(providerBalanceButton){
+    providerBalanceButton.onclick=async()=>{
+      providerBalanceButton.disabled=true;
+      providerBalanceResult.textContent="Checking provider balance…";
+      try{
+        const data=await request("/api/admin/provider-balance");
+        providerBalanceResult.textContent=JSON.stringify(data.balance,null,2);
+      }catch(error){
+        providerBalanceResult.textContent="Error: "+error.message;
+      }finally{
+        providerBalanceButton.disabled=false;
+      }
+    };
+  }
+
+  const storageTestButton=document.getElementById("admin-storage-test");
+  const storageTestMessage=document.getElementById("admin-storage-test-result");
+  if(storageTestButton){
+    storageTestButton.onclick=async()=>{
+      storageTestButton.disabled=true;
+      storageTestMessage.textContent="Testing Telegram storage…";
+      try{
+        await request("/api/admin/storage-test","POST",{});
+        storageTestMessage.textContent="Telegram storage connection successful.";
+      }catch(error){
+        storageTestMessage.textContent="Storage test failed: "+error.message;
+      }finally{
+        storageTestButton.disabled=false;
+      }
+    };
+  }
 
   // WALLET DEPOSIT REVIEW
   const depositsMessage=document.getElementById("admin-deposits-message");
