@@ -505,6 +505,94 @@ function wireRequestHistory(){
 
   loadRequestHistory();
 }
+async function wireWallet(){
+  const amountInput=document.getElementById("wallet-deposit-amount");
+  const methodInput=document.getElementById("wallet-deposit-method");
+  const referenceInput=document.getElementById("wallet-deposit-reference");
+  const submitButton=document.getElementById("wallet-deposit-submit");
+  const message=document.getElementById("wallet-deposit-message");
+  const historyBox=document.getElementById("wallet-deposit-history");
+  const refreshButton=document.getElementById("wallet-deposit-refresh");
+
+  if(!submitButton||!historyBox)return;
+
+  async function loadWalletDeposits(){
+    historyBox.textContent="Loading deposit history…";
+    if(refreshButton)refreshButton.disabled=true;
+    try{
+      const data=await request("/api/wallet/deposits");
+      const deposits=data.deposits||[];
+      if(!deposits.length){
+        historyBox.innerHTML='<p class="muted">You have not submitted any deposit requests.</p>';
+        return;
+      }
+      historyBox.innerHTML=deposits.map(d=>{
+        const status=String(d.status||"pending").toLowerCase();
+        const statusClass=status==="approved"?"success":status==="rejected"?"error":"";
+        return `
+          <div class="item">
+            <div class="item-top">
+              <strong>Deposit #${Number(d.id)} · ${esc(money(d.amount_cents,d.currency||"USDT"))}</strong>
+              <span class="pill ${statusClass}">${esc(status.toUpperCase())}</span>
+            </div>
+            <div class="muted">Network: ${esc(d.payment_method||"Not specified")}</div>
+            <div class="muted">Reference: ${esc(d.payment_reference||"Not provided")}</div>
+            <div class="muted">Submitted: ${esc(formatDate(d.created_at))}</div>
+            ${d.admin_note?`<div class="muted">Admin note: ${esc(d.admin_note)}</div>`:""}
+          </div>
+        `;
+      }).join("");
+    }catch(error){
+      historyBox.textContent="Could not load deposit history: "+error.message;
+    }finally{
+      if(refreshButton)refreshButton.disabled=false;
+    }
+  }
+
+  submitButton.onclick=async()=>{
+    const amount=Number(amountInput.value);
+    const amountCents=Math.round(amount*100);
+    const paymentReference=referenceInput.value.trim();
+
+    if(!Number.isFinite(amount)||amount<=0||!Number.isSafeInteger(amountCents)){
+      message.textContent="Enter a valid deposit amount (minimum 0.01 USDT).";
+      return;
+    }
+    if(amountCents>100000000){
+      message.textContent="The maximum request is 1,000,000 USDT.";
+      return;
+    }
+    if(!/^[a-zA-Z0-9._:/-]{3,200}$/.test(paymentReference)){
+      message.textContent="Enter a valid transaction ID/hash (3–200 letters, numbers or . _ : / -).";
+      return;
+    }
+    if(!confirm("Submit this USDT deposit for manual verification? Do not submit unless you have completed a transfer using the administrator's official payment instructions."))return;
+
+    submitButton.disabled=true;
+    submitButton.textContent="Submitting…";
+    message.textContent="Sending your deposit request…";
+    try{
+      const data=await request("/api/wallet/deposits","POST",{
+        amount_cents:amountCents,
+        payment_method:methodInput.value,
+        payment_reference:paymentReference
+      });
+      message.textContent="Deposit request #"+data.deposit_id+" submitted. Your wallet will be credited only after admin verification.";
+      amountInput.value="";
+      referenceInput.value="";
+      await loadWalletDeposits();
+    }catch(error){
+      message.textContent="Submission failed: "+error.message;
+    }finally{
+      submitButton.disabled=false;
+      submitButton.textContent="Submit deposit for review";
+    }
+  };
+
+  if(refreshButton)refreshButton.onclick=loadWalletDeposits;
+  await loadWalletDeposits();
+}
+
 function renderDashboard(){
   const name=user.first_name||"Customer";
 
@@ -569,26 +657,42 @@ function renderDashboard(){
       <div class="grid">
         <a class="service" href="#wallet-deposit" style="text-decoration:none;color:inherit">
           <strong>＋ Deposit</strong>
-          <p>Add funds to your wallet</p>
+          <p>Submit a payment for manual review</p>
         </a>
         <a class="service" href="#wallet-withdraw" style="text-decoration:none;color:inherit">
           <strong>↗ Withdraw</strong>
-          <p>Request a withdrawal</p>
+          <p>Withdrawal requests are coming soon</p>
         </a>
       </div>
       <div id="wallet-deposit" class="item">
-        <h3>Deposit funds</h3>
-        <p>Payment methods and verified payment instructions must be configured by the administrator before deposits can be accepted.</p>
-        <div class="note">For your safety, do not send USDT or money to any address until an official payment address is displayed inside this app.</div>
-        <p class="muted">Deposit request and history APIs are available; the payment instructions and proof-submission screen are the next setup step.</p>
+        <h3>Deposit funds · USDT</h3>
+        <div class="note">Security notice: this app does not currently display a verified deposit address. Do not send USDT until the administrator provides an official address and confirms the network. Never send USDT on the wrong network.</div>
+        <label class="field" for="wallet-deposit-amount">Amount (USDT)</label>
+        <input id="wallet-deposit-amount" type="number" min="0.01" max="1000000" step="0.01" placeholder="Example: 10.00" inputmode="decimal">
+        <label class="field" for="wallet-deposit-method">Payment network</label>
+        <select id="wallet-deposit-method">
+          <option value="usdt_trc20">USDT · TRC20</option>
+        </select>
+        <label class="field" for="wallet-deposit-reference">Transaction ID / hash</label>
+        <input id="wallet-deposit-reference" type="text" maxlength="200" placeholder="Enter the transaction hash after payment">
+        <p class="muted">Submit only after completing a transfer using the official payment instructions. An administrator will independently verify the transaction before crediting your wallet.</p>
+        <button class="btn" id="wallet-deposit-submit" type="button">Submit deposit for review</button>
+        <div id="wallet-deposit-message" class="note" role="status">No deposit request submitted.</div>
       </div>
       <div id="wallet-withdraw" class="item">
         <h3>Withdraw funds</h3>
-        <p>Withdrawals are not enabled yet. The withdrawal request, address validation, admin review and wallet-ledger safeguards must be completed before this feature can accept requests.</p>
+        <div class="note">Withdrawals are not enabled yet. We will add them only after implementing balance reservation, address validation, admin review and ledger safeguards.</div>
       </div>
       <div class="item">
-        <h3>Transaction history</h3>
-        <p class="muted">Wallet transaction history will appear here after the ledger display is connected.</p>
+        <div class="item-top">
+          <h3>My deposit requests</h3>
+          <button class="btn secondary" id="wallet-deposit-refresh" type="button">Refresh</button>
+        </div>
+        <div id="wallet-deposit-history" class="muted">Loading deposit history…</div>
+      </div>
+      <div class="item">
+        <h3>Wallet transactions</h3>
+        <p class="muted">The complete transaction ledger will be connected separately. This list currently shows deposit requests and their review status only.</p>
       </div>
     </section>
 
@@ -788,6 +892,7 @@ function renderDashboard(){
   renderServices();
   wireNotifications();
   wireRequestHistory();
+  wireWallet();
   
   // ------------------------------------------
   // WORLDWIDE TEST NUMBER GENERATOR
@@ -1376,6 +1481,16 @@ function adminMarkup(){
     <p>Manage categories, services and pricing. Changes are saved to the database.</p>
     <div class="note success">Admin access verified by the server.</div>
 
+    <div class="panel">
+      <div class="item-top">
+        <h3>Wallet deposit review</h3>
+        <button class="btn secondary" id="admin-deposits-refresh" type="button">Refresh</button>
+      </div>
+      <p>Verify each payment independently on the correct blockchain/network before approving. Approval immediately credits the customer's USDT wallet.</p>
+      <div id="admin-deposits-message" class="muted">Deposit requests have not been loaded.</div>
+      <div id="admin-deposits-list"></div>
+    </div>
+
     <div class="item-top"><h3>Categories</h3><span class="pill">D1 database</span></div>
     <div id="admin-categories"></div>
 
@@ -1746,6 +1861,90 @@ async function adminAction(action){
 function wireAdmin(){
   renderAdminCategories();
   fillServiceDropdowns();
+
+  // WALLET DEPOSIT REVIEW
+  const depositsMessage=document.getElementById("admin-deposits-message");
+  const depositsList=document.getElementById("admin-deposits-list");
+  const depositsRefresh=document.getElementById("admin-deposits-refresh");
+
+  async function loadAdminDeposits(){
+    if(!depositsMessage||!depositsList)return;
+    depositsMessage.textContent="Loading wallet deposit requests…";
+    depositsList.innerHTML="";
+    if(depositsRefresh)depositsRefresh.disabled=true;
+    try{
+      const data=await request("/api/admin/wallet/deposits");
+      const deposits=data.deposits||[];
+      const pending=deposits.filter(d=>d.status==="pending").length;
+      depositsMessage.textContent="Total requests: "+deposits.length+" · Pending review: "+pending;
+      if(!deposits.length){
+        depositsList.innerHTML='<p class="muted">No deposit requests found.</p>';
+        return;
+      }
+      depositsList.innerHTML=deposits.map(d=>{
+        const id=Number(d.id);
+        const status=String(d.status||"pending").toLowerCase();
+        return `
+          <div class="item" data-deposit-id="${id}">
+            <div class="item-top">
+              <strong>Deposit #${id} · ${esc(money(d.amount_cents,d.currency||"USDT"))}</strong>
+              <span class="pill">${esc(status.toUpperCase())}</span>
+            </div>
+            <div class="muted">Customer: ${esc(d.first_name||"Customer")} ${d.username?"(@"+esc(d.username)+")":""}</div>
+            <div class="muted">Telegram ID: ${esc(d.telegram_id)}</div>
+            <div class="muted">Network: ${esc(d.payment_method)}</div>
+            <div class="muted">Transaction reference: <span style="overflow-wrap:anywhere">${esc(d.payment_reference)}</span></div>
+            <div class="muted">Submitted: ${esc(formatDate(d.created_at))}</div>
+            ${d.admin_note?`<div class="muted">Previous admin note: ${esc(d.admin_note)}</div>`:""}
+            ${status==="pending"?`
+              <label class="field" for="deposit-note-${id}">Admin note (optional)</label>
+              <input id="deposit-note-${id}" type="text" maxlength="500" placeholder="Verification details or rejection reason">
+              <div class="actions">
+                <button class="btn approve-wallet-deposit" data-id="${id}" type="button">Approve & credit</button>
+                <button class="btn danger reject-wallet-deposit" data-id="${id}" type="button">Reject</button>
+              </div>
+            `:'<p class="muted">This request has already been reviewed.</p>'}
+          </div>
+        `;
+      }).join("");
+    }catch(error){
+      depositsMessage.textContent="Could not load deposits: "+error.message;
+    }finally{
+      if(depositsRefresh)depositsRefresh.disabled=false;
+    }
+  }
+
+  if(depositsRefresh)depositsRefresh.onclick=loadAdminDeposits;
+  if(depositsList){
+    depositsList.addEventListener("click",async event=>{
+      const approveButton=event.target.closest(".approve-wallet-deposit");
+      const rejectButton=event.target.closest(".reject-wallet-deposit");
+      const button=approveButton||rejectButton;
+      if(!button)return;
+      const id=Number(button.dataset.id);
+      const note=document.getElementById("deposit-note-"+id)?.value.trim()||"";
+      const action=approveButton?"approve":"reject";
+      if(action==="approve"&&!confirm("Have you independently verified this exact payment on the correct network? Approving will credit "+money(Number(depositsList.querySelector('[data-deposit-id="'+id+'"]')?.textContent.match(/([0-9]+(?:\\.[0-9]+)?) USDT/)?.[1]||0)*100,"USDT")+" to the customer's wallet."))return;
+      if(action==="reject"&&!confirm("Reject deposit request #"+id+"?"))return;
+      button.disabled=true;
+      button.textContent=action==="approve"?"Approving…":"Rejecting…";
+      try{
+        await request("/api/admin/wallet/deposits/review","POST",{
+          deposit_id:id,
+          action,
+          admin_note:note
+        });
+        depositsMessage.textContent="Deposit #"+id+" "+(action==="approve"?"approved and credited.":"rejected.");
+        await loadAdminDeposits();
+      }catch(error){
+        alert("Could not "+action+" deposit: "+error.message);
+        button.disabled=false;
+        button.textContent=action==="approve"?"Approve & credit":"Reject";
+      }
+    });
+  }
+  loadAdminDeposits();
+
   // MANUAL NUMBER FILE REQUEST MANAGEMENT
 
   const requestList = document.getElementById("number-requests-list");
