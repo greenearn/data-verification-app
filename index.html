@@ -1778,6 +1778,20 @@ function adminMarkup(){
     </div>
 
     <div class="panel">
+      <h3>Provider Balance</h3>
+      <p class="muted">Check the current CheckNumber.ai provider balance.</p>
+      <button class="btn secondary" id="provider-balance-refresh" type="button">Check provider balance</button>
+      <pre id="provider-balance-result" class="note muted" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+    </div>
+
+    <div class="panel">
+      <h3>Telegram Storage Connection</h3>
+      <p class="muted">Send a test message to the configured private Telegram storage channel.</p>
+      <button class="btn secondary" id="admin-storage-test" type="button">Test storage connection</button>
+      <p id="admin-storage-test-result" class="muted"></p>
+    </div>
+
+    <div class="panel">
       <h3>Admin Upload Management</h3>
       <p class="muted">
         View customer-uploaded files, selected services, upload dates and expiry status.
