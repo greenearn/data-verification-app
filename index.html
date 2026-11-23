@@ -1,113 +1,2639 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
 <title>Data Verification</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-body{font-family:system-ui,Arial;background:#0f1117;color:#e6e6e6;margin:0;padding:12px}
-h3{margin:14px 0 8px;font-size:15px;color:#8ab4ff}
-button,select,textarea,input{width:100%;box-sizing:border-box;margin:4px 0;padding:10px;border-radius:8px;border:1px solid #333;background:#1a1d27;color:#e6e6e6;font-size:14px}
-button{background:#2b6cb0;border:none;cursor:pointer;font-weight:bold}
-button.sec{background:#333}.row{display:flex;gap:8px}.card{border:1px solid #2a2e3a;border-radius:10px;padding:10px;margin:8px 0}
-a{color:#8ab4ff}.small{font-size:12px;color:#9aa}.ok{color:#4ade80}.bad{color:#f87171}
-</style></head><body><div id="app">Loading…</div>
+:root{color-scheme:dark;--bg:#07111d;--panel:#102338;--line:rgba(151,181,207,.16);--text:#edf6fb;--muted:#91a8ba;--mint:#54e0c1;--red:#ff8791}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(145deg,#081522,#07111d);color:var(--text);font:14px/1.5 system-ui,sans-serif}
+button,input,select,textarea{font:inherit}
+.wrap{max-width:900px;margin:auto;padding:20px 14px 45px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0 18px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;background:#153c43;color:var(--mint);font-weight:900}
+.brand strong{font-size:12px;letter-spacing:.12em}
+.brand small{display:block;color:var(--muted);font-size:10px}
+.status,.pill{font-size:10px;border:1px solid rgba(84,224,193,.25);border-radius:30px;padding:5px 9px;color:var(--mint)}
+h1{font-size:27px;line-height:1.2;margin:25px 0 6px}
+h2{font-size:16px;margin:0}
+h3{font-size:13px;margin:0 0 7px}
+p{color:var(--muted);font-size:12px;margin:5px 0}
+.nav{display:flex;gap:8px;overflow-x:auto;padding:13px 0}
+.nav a{white-space:nowrap;text-decoration:none;color:#c4d5e1;background:#13283a;border:1px solid var(--line);padding:7px 11px;border-radius:25px;font-size:10px}
+.panel,.service,.category{background:rgba(16,35,56,.86);border:1px solid var(--line);border-radius:15px;padding:15px;margin:11px 0}
+.balance{padding:20px;border-radius:18px;background:linear-gradient(110deg,#16474f,#102b41);border:1px solid rgba(84,224,193,.25);margin:18px 0}
+.balance small{color:#b8d8d5;font-size:10px}
+.balance strong{display:block;font-size:30px;margin:5px 0}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.service{margin:0;cursor:pointer;min-width:0}
+.service.selected{border-color:var(--mint)}
+.service strong{font-size:12px}
+.service p{font-size:11px}
+.category{padding:0;overflow:hidden}
+.category-toggle{width:100%;padding:14px;background:transparent;border:0;color:var(--mint);text-align:left;font-weight:800;font-size:11px;letter-spacing:.08em;display:flex;justify-content:space-between;cursor:pointer}
+.category-content{display:none;padding:0 10px 10px;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.category.open .category-content{display:grid}
+.field{display:block;margin:13px 0 6px;color:#c8d9e5;font-size:11px;font-weight:700}
+input,select,textarea{width:100%;background:#071725;border:1px solid var(--line);border-radius:10px;padding:11px;color:var(--text);outline:none}
+textarea{min-height:85px;resize:vertical}
+input:focus,select:focus,textarea:focus{border-color:var(--mint)}
+button{cursor:pointer}
+.btn{border:0;border-radius:10px;padding:11px 14px;background:linear-gradient(110deg,#5ce4c6,#39c8b4);color:#06201e;font-size:11px;font-weight:850;margin-top:10px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.secondary{background:#20364a;color:#e1edf5;border:1px solid var(--line)}
+.danger{background:#48252e;color:#ffd9dd;border:1px solid #75404a}
+.row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;position:relative;z-index:5}
+.actions .btn{flex:1;position:relative;z-index:6;pointer-events:auto!important;touch-action:manipulation;cursor:pointer}
+.note{padding:11px;border-radius:10px;background:#142b3c;color:#bcd2e2;font-size:11px;margin:10px 0}
+.success{color:var(--mint)}
+.error{color:var(--red)}
+.muted{color:var(--muted);font-size:11px}
+.hidden{display:none!important}
+.admin-label{color:var(--mint);font-size:10px;font-weight:900;letter-spacing:.15em}
+  /* NOTIFICATIONS AND REQUEST HISTORY */
+.notification-area{position:relative;margin-left:auto}
+.notification-button{background:#13283a;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:12px}
+.notification-count{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:20px;background:#ff6878;color:#fff;font-size:10px;font-weight:900;margin-left:4px}
+.notification-panel{display:none;position:absolute;right:0;top:44px;width:min(340px,85vw);max-height:380px;overflow-y:auto;background:#102338;border:1px solid var(--line);border-radius:13px;padding:12px;z-index:50;box-shadow:0 12px 35px #0008}
+.notification-panel.open{display:block}
+.notification-entry{padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.notification-entry.unread{border-left:3px solid var(--mint);padding-left:9px}
+.notification-entry strong{font-size:12px}
+.notification-entry p{margin:4px 0}
+.notification-tools{display:flex;gap:7px;flex-wrap:wrap}
+.history-filter{max-width:220px}
+.item{padding:12px 0;border-bottom:1px solid var(--line)}
+.item-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.item strong{font-size:12px}
+.item small{display:block;color:var(--muted);font-size:10px}
+.checkbox{display:flex;gap:8px;align-items:center;font-size:11px;margin-top:12px}
+.checkbox input{width:auto}
+.loader{width:23px;height:23px;border:2px solid #34516b;border-top-color:var(--mint);border-radius:50%;animation:spin .8s linear infinite;margin:20px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+footer{text-align:center;border-top:1px solid var(--line);padding:17px;margin-top:25px;color:#72899b;font-size:10px}
+@media(max-width:480px){.grid,.category-content{grid-template-columns:1fr}.wrap{padding:14px 12px 35px}.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="app"><div class="wrap"><div class="loader"></div><p>Connecting securely to Telegram…</p></div></div>
+
 <script>
-const q=new URLSearchParams(location.search);
-const API=q.get('api'),AUTH=q.get('auth'),ADMIN=q.get('admin_api'),TG=q.get('tg_id');
-let token=localStorage.getItem('dv_token_'+TG)||'',ME=null,SERVICES=[];
-const tu=(window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initDataUnsafe&&Telegram.WebApp.initDataUnsafe.user)||{};
-const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-const app=document.getElementById('app');
-async function call(url,data){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});return r.json();}
-const api=(a,x)=>call(API,Object.assign({auth:token,action:a},x||{}));
-const adm=(a,x)=>call(ADMIN,Object.assign({tg_id:TG,action:a},x||{}));
-function nav(){return '<p><a href="#home">Home</a> · <a href="#orders">Orders</a> · <a href="#deposit">Deposit</a> · <a href="#withdraw">Withdraw</a> · <a href="#ref">Refer</a> · <a href="#support">Support</a> · <a href="#notifs">Notifs</a> · <a href="#" class="sec" onclick="logout()">Logout</a>'+(ME&&ME.is_admin?' · <a href="#admin"><b>Admin</b></a>':'')+'</p>';}
-async function boot(){
-  if(!API||!AUTH||!TG){app.innerHTML='<p class="bad">Open this app from /start in the bot.</p>';return;}
-  if(!token){
-    let r=await call(AUTH,{tg_id:TG,mode:'login'});
-    if(!r.ok) r=await call(AUTH,{tg_id:TG,mode:'register',name:tu.first_name||'',username:tu.username||''});
-    if(r.ok){token=r.token;localStorage.setItem('dv_token_'+TG,token);}else{app.innerHTML='<p class="bad">Auth failed: '+esc(r.error)+'</p>';return;}
-  }
-  let me=await api('me');
-  if(me.ok){ME=me;ME.is_admin=false;try{const d=await adm('dashboard');ME.is_admin=!!d.ok;}catch(e){}}
-  route();
+(function(){
+"use strict";
+
+const API="https://data-verification-api.shrestharaj980888.workers.dev";
+const app=document.getElementById("app");
+const tg=window.Telegram&&Telegram.WebApp?Telegram.WebApp:null;
+
+let token="";
+let user={};
+let services=[];
+let adminServices=[];
+let categories=[];
+let selectedCode="";
+let adminMode=false;
+let notificationPollTimer = null;
+let notificationIds = new Set();
+let notificationsInitialized = false;
+let notificationSoundEnabled = localStorage.getItem("dv_notification_sound") !== "off";
+let notificationAudioContext = null;
+if(tg){
+  tg.ready();
+  tg.expand();
+  if(tg.setHeaderColor)tg.setHeaderColor("#0b1220");
+  if(tg.setBackgroundColor)tg.setBackgroundColor("#0b1220");
 }
-function route(){const h=location.hash||'#home';
-  if(h.startsWith('#orders'))orders();else if(h.startsWith('#deposit'))deposit();else if(h.startsWith('#withdraw'))withdraw();
-  else if(h.startsWith('#ref'))refv();else if(h.startsWith('#support'))support();else if(h.startsWith('#notifs'))notifs();
-  else if(h.startsWith('#admin'))admin();else home();}
-window.onhashchange=route;
-function logout(){call(AUTH,{tg_id:TG,mode:'logout'});localStorage.removeItem('dv_token_'+TG);location.reload();}
-async function home(){const s=await api('services');SERVICES=s.services||[];
-  let h=nav()+'<h3>Hello '+esc(ME.name)+' — balance: <b class="ok">'+ME.balance+'</b> credits</h3>';
-  for(const p of SERVICES){h+='<div class="card"><b>'+esc(p.platform)+'</b><br>';
-    for(const t of p.tasks)h+='<button class="sec" onclick="orderForm(\''+esc(p.platform)+'\',\''+esc(t.key)+'\')">'+esc(t.name)+' — $'+t.price+' / 10K</button>';
-    h+='</div>';}
-  app.innerHTML=h;}
-let OF={platform:'',task:'',price:0};
-function orderForm(p,k){for(const pl of SERVICES)if(pl.platform===p)for(const t of pl.tasks)if(t.key===k)OF={platform:p,task:k,price:t.price};
-  app.innerHTML=nav()+'<h3>'+esc(OF.platform)+' / '+esc(OF.task)+'</h3><p class="small">One number/username/email per line. Price $'+OF.price+' per 10,000 items.</p>'+
-  '<textarea id=inp rows=8 placeholder="one per line"></textarea><p>Count: <span id=cnt>0</span> — Total: <b id=tot>0</b> credits</p>'+
-  '<button onclick="placeOrder()">Place order</button><p id=ofmsg></p><p><a href="#home">Back</a></p>';
-  document.getElementById('inp').oninput=function(){const n=this.value.split('\n').filter(x=>x.trim()).length;
-    document.getElementById('cnt').textContent=n;document.getElementById('tot').textContent=(OF.price*n/10000).toFixed(4);};}
-async function placeOrder(){const inp=document.getElementById('inp').value;const r=await api('create_order',{platform:OF.platform,task:OF.task,input:inp});
-  document.getElementById('ofmsg').innerHTML=r.ok?'<span class="ok">Order '+r.order.id+' created.</span>':'<span class="bad">'+esc(r.error)+' need '+esc(r.need||'')+'</span>';
-  if(r.ok)ME.balance=r.balance;}
-async function orders(){const r=await api('orders');let h=nav()+'<h3>My orders</h3>';
-  for(const o of r.orders||[])h+='<div class="card"><b>'+o.id+'</b> '+esc(o.platform)+' / '+esc(o.task)+'<br>'+o.count+' items — '+o.total+' credits — <span class="'+(o.status==='done'?'ok':o.status==='failed'||o.status==='cancelled'?'bad':'')+'">'+o.status+'</span> <a href="#ord_'+o.id+'">open</a></div>';
-  if(location.hash.startsWith('#ord_')){const id=location.hash.slice(5);const d=await api('order',{id});
-    if(d.ok){h+='<h3>'+id+'</h3><textarea rows=12>'+esc(d.order.result||'')+'</textarea><button onclick="dl(\''+id+'.csv\',document.querySelector(\'textarea\').value)">Download CSV</button>';}}
-  app.innerHTML=h;}
-function dl(n,t){const b=new Blob([t],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;a.click();}
-async function deposit(){app.innerHTML=nav()+'<h3>Deposit (2328.io)</h3><p class="small">Pay to the admin\'s 2328.io address, then request credit below.</p>'+
-  'Amount<br><input id=damt type=number min=1>Method<br><input id=dmeth value="2328.io">Tx id / note<br><input id=ddet>'+
-  '<button onclick="depReq()">Request deposit</button><p id=dmsg></p><h3>History</h3><div id=dhist></div>';
-  const r=await api('deposits');let h='';for(const d of r.deposits||[])h+='<div class="card">'+d.id+' — '+d.amount+' — '+esc(d.method)+' — <b>'+d.status+'</b> '+(d.note?'<br>'+esc(d.note):'')+'</div>';
-  document.getElementById('dhist').innerHTML=h;}
-async function depReq(){const r=await api('deposit_request',{amount:parseFloat(document.getElementById('damt').value),method:document.getElementById('dmeth').value,details:document.getElementById('ddet').value});
-  document.getElementById('dmsg').innerHTML=r.ok?'<span class="ok">Request sent. Admin will approve after payment.</span>':'<span class="bad">'+esc(r.error)+'</span>';}
-async function withdraw(){app.innerHTML=nav()+'<h3>Withdraw</h3>Address<br><input id=waddr value="'+esc(ME.address||'')+'">Amount<br><input id=wamt type=number>'+
-  '<button onclick="wReq()">Save address + request withdrawal</button><p id=wmsg></p><h3>History</h3><div id=whist></div>';
-  const r=await api('withdrawals');let h='';for(const w of r.withdrawals||[])h+='<div class="card">'+w.id+' — '+w.amount+' — '+esc(w.address)+' — <b>'+w.status+'</b></div>';
-  document.getElementById('whist').innerHTML=h;}
-async function wReq(){await api('set_address',{address:document.getElementById('waddr').value});
-  const r=await api('withdraw_request',{amount:parseFloat(document.getElementById('wamt').value),address:document.getElementById('waddr').value});
-  document.getElementById('wmsg').innerHTML=r.ok?'<span class="ok">Withdrawal requested.</span>':'<span class="bad">'+esc(r.error)+' min '+esc(r.min||'')+'</span>';}
-async function refv(){const r=await api('ref_stats');
-  app.innerHTML=nav()+'<h3>Referral</h3><p>Link: <input value="'+esc(r.link)+'" onclick="this.select()"><br>You earn <b>'+r.percent+'%</b> of every order made by your referrals. Referrals: <b>'+r.referrals+'</b>.</p>'+
-  '<p class="small">Want your own clone app (commission basis, no payment addresses / no user data / no messaging)?</p><button onclick="cloneReq()">Request clone access</button><p id=cmsg></p>';}
-async function cloneReq(){const r=await api('clone_request');document.getElementById('cmsg').innerHTML='<span class="ok">Request sent to admin.</span>';}
-async function support(){app.innerHTML=nav()+'<h3>Support</h3><textarea id=stxt rows=4></textarea><button onclick="sSend()">Send</button><p id=smsg></p><p class="small">Admin replies arrive in your Telegram chat.</p>';}
-async function sSend(){const r=await api('support_send',{text:document.getElementById('stxt').value});
-  document.getElementById('smsg').innerHTML=r.ok?'<span class="ok">Sent.</span>':'<span class="bad">Empty.</span>';}
-async function notifs(){const r=await api('notifs');await api('notif_read');let h=nav()+'<h3>Notifications</h3>';
-  for(const n of r.notifs||[])h+='<div class="card"><b>'+esc(n.title)+'</b> <span class="small">'+esc(n.ts)+'</span><br>'+esc(n.body)+'</div>';
-  app.innerHTML=h||nav()+'<p>No notifications yet.</p>';}
-async function admin(){if(!ME||!ME.is_admin){app.innerHTML=nav()+'<p class="bad">Admins only.</p>';return;}
-  const d=await adm('dashboard');const s=d.settings||{};
-  let h=nav()+'<h3>Admin panel</h3><p>Orders: '+(d.orders||[]).length+' · Deposits: '+(d.deposits||[]).length+' · Withdrawals: '+(d.withdrawals||[]).length+' · Ref %: '+esc(d.ref_percent)+'</p>';
-  h+='<h3>Settings</h3>Ref % <input id=st_ref value="'+esc(s.ref_percent)+'">Min deposit <input id=st_md value="'+esc(s.min_deposit)+'">Min withdraw <input id=st_mw value="'+esc(s.min_withdraw)+'">Welcome bonus <input id=st_wb value="'+esc(s.welcome_bonus)+'">Test mode (1/0) <input id=st_tm value="'+esc(s.test_mode)+'"><button onclick="saveSt()">Save settings</button><p id=stmsg></p>';
-  h+='<h3>Deposits</h3>';for(const x of d.deposits||[])h+='<div class="card">'+x.id+' user '+x.uid+' '+x.amount+' '+esc(x.method)+' <b>'+x.status+'</b> <button onclick="depAct(\''+x.id+'\',1)">Approve</button> <button class="sec" onclick="depAct(\''+x.id+'\',0)">Reject</button></div>';
-  h+='<h3>Withdrawals</h3>';for(const x of d.withdrawals||[])h+='<div class="card">'+x.id+' user '+x.uid+' '+x.amount+' '+esc(x.address)+' <b>'+x.status+'</b> <button onclick="wdAct(\''+x.id+'\',1)">Approve</button> <button class="sec" onclick="wdAct(\''+x.id+'\',0)">Reject</button></div>';
-  h+='<h3>Broadcast</h3><textarea id=bt rows=3></textarea><button onclick="bcast()">Send to all users</button><p id=bmsg></p>';
-  h+='<h3>Clone requests</h3>';for(const x of (await adm('clone_requests')).requests||[])h+='<div class="card">user '+x.uid+' <b>'+x.status+'</b> <button onclick="clAct(\''+x.id+'\',1)">Approve</button> <button class="sec" onclick="clAct(\''+x.id+'\',0)">Reject</button></div>';
-  h+='<h3>Users</h3><input id=uq placeholder="search" oninput="uS()"><div id=ul></div>';
-  h+='<h3>Support messages</h3><div id=sml></div>';
-  app.innerHTML=h;await uS();await smL();}
-async function saveSt(){const r=await adm('save_settings',{ref_percent:parseFloat(document.getElementById('st_ref').value),min_deposit:parseFloat(document.getElementById('st_md').value),min_withdraw:parseFloat(document.getElementById('st_mw').value),welcome_bonus:parseFloat(document.getElementById('st_wb').value),test_mode:parseInt(document.getElementById('st_tm').value)||0});
-  document.getElementById('stmsg').innerHTML='<span class="ok">Saved.</span>';}
-async function depAct(id,ap){await adm('deposit_action',{id,id2:id,approve:ap});admin();}
-async function wdAct(id,ap){await adm('withdraw_action',{id,approve:ap});admin();}
-async function bcast(){const r=await adm('broadcast',{text:document.getElementById('bt').value});document.getElementById('bmsg').innerHTML='<span class="ok">Sent to '+r.sent+'.</span>';}
-async function clAct(id,ap){await adm('clone_action',{id,approve:ap});admin();}
-async function uS(){const r=await adm('users',{q:document.getElementById('uq').value||''});let h='';
-  for(const x of r.users||[])h+='<div class="card">'+x.id+' '+esc(x.name)+' bal '+x.balance+' '+(x.banned?'BANNED':'')+'<br><button onclick="setBal(\''+x.id+'\')">Set balance</button> <button class="sec" onclick="ban(\''+x.id+'\','+(!x.banned?1:0)+')">'+(x.banned?'Unban':'Ban')+'</button></div>';
-  document.getElementById('ul').innerHTML=h;window._us=r.users||[];}
-async function setBal(uid){const v=prompt('New balance for '+uid);if(v===null)return;await adm('set_balance',{uid:parseInt(uid),balance:parseFloat(v)||0});uS();}
-async function ban(uid,b){await adm('ban_user',{uid:parseInt(uid),ban:!!b});uS();}
-async function smL(){const r=await adm('messages');let h='';for(const m of r.messages||[])h+='<div class="card">'+m.uid+': '+esc(m.text)+'<br><input id=r_'+m.id+' placeholder="reply"><button onclick="sRep(\''+m.id+'\')">Reply</button></div>';
-  document.getElementById('sml').innerHTML=h;}
-async function sRep(id){const v=document.getElementById('r_'+id).value;await adm('reply_message',{id,text:v});alert('Sent.');}
-boot();
-</script></body></html>
+
+function esc(v){
+  return String(v==null?"":v)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#39;");
+}
+
+function money(cents,currency){
+  return (Number(cents||0)/100).toFixed(2)+" "+(currency||"USDT");
+}
+
+async function request(path,method="GET",body=null){
+  const options={
+    method,
+    headers:{
+      "Authorization":"Bearer "+token,
+      "Accept":"application/json"
+    }
+  };
+
+  if(body!==null){
+    if(body instanceof FormData){
+      options.body=body;
+    }else{
+      options.headers["Content-Type"]="application/json";
+      options.body=JSON.stringify(body);
+    }
+  }
+
+  const response=await fetch(API+path,options);
+  const data=await response.json();
+
+  if(!response.ok||!data.ok){
+   throw new Error(
+  (data.error || "Request failed (" + response.status + ")") +
+  (data.details ? " | Details: " + data.details : "")
+);
+  }
+
+  return data;
+}
+
+function showError(message){
+  app.innerHTML='<main class="wrap"><div class="panel"><h2>Connection problem</h2><p class="error">'+esc(message)+'</p><button class="btn" onclick="location.reload()">Try again</button></div></main>';
+}
+
+async function login(){
+  if(!tg||!tg.initData){
+    showError("Please open this Mini App from your Telegram bot.");
+    return;
+  }
+
+  app.innerHTML='<main class="wrap"><div class="loader"></div><p>Verifying Telegram account…</p></main>';
+
+  try{
+    const response=await fetch(API+"/api/auth",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({initData:tg.initData})
+    });
+
+    const data=await response.json();
+
+    if(!response.ok||!data.ok)throw new Error(data.error||"Login failed");
+
+    token=data.token;
+
+    const me=await request("/api/me");
+    user=me.user||data.user||{};
+
+    await loadCustomerServices();
+    renderDashboard();
+
+    try{
+      const admin=await request("/api/admin/catalogue");
+      categories=admin.categories||[];
+      adminServices=admin.services||adminServices;
+      adminMode=true;
+      renderDashboard();
+    }catch(error){
+      adminMode=false;
+    }
+
+  }catch(error){
+    showError(error.message||"Secure login failed.");
+  }
+}
+
+async function loadCustomerServices(){
+  const data=await request("/api/services");
+  services=data.services||[];
+}
+
+function balanceText(){
+  const cents=user.wallet_balance_cents??user.balance_cents??user.wallet_cents;
+  if(cents===undefined||cents===null)return "Balance unavailable";
+  return money(cents,"USDT");
+}
+async function refreshWalletBalance(){
+  try{
+    const data=await request("/api/me");
+    user=data.user||user;
+
+    const balance=balanceText();
+
+    const mainBalance=document.getElementById("main-wallet-balance");
+    const walletBalance=document.getElementById("wallet-section-balance");
+
+    if(mainBalance)mainBalance.textContent=balance;
+    if(walletBalance)walletBalance.textContent=balance;
+  }catch(error){
+    console.error("Wallet balance refresh failed:",error);
+  }
+}
+async function loadOrders(){
+  const message = document.getElementById("orders-message");
+  const list = document.getElementById("orders-list");
+  const refreshButton = document.getElementById("orders-refresh");
+
+  if(!message || !list) return;
+
+  if(refreshButton) refreshButton.disabled = true;
+
+  message.textContent = "Loading order history...";
+  list.innerHTML = "";
+
+  try{
+    const result = await request("/api/orders?limit=20&offset=0");
+
+    const orders = result.orders || [];
+
+    if(!orders.length){
+      message.textContent = "No order history found.";
+      list.innerHTML = "";
+      return;
+    }
+
+    message.textContent =
+      "Showing " + orders.length + " of " +
+      (result.pagination?.total || orders.length) + " orders.";
+
+    list.innerHTML = orders.map(order => {
+      const amount = order.customer_charge_cents == null
+        ? "Not available"
+        : money(
+            Number(order.customer_charge_cents),
+            order.currency || "USD"
+          );
+
+      return `
+        <div class="item">
+          <strong>Order #${esc(String(order.id))}</strong>
+          <div>Service: ${esc(order.resource_code || "Unknown")}</div>
+          <div>Quantity: ${esc(String(order.quantity ?? "—"))}</div>
+          <div>Amount: ${esc(amount)}</div>
+          <div>Status: ${esc(order.status || "Unknown")}</div>
+          <small>Created: ${esc(String(order.created_at || "—"))}</small>
+        </div>
+      `;
+    }).join("");
+
+  }catch(error){
+    message.textContent =
+      "Could not load order history: " + error.message;
+
+    list.innerHTML = "";
+  }finally{
+    if(refreshButton) refreshButton.disabled = false;
+  }
+}
+function formatDate(value){
+  if(!value)return "—";
+  let dateString=String(value);
+  if(!/[zZ]|[+-]\d{2}:\d{2}$/.test(dateString)){
+    dateString=dateString.replace(" ","T")+"Z";
+  }
+  const date=new Date(dateString);
+  return isNaN(date.getTime())?String(value):date.toLocaleString();
+}
+
+function playNotificationSound(){
+  try{
+    const AudioContext=window.AudioContext||window.webkitAudioContext;
+    if(!AudioContext)return;
+
+    if(!notificationAudioContext){
+      notificationAudioContext=new AudioContext();
+    }
+
+    if(notificationAudioContext.state==="suspended"){
+      notificationAudioContext.resume();
+    }
+
+    const oscillator=notificationAudioContext.createOscillator();
+    const gain=notificationAudioContext.createGain();
+
+    oscillator.type="sine";
+    oscillator.frequency.value=880;
+    gain.gain.setValueAtTime(0.08,notificationAudioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(
+      0.001,
+      notificationAudioContext.currentTime+0.25
+    );
+
+    oscillator.connect(gain);
+    gain.connect(notificationAudioContext.destination);
+    oscillator.start();
+    oscillator.stop(notificationAudioContext.currentTime+0.25);
+  }catch(error){
+    console.warn("Notification sound unavailable:",error);
+  }
+}
+
+function renderNotifications(data){
+  const count=document.getElementById("notification-count");
+  const list=document.getElementById("notification-list");
+
+  if(!count||!list)return;
+
+  const notifications=data.notifications||[];
+  const unread=Number(data.unread_count||0);
+
+  count.textContent=unread>99?"99+":String(unread);
+
+  if(!notifications.length){
+    list.innerHTML='<p class="muted">No notifications yet.</p>';
+    return;
+  }
+
+  list.innerHTML=notifications.map(item=>`
+    <div class="notification-entry ${item.read_at?"":"unread"}"
+         data-notification-id="${esc(item.id)}">
+      <strong>${esc(item.title||"Notification")}</strong>
+      <p>${esc(item.message||"")}</p>
+      <small>${esc(formatDate(item.created_at))}</small>
+      <div><small>${item.read_at?"Read":"Unread — click to mark as read"}</small></div>
+    </div>
+  `).join("");
+}
+
+async function loadNotifications(isPoll=false){
+  try{
+    const data=await request("/api/notifications");
+    const notifications=data.notifications||[];
+
+    if(isPoll&&notificationsInitialized){
+      const hasNew=notifications.some(item=>
+        !notificationIds.has(String(item.id))
+      );
+
+      if(hasNew&&notificationSoundEnabled){
+        playNotificationSound();
+      }
+    }
+
+    notificationIds=new Set(
+      notifications.map(item=>String(item.id))
+    );
+
+    notificationsInitialized=true;
+    renderNotifications(data);
+  }catch(error){
+    const list=document.getElementById("notification-list");
+    if(list)list.innerHTML=
+      '<p class="error">Could not load notifications: '+
+      esc(error.message)+'</p>';
+  }
+}
+
+function wireNotifications(){
+  const toggle=document.getElementById("notification-toggle");
+  const panel=document.getElementById("notification-panel");
+  const refresh=document.getElementById("notification-refresh");
+  const sound=document.getElementById("notification-sound-toggle");
+  const markAll=document.getElementById("notification-mark-all");
+  const list=document.getElementById("notification-list");
+
+  if(!toggle||!panel||!refresh||!sound||!markAll||!list)return;
+
+  toggle.onclick=()=>{
+    const opened=panel.classList.toggle("open");
+    toggle.setAttribute("aria-expanded",String(opened));
+    if(opened)loadNotifications();
+  };
+
+  refresh.onclick=()=>loadNotifications();
+
+  sound.textContent="Sound: "+(notificationSoundEnabled?"On":"Off");
+
+  sound.onclick=()=>{
+    notificationSoundEnabled=!notificationSoundEnabled;
+    localStorage.setItem(
+      "dv_notification_sound",
+      notificationSoundEnabled?"on":"off"
+    );
+    sound.textContent="Sound: "+(notificationSoundEnabled?"On":"Off");
+  };
+
+  list.onclick=async event=>{
+    const entry=event.target.closest(".notification-entry");
+    if(!entry||!entry.classList.contains("unread"))return;
+
+    const id=Number(entry.dataset.notificationId);
+    if(!Number.isInteger(id)||id<=0)return;
+
+    try{
+      await request("/api/notifications/read","POST",{
+        notification_id:id
+      });
+      await loadNotifications();
+    }catch(error){
+      alert("Could not mark notification as read: "+error.message);
+    }
+  };
+
+  markAll.onclick=async()=>{
+    const unreadEntries=[
+      ...list.querySelectorAll(".notification-entry.unread")
+    ];
+
+    if(!unreadEntries.length)return;
+
+    markAll.disabled=true;
+
+    try{
+      for(const entry of unreadEntries){
+        const id=Number(entry.dataset.notificationId);
+        if(Number.isInteger(id)&&id>0){
+          await request("/api/notifications/read","POST",{
+            notification_id:id
+          });
+        }
+      }
+      await loadNotifications();
+    }catch(error){
+      alert("Could not mark all notifications as read: "+error.message);
+    }finally{
+      markAll.disabled=false;
+    }
+  };
+
+  loadNotifications();
+
+  if(notificationPollTimer){
+    clearInterval(notificationPollTimer);
+  }
+
+  notificationPollTimer=setInterval(()=>{
+    loadNotifications(true);
+  },45000);
+}
+  async function loadRequestHistory(){
+  const message=document.getElementById("request-history-message");
+  const list=document.getElementById("request-history-list");
+  const filter=document.getElementById("request-history-filter");
+
+  if(!message||!list||!filter)return;
+
+  message.textContent="Loading your file requests…";
+  list.innerHTML="";
+
+  try{
+    const result=await request(
+      "/api/toolbox/number-file-requests/history?status="+
+      encodeURIComponent(filter.value)
+    );
+
+    const requests=result.requests||[];
+
+    if(!requests.length){
+      message.textContent="No file requests found.";
+      return;
+    }
+
+    message.textContent="Showing "+requests.length+" request(s).";
+
+    list.innerHTML=requests.map(item=>`
+      <div class="item">
+        <div class="item-top">
+          <strong>Request #${esc(item.id)}</strong>
+          <strong>${esc((item.status||"pending").toUpperCase())}</strong>
+        </div>
+        <div>Country: ${esc(item.country_code||"—")}</div>
+        <div>Type: ${esc(item.number_type||"—")}</div>
+        <div>Quantity: ${esc(item.quantity??"—")}</div>
+        <small>Submitted: ${esc(formatDate(item.created_at))}</small>
+        ${item.admin_file_name?`<div>File: ${esc(item.admin_file_name)}</div>`:""}
+        ${item.admin_note?`<div>Admin note: ${esc(item.admin_note)}</div>`:""}
+        ${item.completed_at?`<small>Completed: ${esc(formatDate(item.completed_at))}</small>`:""}
+        ${item.rejected_at?`<small>Rejected: ${esc(formatDate(item.rejected_at))}</small>`:""}
+      </div>
+    `).join("");
+
+  }catch(error){
+    message.textContent="Could not load file requests: "+error.message;
+  }
+}
+
+function wireRequestHistory(){
+  const filter=document.getElementById("request-history-filter");
+  const refresh=document.getElementById("request-history-refresh");
+
+  if(!filter||!refresh)return;
+
+  filter.onchange=loadRequestHistory;
+  refresh.onclick=loadRequestHistory;
+
+  loadRequestHistory();
+}
+async function wireWallet(){
+  const amountInput=document.getElementById("wallet-deposit-amount");
+  const methodInput=document.getElementById("wallet-deposit-method");
+  const referenceInput=document.getElementById("wallet-deposit-reference");
+  const submitButton=document.getElementById("wallet-deposit-submit");
+  const message=document.getElementById("wallet-deposit-message");
+  const historyBox=document.getElementById("wallet-deposit-history");
+  const refreshButton=document.getElementById("wallet-deposit-refresh");
+
+  if(!submitButton||!historyBox)return;
+
+  async function loadWalletDeposits(){
+    historyBox.textContent="Loading deposit history…";
+    if(refreshButton)refreshButton.disabled=true;
+    try{
+      const data=await request("/api/wallet/deposits");
+      const deposits=data.deposits||[];
+      if(!deposits.length){
+        historyBox.innerHTML='<p class="muted">You have not submitted any deposit requests.</p>';
+        return;
+      }
+      historyBox.innerHTML=deposits.map(d=>{
+        const status=String(d.status||"pending").toLowerCase();
+        const statusClass=status==="approved"?"success":status==="rejected"?"error":"";
+        return `
+          <div class="item">
+            <div class="item-top">
+              <strong>Deposit #${Number(d.id)} · ${esc(money(d.amount_cents,d.currency||"USDT"))}</strong>
+              <span class="pill ${statusClass}">${esc(status.toUpperCase())}</span>
+            </div>
+            <div class="muted">Network: ${esc(d.payment_method||"Not specified")}</div>
+            <div class="muted">Reference: ${esc(d.payment_reference||"Not provided")}</div>
+            <div class="muted">Submitted: ${esc(formatDate(d.created_at))}</div>
+${d.reviewed_at?`<div class="muted">Reviewed: ${esc(formatDate(d.reviewed_at))}</div>`:""}
+${d.admin_note?`<div class="muted">Admin note: ${esc(d.admin_note)}</div>`:""}
+          </div>
+        `;
+      }).join("");
+    }catch(error){
+      historyBox.textContent="Could not load deposit history: "+error.message;
+    }finally{
+      if(refreshButton)refreshButton.disabled=false;
+    }
+  }
+
+  submitButton.onclick=async()=>{
+    const amount=Number(amountInput.value);
+    const amountCents=Math.round(amount*100);
+    const paymentReference=referenceInput.value.trim();
+
+    if(!Number.isFinite(amount)||amount<=0||!Number.isSafeInteger(amountCents)){
+      message.textContent="Enter a valid deposit amount (minimum 0.01 USDT).";
+      return;
+    }
+    if(amountCents>100000000){
+      message.textContent="The maximum request is 1,000,000 USDT.";
+      return;
+    }
+    if(!/^[a-zA-Z0-9._:/-]{3,200}$/.test(paymentReference)){
+      message.textContent="Enter a valid transaction ID/hash (3–200 letters, numbers or . _ : / -).";
+      return;
+    }
+    if(!confirm("Submit this USDT deposit for manual verification? Do not submit unless you have completed a transfer using the administrator's official payment instructions."))return;
+
+    submitButton.disabled=true;
+    submitButton.textContent="Submitting…";
+    message.textContent="Sending your deposit request…";
+    try{
+      const data=await request("/api/wallet/deposits","POST",{
+        amount_cents:amountCents,
+        payment_method:methodInput.value,
+        payment_reference:paymentReference
+      });
+      message.textContent="Deposit request #"+data.deposit_id+" submitted. Your wallet will be credited only after admin verification.";
+      amountInput.value="";
+      referenceInput.value="";
+      await loadWalletDeposits();
+    }catch(error){
+      message.textContent="Submission failed: "+error.message;
+    }finally{
+      submitButton.disabled=false;
+      submitButton.textContent="Submit deposit for review";
+    }
+  };
+
+  if(refreshButton)refreshButton.onclick=loadWalletDeposits;
+  await loadWalletDeposits();
+}
+
+function renderDashboard(){
+  const name=user.first_name||"Customer";
+
+  app.innerHTML=`
+  <main class="wrap">
+    <header>
+       <div class="brand">
+    <div class="logo">DV</div>
+    <div><strong>DATA VERIFICATION</strong><small>SECURE CUSTOMER PORTAL</small></div>
+  </div>
+
+  <div class="notification-area">
+    <button class="notification-button" id="notification-toggle" type="button" aria-expanded="false">
+      Notifications <span class="notification-count" id="notification-count">0</span>
+    </button>
+    <div class="notification-panel" id="notification-panel">
+      <div class="item-top">
+        <strong>Notifications</strong>
+        <button class="btn secondary" id="notification-refresh" type="button">Refresh</button>
+      </div>
+      <div class="notification-tools">
+        <button class="btn secondary" id="notification-sound-toggle" type="button">Sound: On</button>
+        <button class="btn secondary" id="notification-mark-all" type="button">Mark all read</button>
+      </div>
+      <div id="notification-list" class="muted">Loading notifications…</div>
+    </div>
+  </div>
+
+  <span class="status">SECURE SESSION</span>
+    </header>
+
+   
+<nav class="nav">
+  <a href="#services">Services</a>
+  <a href="#wallet">Wallet</a>
+  <a href="#prepare">Prepare list</a>
+  <a href="#toolbox">Toolbox</a>
+  <a href="#orders">Orders</a>
+  <a href="#account">Account</a>
+  ${adminMode?'<a href="#admin">Admin dashboard</a>':""}
+</nav>
+
+    <h1>Welcome, ${esc(name)}</h1>
+    <p>Manage your validation services and account.</p>
+
+    <section class="balance">
+      <small>AVAILABLE WALLET BALANCE</small>
+     <strong id="main-wallet-balance">${esc(balanceText())}</strong>
+      <small>Account balance · USDT</small>
+    </section>
+
+    <section id="wallet" class="panel">
+      <div class="item-top">
+        <h2>My Wallet</h2>
+        <span class="pill">USDT</span>
+      </div>
+      <div class="balance" style="margin:12px 0">
+        <small>AVAILABLE BALANCE</small>
+     <strong id="wallet-section-balance">${esc(balanceText())}</strong>
+        <small>Wallet funds</small>
+      </div>
+      <div class="grid">
+        <a class="service" href="#wallet-deposit" style="text-decoration:none;color:inherit">
+          <strong>＋ Deposit</strong>
+          <p>Submit a payment for manual review</p>
+        </a>
+        <a class="service" href="#wallet-withdraw" style="text-decoration:none;color:inherit">
+          <strong>↗ Withdraw</strong>
+          <p>Withdrawal requests are coming soon</p>
+        </a>
+      </div>
+      <div id="wallet-deposit" class="item">
+        <h3>Deposit funds · USDT</h3>
+        <div class="note">Security notice: this app does not currently display a verified deposit address. Do not send USDT until the administrator provides an official address and confirms the network. Never send USDT on the wrong network.</div>
+        <label class="field" for="wallet-deposit-amount">Amount (USDT)</label>
+        <input id="wallet-deposit-amount" type="number" min="0.01" max="1000000" step="0.01" placeholder="Example: 10.00" inputmode="decimal">
+        <label class="field" for="wallet-deposit-method">Payment network</label>
+        <select id="wallet-deposit-method">
+          <option value="usdt_trc20">USDT · TRC20</option>
+        </select>
+        <label class="field" for="wallet-deposit-reference">Transaction ID / hash</label>
+        <input id="wallet-deposit-reference" type="text" maxlength="200" placeholder="Enter the transaction hash after payment">
+        <p class="muted">Submit only after completing a transfer using the official payment instructions. An administrator will independently verify the transaction before crediting your wallet.</p>
+        <button class="btn" id="wallet-deposit-submit" type="button">Submit deposit for review</button>
+        <div id="wallet-deposit-message" class="note" role="status">No deposit request submitted.</div>
+      </div>
+      <div id="wallet-withdraw" class="item">
+        <h3>Withdraw funds</h3>
+        <div class="note">Withdrawals are not enabled yet. We will add them only after implementing balance reservation, address validation, admin review and ledger safeguards.</div>
+      </div>
+      <div class="item">
+        <div class="item-top">
+          <h3>My deposit requests</h3>
+          <button class="btn secondary" id="wallet-deposit-refresh" type="button">Refresh</button>
+        </div>
+        <div id="wallet-deposit-history" class="muted">Loading deposit history…</div>
+      </div>
+      <div class="item">
+        <h3>Wallet transactions</h3>
+        <p class="muted">The complete transaction ledger will be connected separately. This list currently shows deposit requests and their review status only.</p>
+      </div>
+    </section>
+
+    <section id="services">
+      <div class="item-top"><h2>Service catalogue</h2><span class="pill">Database driven</span></div>
+      <p id="catalogue-message">Services loaded from your database.</p>
+      <div id="services-list"></div>
+    </section>
+
+    <section id="prepare" class="panel">
+      <h2>Prepare your input list</h2>
+      <p>Preview only. This does not submit data to the provider.</p>
+
+      <label class="field" for="service-select">Select service</label>
+      <select id="service-select"><option value="">Choose service</option></select>
+
+      <label class="field" for="quantity">Quantity for price estimate</label>
+      <input id="quantity" type="number" min="1" value="500">
+
+      <label class="field" for="customer-file">Upload your TXT or CSV file (maximum 20 MB)</label>
+      <input id="customer-file" type="file" accept=".txt,.csv,text/plain,text/csv">
+
+      <p class="note">
+  Upload only data you are authorized to process.
+  Uploading a file does not submit it to the provider or charge your wallet.
+</p>
+
+<label class="note" style="display:flex;gap:10px;align-items:flex-start;margin:15px 0;">
+  <input
+    type="checkbox"
+    id="phone-consent"
+    style="width:18px;height:18px;margin-top:3px;flex-shrink:0;"
+  >
+  <span>
+    I confirm that I own these phone numbers or have obtained
+    permission from their owners to submit them for phone-number
+    validation. I authorize processing of these numbers for this
+    stated purpose.
+  </span>
+</label>
+
+      <button class="btn secondary" id="upload-file-button" type="button">Upload file</button>
+      <div id="upload-file-result" class="note">No file uploaded.</div>
+
+      <label class="field" for="entries">Input list — one entry per line</label>
+      <textarea id="entries" placeholder="Select a service first…"></textarea>
+
+      <div class="actions">
+        <button class="btn" id="preview-button">Review input</button>
+        <button class="btn secondary" id="clear-button">Clear</button>
+      </div>
+
+     <div id="estimate-result" class="note">
+  Select a service to view its pricing.
+</div>
+
+<div id="preview-result" class="note">
+  No input has been reviewed.
+</div>
+      <div class="note">Ordering is disabled. This screen only prepares and reviews your input locally.</div>
+    </section>
+
+
+<section id="toolbox" class="panel">
+  <h2>Worldwide Test Number Generator</h2>
+  <p>Generate official fictional test numbers where published, or clearly labelled synthetic test IDs for other countries. Synthetic IDs are not dialable phone numbers and cannot be used as real numbers in phone-validation services.</p>
+
+  <label class="field" for="generator-country">Country</label>
+  <select id="generator-country">
+    <option value="NP">Nepal (+977)</option>
+    <option value="IN">India (+91)</option>
+    <option value="US">United States (+1)</option>
+    <option value="GB">United Kingdom (+44)</option>
+    <option value="AU">Australia (+61)</option>
+    <option value="TH">Thailand (+66)</option>
+    <option value="CN">China (+86)</option>
+    <option value="MY">Malaysia (+60)</option>
+    <option value="SG">Singapore (+65)</option>
+    <option value="AE">United Arab Emirates (+971)</option>
+    <option value="BD">Bangladesh (+880)</option>
+    <option value="PK">Pakistan (+92)</option>
+    <option value="PH">Philippines (+63)</option>
+    <option value="ID">Indonesia (+62)</option>
+    <option value="JP">Japan (+81)</option>
+    <option value="KR">South Korea (+82)</option>
+    <option value="DE">Germany (+49)</option>
+    <option value="FR">France (+33)</option>
+    <option value="BR">Brazil (+55)</option>
+    <option value="CA">Canada (+1)</option>
+  </select>
+
+  <label class="field" for="generator-type">Number type</label>
+  <select id="generator-type">
+    <option value="mobile">Mobile</option>
+    <option value="landline">Landline</option>
+    <option value="both">Both</option>
+  </select>
+
+  <label class="field" for="generator-quantity">Quantity</label>
+  <input id="generator-quantity" type="number" min="1" max="80000" value="100" inputmode="numeric">
+
+  <div class="actions">
+    <button class="btn" id="generate-numbers" type="button">Generate numbers</button>
+  </div>
+
+  <div id="generator-message" class="note">Choose a supported country, number type and quantity.</div>
+
+  <label class="field" for="generator-preview">Generated numbers</label>
+  <textarea id="generator-preview" readonly placeholder="Your generated test numbers will appear here."></textarea>
+
+  <div class="actions">
+    <button class="btn secondary" id="generator-download-txt" type="button">Download TXT</button>
+    <button class="btn secondary" id="generator-download-csv" type="button">Download CSV</button>
+  </div>
+</section>
+
+
+    <div class="panel">
+  <h3>Need a phone-number file?</h3>
+  <p>Upload your own authorised contact list in the Prepare your input list section to filter it.</p>
+  <p>Or request an eligible number dataset from our admin team for manual review.</p>
+
+  <label class="field" for="number-request-country">Select country</label>
+  <select id="number-request-country">
+    <option value="NP">Nepal (+977)</option>
+    <option value="IN">India (+91)</option>
+    <option value="US">United States (+1)</option>
+    <option value="GB">United Kingdom (+44)</option>
+    <option value="AU">Australia (+61)</option>
+    <option value="TH">Thailand (+66)</option>
+    <option value="CN">China (+86)</option>
+    <option value="MY">Malaysia (+60)</option>
+    <option value="SG">Singapore (+65)</option>
+    <option value="AE">United Arab Emirates (+971)</option>
+    <option value="BD">Bangladesh (+880)</option>
+    <option value="PK">Pakistan (+92)</option>
+    <option value="PH">Philippines (+63)</option>
+    <option value="ID">Indonesia (+62)</option>
+    <option value="JP">Japan (+81)</option>
+    <option value="KR">South Korea (+82)</option>
+    <option value="DE">Germany (+49)</option>
+    <option value="FR">France (+33)</option>
+    <option value="BR">Brazil (+55)</option>
+    <option value="CA">Canada (+1)</option>
+  </select>
+
+  <label class="field" for="number-request-type">Number type</label>
+  <select id="number-request-type">
+    <option value="mobile">Mobile</option>
+    <option value="landline">Landline</option>
+    <option value="both">Both</option>
+  </select>
+
+  <label class="field" for="number-request-quantity">Quantity requested</label>
+  <input id="number-request-quantity" type="number" min="1" max="10000" value="100">
+
+  <button class="btn" id="submit-number-request" type="button">
+    Request file
+  </button>
+
+  <div id="number-request-message" class="note">
+    Submit your request for admin review.
+  </div>
+</div>
+<section id="request-history" class="panel">
+  <h3>My File Requests</h3>
+  <label class="field" for="request-history-filter">Filter requests</label>
+  <select id="request-history-filter" class="history-filter">
+    <option value="all">All</option>
+    <option value="pending">Pending</option>
+    <option value="completed">Completed</option>
+    <option value="rejected">Rejected</option>
+  </select>
+  <button class="btn secondary" id="request-history-refresh" type="button">Refresh history</button>
+  <div id="request-history-message" class="muted">Loading your requests…</div>
+  <div id="request-history-list"></div>
+</section>
+<section id="orders" class="panel">
+      <h2>Order history</h2>
+      <p id="orders-message">Loading order history…</p>
+      <div id="orders-list"></div>
+      <button class="btn secondary" id="orders-refresh">Refresh history</button>
+    </section>
+
+   <section id="account" class="panel">
+  <h2>Account & Admin Access</h2>
+
+  <div class="item">
+    <small>Telegram ID</small>
+    <strong>${esc(user.telegram_id||"Verified")}</strong>
+  </div>
+
+  <div class="item">
+    <small>Username</small>
+    <strong>${esc(user.username?"@"+user.username:"Not set")}</strong>
+  </div>
+
+  <button class="btn secondary" id="refresh-session" type="button">
+    Refresh session
+  </button>
+
+  <div class="panel">
+    <h3>Administrator Registration</h3>
+    <p>Register the first administrator using the private setup code.</p>
+    <label class="field" for="admin-setup-code">Private setup code</label>
+    <input id="admin-setup-code" type="password"
+           placeholder="Enter private setup code">
+    <button class="btn" id="admin-signup" type="button">
+      Register as Administrator
+    </button>
+    <p id="admin-auth-message" class="muted"></p>
+  </div>
+
+  <div class="panel">
+    <h3>Admin Session</h3>
+    <p id="admin-session-status">
+      ${adminMode?"Administrator access verified":"Not signed in as administrator"}
+    </p>
+    <button class="btn danger" id="admin-logout" type="button">
+      Logout
+    </button>
+  </div>
+</section>
+
+    ${adminMode?adminMarkup():""}
+
+    <footer>Data Verification · Secure access · Authorized validation only.</footer>
+  </main>`;
+
+  renderServices();
+  wireNotifications();
+  wireRequestHistory();
+  wireWallet();
+  if(window.walletBalanceTimer){
+  clearInterval(window.walletBalanceTimer);
+}
+
+window.walletBalanceTimer=setInterval(()=>{
+  refreshWalletBalance();
+},30000);
+  // ------------------------------------------
+  // WORLDWIDE TEST NUMBER GENERATOR
+  // ------------------------------------------
+
+  let generatedPhoneRows = [];
+
+  const generatorCountry = document.getElementById("generator-country");
+  const generatorType = document.getElementById("generator-type");
+  const generatorQuantity = document.getElementById("generator-quantity");
+  const generatorMessage = document.getElementById("generator-message");
+  const generatorPreview = document.getElementById("generator-preview");
+
+  // These pools contain only ranges published for fictional/creative use.
+  // They are not subscriber-number allocations.
+  const officialTestPools = {
+    GB: {
+      callingCode: "44",
+      country: "United Kingdom",
+      source: "Ofcom drama-number ranges",
+      mobile: Array.from({length: 1000}, (_, i) =>
+        "+447700900" + String(i).padStart(3, "0")
+      ),
+      landline: Array.from({length: 1000}, (_, i) =>
+        "+441632960" + String(i).padStart(3, "0")
+      )
+    },
+    AU: {
+      callingCode: "61",
+      country: "Australia",
+      source: "ACMA fictional-use ranges",
+      mobile: [
+        "0491570006","0491570156","0491570157","0491570158","0491570159",
+        "0491570110","0491570313","0491570737","0491571266","0491571491",
+        "0491571804","0491572549","0491572665","0491572983","0491573770",
+        "0491573087","0491574118","0491574632","0491575254","0491575789",
+        "0491576398","0491576801","0491577426","0491577644","0491578957",
+        "0491578148","0491578888","0491579212","0491579760","0491579455"
+      ].map(n => "+61" + n.slice(1)),
+      landline: (() => {
+        const rows = [];
+        ["2","3","7","8"].forEach(area => {
+          ["5550","7010"].forEach(prefix => {
+            for (let i = 0; i < 10000; i++) {
+              rows.push("+61" + area + prefix + String(i).padStart(4, "0"));
+            }
+          });
+        });
+        return rows;
+      })()
+    }
+  };
+
+  async function downloadGeneratedFile(content, fileName, mimeType) {
+  generatorMessage.textContent = "Sending file to your Telegram chat...";
+
+  try {
+    const result = await request("/api/toolbox/send-file", "POST", {
+      file_name: fileName,
+      content: content
+    });
+
+    generatorMessage.textContent =
+      "File sent successfully to your Telegram chat: " + fileName;
+
+  } catch (error) {
+    generatorMessage.textContent =
+      "File delivery failed: " + error.message;
+  }
+}
+
+  function shuffledCopy(items) {
+    const copy = items.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }
+
+  document.getElementById("generate-numbers").onclick = function () {
+    generatedPhoneRows = [];
+    generatorPreview.value = "";
+
+    const countryCode = generatorCountry.value;
+    const type = generatorType.value;
+    const quantity = Number(generatorQuantity.value);
+    const countryData = officialTestPools[countryCode];
+    const countryInfo = {
+      NP: { country: "Nepal", callingCode: "977" },
+      IN: { country: "India", callingCode: "91" },
+      US: { country: "United States", callingCode: "1" },
+      GB: { country: "United Kingdom", callingCode: "44" },
+      AU: { country: "Australia", callingCode: "61" },
+      TH: { country: "Thailand", callingCode: "66" },
+      CN: { country: "China", callingCode: "86" },
+      MY: { country: "Malaysia", callingCode: "60" },
+      SG: { country: "Singapore", callingCode: "65" },
+      AE: { country: "United Arab Emirates", callingCode: "971" },
+      BD: { country: "Bangladesh", callingCode: "880" },
+      PK: { country: "Pakistan", callingCode: "92" },
+      PH: { country: "Philippines", callingCode: "63" },
+      ID: { country: "Indonesia", callingCode: "62" },
+      JP: { country: "Japan", callingCode: "81" },
+      KR: { country: "South Korea", callingCode: "82" },
+      DE: { country: "Germany", callingCode: "49" },
+      FR: { country: "France", callingCode: "33" },
+      BR: { country: "Brazil", callingCode: "55" },
+      CA: { country: "Canada", callingCode: "1" }
+    }[countryCode];
+
+    if (!countryInfo) {
+      generatorMessage.textContent = "Please select a country.";
+      return;
+    }
+
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 80000) {
+      generatorMessage.textContent = "Enter a quantity between 1 and 80,000.";
+      return;
+    }
+
+    if (countryData) {
+      let pool = [];
+      if (type === "both") {
+        pool = countryData.mobile.map(phone_number => ({
+          phone_number, number_type: "mobile"
+        })).concat(countryData.landline.map(phone_number => ({
+          phone_number, number_type: "landline"
+        })));
+      } else {
+        pool = (countryData[type] || []).map(phone_number => ({
+          phone_number, number_type: type
+        }));
+      }
+
+      if (!pool.length) {
+        generatorMessage.textContent = "No published fictional test data is available for this type.";
+        return;
+      }
+
+      if (quantity > pool.length) {
+        generatorMessage.textContent =
+          "This country has " + pool.length +
+          " unique official fictional test numbers available for this selection. Reduce the quantity to " +
+          pool.length + " or less.";
+        return;
+      }
+
+      const selected = shuffledCopy(pool).slice(0, quantity);
+      generatedPhoneRows = selected.map(row => ({
+        phone_number: row.phone_number,
+        country: countryData.country,
+        calling_code: "+" + countryData.callingCode,
+        number_type: row.number_type,
+        source: countryData.source
+      }));
+    } else {
+      generatedPhoneRows = Array.from({ length: quantity }, (_, i) => {
+        const numberType = type === "both"
+          ? (i % 2 === 0 ? "mobile" : "landline")
+          : type;
+        const serial = String(i + 1).padStart(6, "0");
+        return {
+          phone_number: "TEST-" + countryCode + "-" + numberType.toUpperCase() + "-" + serial,
+          country: countryInfo.country,
+          calling_code: "+" + countryInfo.callingCode,
+          number_type: numberType,
+          source: "Synthetic non-dialable test identifier"
+        };
+      });
+    }
+
+    generatorPreview.value = generatedPhoneRows
+      .slice(0, 500)
+      .map(row => row.phone_number)
+      .join("\n");
+
+    generatorMessage.textContent =
+      "Generated " + generatedPhoneRows.length + " " +
+      (countryData ? "official fictional test numbers for " : "synthetic non-dialable test IDs for ") +
+      countryInfo.country + ". " +
+      (countryData ? "Published test range used." : "These IDs are not real phone numbers.");
+    if (generatedPhoneRows.length > 500) {
+      generatorMessage.textContent += " Preview shows the first 500; downloads include the full list.";
+    }
+  };
+
+  document.getElementById("generator-download-txt").onclick = function () {
+    if (!generatedPhoneRows.length) {
+      generatorMessage.textContent = "Generate numbers first.";
+      return;
+    }
+    downloadGeneratedFile(
+      generatedPhoneRows.map(row => row.phone_number).join("\n"),
+      "test-phone-numbers.txt",
+      "text/plain;charset=utf-8"
+    );
+  };
+
+  document.getElementById("generator-download-csv").onclick = function () {
+    if (!generatedPhoneRows.length) {
+      generatorMessage.textContent = "Generate numbers first.";
+      return;
+    }
+    const columns = ["phone_number","country","calling_code","number_type","source"];
+    const csv = [
+      columns.join(","),
+      ...generatedPhoneRows.map(row => columns.map(key =>
+        '"' + String(row[key]).replace(/"/g, '""') + '"'
+      ).join(","))
+    ].join("\n");
+
+    downloadGeneratedFile(
+      csv,
+      "test-phone-numbers.csv",
+      "text/csv;charset=utf-8"
+    );
+  };
+document.getElementById("submit-number-request").onclick = async function () {
+  const countryCode = document.getElementById("number-request-country").value;
+  const numberType = document.getElementById("number-request-type").value;
+  const quantity = Number(document.getElementById("number-request-quantity").value);
+  const message = document.getElementById("number-request-message");
+  const button = this;
+
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10000) {
+    message.textContent = "Enter a quantity between 1 and 10,000.";
+    return;
+  }
+
+  button.disabled = true;
+  message.textContent = "Sending your request to the admin team...";
+
+  try {
+    const result = await request(
+      "/api/toolbox/number-file-request",
+      "POST",
+      {
+        country_code: countryCode,
+        number_type: numberType,
+        quantity: quantity
+      }
+    );
+
+    message.textContent =
+      "Request #" + result.request_id +
+      " submitted successfully. The admin team has been notified.";
+    await loadRequestHistory();
+    await loadNotifications();
+  } catch (error) {
+    message.textContent = "Request failed: " + error.message;
+  } finally {
+    button.disabled = false;
+  }
+};
+
+  // END WORLDWIDE TEST NUMBER GENERATOR
+
+  document.getElementById("service-select").addEventListener("change",function(){
+    selectedCode=this.value;
+    renderServices();
+    updateEstimate();
+  });
+
+  document.getElementById("upload-file-button").onclick=async()=>{
+    const fileInput=document.getElementById("customer-file");
+    const resultBox=document.getElementById("upload-file-result");
+    const file=fileInput.files[0];
+
+    if(!selectedCode){
+      resultBox.textContent="Please select a service first.";
+      return;
+    }
+
+    if(!file){
+      resultBox.textContent="Please choose a TXT or CSV file.";
+      return;
+    }
+
+    if(file.size>20*1024*1024){
+      resultBox.textContent="File must be smaller than 20 MB.";
+      return;
+    }
+const consentBox = document.getElementById("phone-consent");
+
+if (selectedCode === "phoneCheck" && !consentBox.checked) {
+  resultBox.textContent =
+    "Please confirm that you have permission to submit these phone numbers.";
+  return;
+}
+    const form=new FormData();
+    form.append("file",file);
+    form.append("resource_code",selectedCode);
+if (selectedCode === "phoneCheck") {
+  form.append("consent_confirmed", "yes");
+  form.append("consent_version", "phone-validation-v1");
+}
+    resultBox.textContent="Uploading file. Please wait...";
+
+    try{
+      const result=await request("/api/uploads","POST",form);
+
+      resultBox.textContent=
+        "File uploaded successfully. Upload ID: "+result.upload_id;
+
+    }catch(error){
+      resultBox.textContent="Upload failed: "+error.message;
+    }
+  };
+
+document.getElementById("customer-file").addEventListener("change", async function(){
+  const file = this.files && this.files[0];
+  const resultBox = document.getElementById("upload-file-result");
+  const entriesBox = document.getElementById("entries");
+
+  if (!file) return;
+
+  if (file.size > 20 * 1024 * 1024) {
+    resultBox.textContent = "File must be smaller than 20 MB.";
+    this.value = "";
+    return;
+  }
+
+  try {
+    const content = await file.text();
+
+    let lines = content.split(/\r?\n/);
+
+    if (/\.csv$/i.test(file.name)) {
+      lines = lines.map(line => {
+        const firstColumn = line.split(",")[0].trim();
+        return firstColumn.replace(/^["']|["']$/g, "").trim();
+      });
+    }
+
+    const cleaned = lines.filter(line => line.trim() !== "");
+
+    entriesBox.value = cleaned.join("\n");
+
+    resultBox.textContent =
+      "File selected: " + file.name +
+      " · Entries loaded: " + cleaned.length +
+      ". Click Upload file to store it securely.";
+
+    document.getElementById("preview-result").textContent =
+      "File contents loaded. Click Review input to check the entries.";
+
+  } catch (error) {
+    resultBox.textContent = "Could not read file: " + error.message;
+  }
+});
+
+  document.getElementById("quantity").addEventListener("input",updateEstimate);
+  document.getElementById("preview-button").onclick=previewInput;
+
+ document.getElementById("clear-button").onclick=function(){
+  document.getElementById("entries").value="";
+  document.getElementById("customer-file").value="";
+  document.getElementById("upload-file-result").textContent="No file uploaded.";
+  document.getElementById("preview-result").textContent="Input cleared.";
+};
+
+ document.getElementById("orders-refresh").onclick=loadOrders;
+document.getElementById("refresh-session").onclick=refreshSession;
+
+loadOrders();
+updateEstimate();
+  const signupButton = document.getElementById("admin-signup");
+  const logoutButton = document.getElementById("admin-logout");
+
+  if(signupButton){
+    signupButton.onclick = async () => {
+      const setupCode = document.getElementById("admin-setup-code").value.trim();
+      const message = document.getElementById("admin-auth-message");
+
+      if(!setupCode){
+        message.textContent = "Enter your private setup code.";
+        return;
+      }
+
+      signupButton.disabled = true;
+      message.textContent = "Registering administrator...";
+
+      try{
+        await request("/api/admin/signup", "POST", {
+          setup_code: setupCode
+        });
+
+        message.textContent = "Administrator registered successfully.";
+        await reloadAdmin();
+      }catch(error){
+        message.textContent = "Registration failed: " + error.message;
+      }finally{
+        signupButton.disabled = false;
+      }
+    };
+  }
+
+  if(logoutButton){
+    logoutButton.onclick = async () => {
+      if(!confirm("Are you sure you want to log out?")) return;
+
+      try{
+        await request("/api/auth/logout", "POST", {});
+      }catch(error){
+        console.warn("Server logout:", error.message);
+      }
+
+      token = "";
+      user = {};
+      adminMode = false;
+      location.reload();
+    };
+  }
+  if(adminMode)wireAdmin();
+}
+
+function renderServices(){
+  const box=document.getElementById("services-list");
+  const select=document.getElementById("service-select");
+
+  if(!box||!select)return;
+
+  const groups={};
+
+  services.forEach(s=>{
+    const category=s.category||"Other Services";
+    if(!groups[category])groups[category]=[];
+    groups[category].push(s);
+  });
+
+  let html="";
+
+  Object.keys(groups).forEach((category,index)=>{
+    const items=groups[category];
+    const open=index===0||items.some(s=>s.resource_code===selectedCode);
+
+    html+=`<section class="category ${open?"open":""}">
+      <button class="category-toggle" type="button">
+        <span>${esc(category)} · ${items.length} services</span><span>⌄</span>
+      </button>
+      <div class="category-content">`;
+
+    items.forEach(s=>{
+      const selected=s.resource_code===selectedCode;
+      const status=!s.configured?"Pricing not configured":
+        !s.enabled?"Not active":
+        !s.can_order?"Ordering unavailable":"Available";
+
+      const priceText=s.configured&&s.unit_price_cents!=null
+        ?"Price: "+money(
+          Math.ceil(
+            Number(s.unit_price_cents)*
+            Number(s.minimum_order_quantity)/
+            Number(s.pricing_unit_quantity)
+          ),
+          s.currency
+        )+" / minimum order"
+        :"Price not configured";
+
+      html+=`<article class="service ${selected?"selected":""}" data-code="${esc(s.resource_code)}">
+        <strong>${esc(s.name)}</strong>
+        <p>${esc(s.description)}</p>
+        <span class="pill">${esc(status)}</span>
+        <p>Minimum quantity: ${s.minimum_order_quantity==null?"Not set":Number(s.minimum_order_quantity).toLocaleString()}</p>
+        <p>${esc(priceText)}</p>
+      </article>`;
+    });
+
+    html+="</div></section>";
+  });
+
+  box.innerHTML=html||'<div class="panel"><p>No services currently listed.</p></div>';
+
+  select.innerHTML='<option value="">Choose service</option>'+
+    services.map(s=>`<option value="${esc(s.resource_code)}">${esc(s.category)} — ${esc(s.name)}</option>`).join("");
+
+  select.value=selectedCode;
+
+  box.querySelectorAll(".category-toggle").forEach(button=>{
+    button.onclick=()=>button.closest(".category").classList.toggle("open");
+  });
+
+  box.querySelectorAll("[data-code]").forEach(card=>{
+    card.onclick=()=>{
+      selectedCode=card.dataset.code;
+      select.value=selectedCode;
+      renderServices();
+      updateEstimate();
+    };
+  });
+}
+
+
+function updateEstimate(){
+  const box = document.getElementById("estimate-result");
+  const quantity = document.getElementById("quantity");
+
+  if (!box || !quantity) return;
+
+  const service = services.find(
+    s => s.resource_code === selectedCode
+  );
+
+  if (!service) {
+    box.textContent = "Select a service to view its pricing.";
+    return;
+  }
+
+  if (
+    !service.configured ||
+    service.unit_price_cents == null ||
+    !service.pricing_unit_quantity
+  ) {
+    box.textContent = "Pricing is not configured for this service.";
+    return;
+  }
+
+  const amount = Number(quantity.value || 0);
+  const minimum = Number(service.minimum_order_quantity || 0);
+
+  if (!Number.isSafeInteger(amount) || amount < 1) {
+    box.textContent = "Enter a valid quantity.";
+    return;
+  }
+
+  if (minimum && amount < minimum) {
+    const minimumPrice = Math.ceil(
+      Number(service.unit_price_cents) *
+      minimum /
+      Number(service.pricing_unit_quantity)
+    );
+
+    box.textContent =
+      "Your quantity: " + amount +
+      " · Minimum quantity: " + minimum +
+      " · Minimum price estimate: " +
+      money(minimumPrice, service.currency) +
+      ". Ordering is disabled.";
+
+    return;
+  }
+
+  const total = Math.ceil(
+    Number(service.unit_price_cents) *
+    amount /
+    Number(service.pricing_unit_quantity)
+  );
+
+  box.textContent =
+    "Estimated price: " + money(total, service.currency) +
+    " · Estimate quantity: " + amount.toLocaleString() +
+    " · Estimate only; ordering is disabled.";
+}
+
+
+
+function previewInput(){
+  const service = services.find(
+    s => s.resource_code === selectedCode
+  );
+
+  const result = document.getElementById("preview-result");
+  const entriesBox = document.getElementById("entries");
+
+  const entries = entriesBox.value
+    .split(/\r?\n/)
+    .map(x => x.trim())
+    .filter(Boolean);
+
+  if (!service) {
+    result.textContent = "Please select a service first.";
+    return;
+  }
+
+  if (!entries.length) {
+    result.textContent = "Enter at least one item.";
+    return;
+  }
+
+  const normalized = entries.map(x => x.toLowerCase());
+  const unique = new Set(normalized);
+  const duplicates = entries.length - unique.size;
+
+  let valid = 0;
+
+  if (service.input_type === "email") {
+    valid = entries.filter(x =>
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x)
+    ).length;
+
+  } else if (service.input_type === "username") {
+    valid = entries.filter(x =>
+      /^@?[a-zA-Z0-9_]{5,32}$/.test(x)
+    ).length;
+
+  } else {
+    valid = entries.filter(x => {
+      const normalizedPhone = x.replace(/[\s()-]/g, "");
+      return /^\+?[1-9]\d{6,14}$/.test(normalizedPhone);
+    }).length;
+  }
+
+  const invalid = entries.length - valid;
+
+  result.textContent =
+    "REVIEW COMPLETE" +
+    " · Total entries: " + entries.length +
+    " · Valid format: " + valid +
+    " · Invalid format: " + invalid +
+    " · Duplicate entries: " + duplicates +
+    ". Preview only. Nothing was submitted or ordered.";
+}
+
+async function refreshSession(){
+  try{
+    const data=await request("/api/me");
+    user=data.user||user;
+    renderDashboard();
+  }catch(error){
+    showError("Session expired. Please reopen the Mini App.");
+  }
+}
+
+/* ---------------- ADMIN DASHBOARD ---------------- */
+
+function adminMarkup(){
+  return `
+  <section id="admin" class="panel">
+    <div class="admin-label">ADMINISTRATOR AREA</div>
+    <h2 style="margin-top:7px">Catalogue Management</h2>
+    <p>Manage categories, services and pricing. Changes are saved to the database.</p>
+    <div class="note success">Admin access verified by the server.</div>
+
+    <div class="panel">
+      <div class="item-top">
+        <h3>Wallet deposit review</h3>
+        <button class="btn secondary" id="admin-deposits-refresh" type="button">Refresh</button>
+      </div>
+      <p>Verify each payment independently on the correct blockchain/network before approving. Approval immediately credits the customer's USDT wallet.</p>
+      <div id="admin-deposits-message" class="muted">Deposit requests have not been loaded.</div>
+      <div id="admin-deposits-list"></div>
+    </div>
+
+    <div class="item-top"><h3>Categories</h3><span class="pill">D1 database</span></div>
+    <div id="admin-categories"></div>
+
+    <div class="panel">
+      <h3>Add a category</h3>
+      <label class="field">Category name</label>
+      <input id="new-category" maxlength="80" placeholder="Example: Telegram Services">
+      <label class="field">Display order</label>
+      <input id="new-category-order" type="number" value="10" min="0">
+      <button class="btn" id="create-category">Create category</button>
+    </div>
+
+    <div class="panel">
+      <h3>Add or edit a service</h3>
+      <label class="field">Choose existing service to edit</label>
+      <select id="admin-service-select"><option value="">Create a new service</option></select>
+
+      <label class="field">Resource code</label>
+      <input id="svc-code" maxlength="80" placeholder="Example: phoneCheck">
+      <label class="field">Service display name</label>
+      <input id="svc-name" maxlength="120" placeholder="Phone Number Validation">
+      <label class="field">Description</label>
+      <textarea id="svc-description" maxlength="500" placeholder="Describe this service"></textarea>
+
+      <label class="field">Category</label>
+      <select id="svc-category"></select>
+
+      <div class="row">
+        <div>
+          <label class="field">Input type</label>
+          <select id="svc-input">
+            <option value="phone">Phone</option>
+            <option value="email">Email</option>
+          </select>
+        </div>
+        <div>
+          <label class="field">Provider task code</label>
+          <input id="svc-task" maxlength="80" placeholder="Provider task code">
+        </div>
+      </div>
+
+      <label class="field">Display order</label>
+      <input id="svc-order" type="number" min="0" value="100">
+
+      <button class="btn" id="save-service">Save service details</button>
+      <button class="btn secondary" id="new-service">Clear / New service</button>
+      <div id="service-message" class="muted"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Service pricing</h3>
+      <label class="field">Service</label>
+      <select id="price-service"></select>
+
+      <div class="row">
+        <div>
+          <label class="field">Provider cost (cents)</label>
+          <input id="provider-cost" type="number" min="0" value="0">
+        </div>
+        <div>
+          <label class="field">Pricing unit quantity</label>
+          <input id="pricing-unit" type="number" min="1" value="10000">
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label class="field">Markup type</label>
+          <select id="markup-type">
+            <option value="percentage">Percentage</option>
+            <option value="fixed">Fixed amount</option>
+          </select>
+        </div>
+        <div>
+          <label class="field">Markup value</label>
+          <input id="markup-value" type="number" min="0" value="100">
+        </div>
+      </div>
+
+      <label class="field">Final price (cents) — optional override</label>
+      <input id="final-price" type="number" min="0" placeholder="Leave blank to calculate from markup">
+
+      <div class="row">
+        <div>
+          <label class="field">Minimum order quantity</label>
+          <input id="minimum-quantity" type="number" min="1" value="500">
+        </div>
+        <div>
+          <label class="field">Currency</label>
+          <select id="currency">
+            <option value="USDT">USDT</option>
+            <option value="USD">USD</option>
+          </select>
+        </div>
+      </div>
+
+      <label class="checkbox">
+        <input type="checkbox" id="pricing-enabled">
+        Enable this service's pricing
+      </label>
+
+      <button class="btn" id="save-pricing">Save pricing</button>
+      <div id="pricing-message" class="muted"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Publish / hide a service</h3>
+      <label class="field">Select service</label>
+      <select id="visibility-service"></select>
+      <label class="checkbox">
+        <input type="checkbox" id="service-listed">
+        Show this service in customer catalogue
+      </label>
+      <button class="btn secondary" id="save-visibility">Save visibility</button>
+      <div id="visibility-message" class="muted"></div>
+    </div>
+
+    <div class="panel">
+      <h3>CheckNumber.ai File Upload</h3>
+      <p class="muted">
+        Upload TXT or CSV files for validation.
+        No provider submission or payment will occur.
+      </p>
+
+      <label class="field" for="cn-task-type">Select validation service</label>
+      <select id="cn-task-type">
+        <option value="phoneCheck">Phone Number Validation</option>
+        <option value="email_check">Email Deliverability</option>
+        <option value="tg_username">Telegram Username Availability</option>
+      </select>
+
+      <label class="field" for="cn-upload-file">Choose TXT or CSV file</label>
+      <input id="cn-upload-file" type="file" accept=".txt,.csv,text/plain,text/csv">
+
+      <div class="actions">
+        <button class="btn" id="cn-validate-upload" type="button">Validate File</button>
+      </div>
+
+      <pre id="cn-upload-result" class="note muted" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+    </div>
+
+    <div class="panel">
+      <h3>Admin Upload Management</h3>
+      <p class="muted">
+        View customer-uploaded files, selected services, upload dates and expiry status.
+      </p>
+
+      <div class="actions">
+        <button class="btn secondary" id="refresh-admin-uploads" type="button">
+          Refresh uploads
+        </button>
+      </div>
+<div class="form-group">
+  <label class="field" for="upload-search">Search uploads</label>
+  <input
+    id="upload-search"
+    type="text"
+    placeholder="Search filename, Upload ID or Customer ID"
+  >
+</div>
+
+<div class="form-group">
+  <label class="field" for="upload-status-filter">Filter by status</label>
+  <select id="upload-status-filter">
+    <option value="all">All statuses</option>
+    <option value="uploaded">Uploaded</option>
+    <option value="attached">Attached</option>
+    <option value="reviewed">Reviewed</option>
+    <option value="rejected">Rejected</option>
+    <option value="expired">Expired</option>
+    </select>
+</div>
+  <p id="upload-filter-count" class="muted"></p>
+      <div id="admin-uploads-message" class="muted">
+        Upload history has not been loaded.
+      </div>
+
+      <div id="admin-uploads-list"></div>
+    </div>
+<div class="panel">
+  <h3>Manual Number File Requests</h3>
+  <p class="muted">
+    Review pending requests and upload an eligible TXT or CSV file
+    for the requesting user.
+  </p>
+
+  <button class="btn secondary" id="refresh-number-requests" type="button">
+    Refresh requests
+  </button>
+
+  <div id="number-requests-message" class="muted">
+    Requests have not been loaded.
+  </div>
+
+  <div id="number-requests-list"></div>
+</div>
+    <div class="note">Safety: customer ordering, provider submissions, deposits, withdrawals and wallet deductions remain disabled.</div>
+    <button class="btn secondary" id="reload-admin">Refresh admin catalogue</button>
+    <div id="admin-message" class="muted"></div>
+  </section>`;
+}
+
+function fillServiceDropdowns(){
+  const options=adminServices.map(s=>
+    `<option value="${esc(s.resource_code)}">${esc(s.name)} (${esc(s.resource_code)})</option>`
+  ).join("");
+
+  ["admin-service-select","price-service","visibility-service"].forEach(id=>{
+    const el=document.getElementById(id);
+
+    if(el){
+      el.innerHTML=(id==="admin-service-select"?'<option value="">Create a new service</option>':"")+options;
+    }
+  });
+
+  const categorySelect=document.getElementById("svc-category");
+
+  if(categorySelect){
+    categorySelect.innerHTML=categories.map(c=>
+      `<option value="${esc(c.category)}">${esc(c.category)}</option>`
+    ).join("");
+  }
+}
+
+function renderAdminCategories(){
+  const box=document.getElementById("admin-categories");
+  if(!box)return;
+
+  box.innerHTML=categories.map(c=>`
+    <div class="item" data-category="${esc(c.category)}">
+      <div class="item-top">
+        <strong>${esc(c.category)}</strong>
+        <span class="pill">${Number(c.is_listed)===1?"Published":"Hidden"}</span>
+      </div>
+      <div class="row">
+        <div>
+          <label class="field">Rename category</label>
+          <input class="rename-value" value="${esc(c.category)}" maxlength="80">
+        </div>
+        <div>
+          <label class="field">Display order</label>
+          <input class="order-value" type="number" min="0" value="${Number(c.display_order)||0}">
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn rename-button">Rename</button>
+        <button class="btn secondary order-button">Save order</button>
+        <button class="btn secondary visibility-button">${Number(c.is_listed)===1?"Hide":"Publish"}</button>
+      </div>
+    </div>`).join("")||'<p>No categories found.</p>';
+
+  box.querySelectorAll("[data-category]").forEach(item=>{
+    const category=item.dataset.category;
+
+    item.querySelector(".rename-button").onclick=async()=>{
+      const newName=item.querySelector(".rename-value").value.trim();
+
+      if(!newName)return alert("Enter a category name.");
+      if(newName===category)return alert("The category name is unchanged.");
+      if(!confirm("Rename "+category+" to "+newName+"?"))return;
+
+      await adminAction(async()=>{
+        await request("/api/admin/categories","POST",{
+          action:"rename",
+          old_category:category,
+          new_category:newName
+        });
+
+        await reloadAdmin();
+      });
+    };
+
+    item.querySelector(".order-button").onclick=async()=>{
+      const orderItems=[...box.querySelectorAll("[data-category]")];
+
+      const ordered=orderItems.map(el=>({
+        name:el.dataset.category,
+        order:Number(el.querySelector(".order-value").value)
+      }));
+
+      if(ordered.some(x=>!Number.isSafeInteger(x.order)||x.order<0)){
+        return alert("Enter valid display orders.");
+      }
+
+      ordered.sort((a,b)=>a.order-b.order);
+
+      await adminAction(async()=>{
+        await request("/api/admin/categories","POST",{
+          action:"reorder",
+          categories:ordered.map(x=>x.name)
+        });
+
+        await reloadAdmin();
+      });
+    };
+
+    item.querySelector(".visibility-button").onclick=async()=>{
+      const current=categories.find(c=>c.category===category);
+
+      await adminAction(async()=>{
+        await request("/api/admin/categories","POST",{
+          action:"visibility",
+          category,
+          is_listed:Number(current.is_listed)===1?0:1
+        });
+
+        await reloadAdmin();
+      });
+    };
+  });
+}
+
+function loadServiceEditor(code){
+  const s=adminServices.find(x=>x.resource_code===code);
+
+  if(!s){
+    document.getElementById("svc-code").value="";
+    document.getElementById("svc-name").value="";
+    document.getElementById("svc-description").value="";
+    document.getElementById("svc-task").value="";
+    document.getElementById("svc-order").value="100";
+    document.getElementById("svc-input").value="phone";
+
+    if(categories.length){
+      document.getElementById("svc-category").value=categories[0].category;
+    }
+
+    return;
+  }
+
+  document.getElementById("svc-code").value=s.resource_code||"";
+  document.getElementById("svc-name").value=s.name||"";
+  document.getElementById("svc-description").value=s.description||"";
+  document.getElementById("svc-task").value=s.task_type||"";
+  document.getElementById("svc-order").value=s.display_order??100;
+  document.getElementById("svc-input").value=s.input_type||"phone";
+  document.getElementById("svc-category").value=s.category||"";
+}
+
+function loadPricingEditor(code){
+  const s=adminServices.find(x=>x.resource_code===code);
+  if(!s)return;
+
+  document.getElementById("provider-cost").value=s.provider_cost_cents??0;
+  document.getElementById("pricing-unit").value=s.pricing_unit_quantity??10000;
+  document.getElementById("markup-type").value=s.markup_type||"percentage";
+  document.getElementById("markup-value").value=s.markup_value??0;
+  document.getElementById("final-price").value=s.final_price_cents??"";
+  document.getElementById("minimum-quantity").value=s.minimum_order_quantity??500;
+  document.getElementById("currency").value=s.currency||"USDT";
+  document.getElementById("pricing-enabled").checked=
+    Number(s.pricing_enabled??s.enabled)===1||s.enabled===true;
+}
+
+async function adminAction(action){
+  const message=document.getElementById("admin-message");
+
+  if(message)message.textContent="Saving…";
+
+  try{
+    await action();
+    if(message)message.textContent="Saved successfully.";
+  }catch(error){
+    if(message)message.textContent="Error: "+error.message;
+  }
+}
+
+function wireAdmin(){
+  renderAdminCategories();
+  fillServiceDropdowns();
+
+  // WALLET DEPOSIT REVIEW
+  const depositsMessage=document.getElementById("admin-deposits-message");
+  const depositsList=document.getElementById("admin-deposits-list");
+  const depositsRefresh=document.getElementById("admin-deposits-refresh");
+
+  async function loadAdminDeposits(){
+    if(!depositsMessage||!depositsList)return;
+    depositsMessage.textContent="Loading wallet deposit requests…";
+    depositsList.innerHTML="";
+    if(depositsRefresh)depositsRefresh.disabled=true;
+    try{
+      const data=await request("/api/admin/wallet/deposits");
+      const deposits=data.deposits||[];
+      const pending=deposits.filter(d=>d.status==="pending").length;
+      depositsMessage.textContent="Total requests: "+deposits.length+" · Pending review: "+pending;
+      if(!deposits.length){
+        depositsList.innerHTML='<p class="muted">No deposit requests found.</p>';
+        return;
+      }
+      depositsList.innerHTML=deposits.map(d=>{
+        const id=Number(d.id);
+        const status=String(d.status||"pending").toLowerCase();
+        return `
+          <div class="item" data-deposit-id="${id}">
+            <div class="item-top">
+              <strong>Deposit #${id} · ${esc(money(d.amount_cents,d.currency||"USDT"))}</strong>
+              <span class="pill">${esc(status.toUpperCase())}</span>
+            </div>
+            <div class="muted">Customer: ${esc(d.first_name||"Customer")} ${d.username?"(@"+esc(d.username)+")":""}</div>
+            <div class="muted">Telegram ID: ${esc(d.telegram_id)}</div>
+            <div class="muted">Network: ${esc(d.payment_method)}</div>
+            <div class="muted">Transaction reference: <span style="overflow-wrap:anywhere">${esc(d.payment_reference)}</span></div>
+            <div class="muted">Submitted: ${esc(formatDate(d.created_at))}</div>
+            ${d.admin_note?`<div class="muted">Previous admin note: ${esc(d.admin_note)}</div>`:""}
+            ${status==="pending"?`
+              <label class="field" for="deposit-note-${id}">Admin note (optional)</label>
+              <input id="deposit-note-${id}" type="text" maxlength="500" placeholder="Verification details or rejection reason">
+              <div class="actions">
+                <button class="btn approve-wallet-deposit" data-id="${id}" type="button">Approve & credit</button>
+                <button class="btn danger reject-wallet-deposit" data-id="${id}" type="button">Reject</button>
+              </div>
+            `:'<p class="muted">This request has already been reviewed.</p>'}
+          </div>
+        `;
+      }).join("");
+    }catch(error){
+      depositsMessage.textContent="Could not load deposits: "+error.message;
+    }finally{
+      if(depositsRefresh)depositsRefresh.disabled=false;
+    }
+  }
+
+  if(depositsRefresh)depositsRefresh.onclick=loadAdminDeposits;
+  if(depositsList){
+    depositsList.addEventListener("click",async event=>{
+      const approveButton=event.target.closest(".approve-wallet-deposit");
+      const rejectButton=event.target.closest(".reject-wallet-deposit");
+      const button=approveButton||rejectButton;
+      if(!button)return;
+      const id=Number(button.dataset.id);
+      const note=document.getElementById("deposit-note-"+id)?.value.trim()||"";
+      const action=approveButton?"approve":"reject";
+      if(action==="approve"&&!confirm("Have you independently verified this exact payment on the correct network? Approving will immediately credit the requested amount to the customer's wallet."))return;
+      if(action==="reject"&&!confirm("Reject deposit request #"+id+"?"))return;
+      button.disabled=true;
+      button.textContent=action==="approve"?"Approving…":"Rejecting…";
+      try{
+        await request("/api/admin/wallet/deposits/review","POST",{
+          deposit_id:id,
+          action,
+          admin_note:note
+        });
+        depositsMessage.textContent="Deposit #"+id+" "+(action==="approve"?"approved and credited.":"rejected.");
+        await loadAdminDeposits();
+      }catch(error){
+        alert("Could not "+action+" deposit: "+error.message);
+        button.disabled=false;
+        button.textContent=action==="approve"?"Approve & credit":"Reject";
+      }
+    });
+  }
+  loadAdminDeposits();
+
+  // MANUAL NUMBER FILE REQUEST MANAGEMENT
+
+  const requestList = document.getElementById("number-requests-list");
+  const requestMessage = document.getElementById("number-requests-message");
+  const refreshRequests = document.getElementById("refresh-number-requests");
+async function loadNumberRequests() {
+    requestMessage.textContent = "Loading requests...";
+    requestList.innerHTML = "";
+    refreshRequests.disabled = true;
+
+    try {
+      const data = await request("/api/admin/number-file-requests");
+      const requests = data.requests || [];
+
+      requestMessage.textContent = "Total requests: " + requests.length;
+
+      if (!requests.length) {
+        requestList.innerHTML = '<p class="muted">No file requests found.</p>';
+        return;
+      }
+
+      requestList.innerHTML = requests.map(r => {
+        const id = Number(r.id);
+
+        return `
+          <div class="item">
+            <div class="item-top">
+              <strong>Request #${id}</strong>
+              <span class="pill">${esc(r.status || "pending")}</span>
+            </div>
+
+            <div class="muted">Country: ${esc(r.country_name || r.country_code)}</div>
+            <div class="muted">Quantity: ${Number(r.quantity)}</div>
+            <div class="muted">Type: ${esc(r.number_type)}</div>
+            <div class="muted">Username: ${esc(r.username || "Not provided")}</div>
+            <div class="muted">Telegram ID: ${esc(r.telegram_id)}</div>
+            <div class="muted">Submitted: ${esc(formatDate(r.created_at))}</div>
+
+            ${r.admin_file_name ? `
+              <div>Uploaded file: ${esc(r.admin_file_name)}</div>
+            ` : ""}
+
+            ${r.admin_note ? `
+              <div>Admin note: ${esc(r.admin_note)}</div>
+            ` : ""}
+
+            ${r.completed_at ? `
+              <div>Completed: ${esc(formatDate(r.completed_at))}</div>
+            ` : ""}
+
+            ${r.rejected_at ? `
+              <div>Rejected: ${esc(formatDate(r.rejected_at))}</div>
+            ` : ""}
+
+            ${
+              r.status === "pending" ? `
+                <label class="field" for="request-file-${id}">Choose TXT or CSV file</label>
+                <input id="request-file-${id}" type="file" accept=".txt,.csv">
+
+                <label class="field" for="request-note-${id}">Admin note (optional)</label>
+                <input id="request-note-${id}" type="text" maxlength="1000">
+
+                <button class="btn upload-number-request" data-id="${id}" type="button">
+                  Upload and send to user
+                </button>
+
+                <label class="field" for="request-reason-${id}">Rejection reason</label>
+                <input id="request-reason-${id}" type="text" maxlength="1000"
+                       placeholder="Enter reason for rejection">
+
+                <button class="btn danger reject-number-request" data-id="${id}" type="button">
+                  Reject request
+                </button>
+              ` : `
+                <div class="muted">This request has already been processed.</div>
+              `
+            }
+          </div>
+        `;
+      }).join("");
+
+    } catch (error) {
+      requestMessage.textContent = "Error: " + error.message;
+    } finally {
+      refreshRequests.disabled = false;
+    }
+  }
+  refreshRequests.onclick = loadNumberRequests;
+
+   requestList.addEventListener("click", async event => {
+
+    // HANDLE REJECTION
+    const rejectButton = event.target.closest(".reject-number-request");
+
+    if (rejectButton) {
+      const id = Number(rejectButton.dataset.id);
+      const reasonInput = document.getElementById("request-reason-" + id);
+      const reason = reasonInput.value.trim();
+
+      if (!reason) {
+        alert("Please enter a rejection reason.");
+        return;
+      }
+
+      if (!confirm("Reject request #" + id + "?")) return;
+
+      rejectButton.disabled = true;
+      rejectButton.textContent = "Rejecting...";
+
+      try {
+        await request(
+          "/api/admin/number-file-requests/reject",
+          "POST",
+          {
+            request_id: id,
+            reason: reason
+          }
+        );
+
+        alert("Request rejected successfully.");
+        await loadNumberRequests();
+        await loadNotifications();
+
+      } catch (error) {
+        alert("Rejection failed: " + error.message);
+        rejectButton.disabled = false;
+        rejectButton.textContent = "Reject request";
+      }
+
+      return;
+    }
+
+    // EXISTING UPLOAD HANDLER
+    const button = event.target.closest(".upload-number-request");
+    if (!button) return;
+
+    const id = Number(button.dataset.id);
+    const fileInput = document.getElementById("request-file-" + id);
+    const noteInput = document.getElementById("request-note-" + id);
+
+    if (!fileInput.files.length) {
+      alert("Please select a TXT or CSV file first.");
+      return;
+    }
+
+    const file = fileInput.files[0];
+
+    if (!/\.(txt|csv)$/i.test(file.name)) {
+      alert("Only TXT and CSV files are allowed.");
+      return;
+    }
+
+    if (file.size > 20 * 1024 * 1024) {
+      alert("File must be 20 MB or smaller.");
+      return;
+    }
+
+    const form = new FormData();
+    form.append("request_id", String(id));
+    form.append("file", file);
+    form.append("admin_note", noteInput.value.trim());
+
+    button.disabled = true;
+    button.textContent = "Uploading...";
+
+    try {
+      const result = await request(
+        "/api/admin/number-file-requests/upload",
+        "POST",
+        form
+      );
+
+      alert("File uploaded and sent to the user's Telegram chat.");
+      await loadNumberRequests();
+
+    } catch (error) {
+      alert("Upload failed: " + error.message);
+      button.disabled = false;
+      button.textContent = "Upload and send to user";
+    }
+  });
+
+  loadNumberRequests();
+
+  // END MANUAL NUMBER FILE REQUEST MANAGEMENT
+  document.getElementById("admin-service-select").onchange=e=>{
+    loadServiceEditor(e.target.value);
+  };
+
+  document.getElementById("new-service").onclick=()=>{
+    document.getElementById("admin-service-select").value="";
+    loadServiceEditor("");
+  };
+
+  document.getElementById("price-service").onchange=e=>{
+    loadPricingEditor(e.target.value);
+  };
+
+  document.getElementById("visibility-service").onchange=e=>{
+    const s=adminServices.find(x=>x.resource_code===e.target.value);
+    document.getElementById("service-listed").checked=!!s&&Number(s.is_listed)===1;
+  };
+
+  document.getElementById("create-category").onclick=async()=>{
+    const category=document.getElementById("new-category").value.trim();
+    const display_order=Number(document.getElementById("new-category-order").value);
+
+    if(!category)return alert("Enter a category name.");
+    if(!Number.isSafeInteger(display_order)||display_order<0){
+      return alert("Enter a valid display order.");
+    }
+
+    await adminAction(async()=>{
+      await request("/api/admin/categories","POST",{
+        action:"create",
+        category,
+        display_order
+      });
+
+      document.getElementById("new-category").value="";
+      await reloadAdmin();
+    });
+  };
+
+  document.getElementById("save-service").onclick=async()=>{
+    const body={
+      resource_code:document.getElementById("svc-code").value.trim(),
+      name:document.getElementById("svc-name").value.trim(),
+      description:document.getElementById("svc-description").value.trim(),
+      category:document.getElementById("svc-category").value,
+      input_type:document.getElementById("svc-input").value,
+      task_type:document.getElementById("svc-task").value.trim(),
+      display_order:Number(document.getElementById("svc-order").value)
+    };
+
+    if(!body.resource_code||!body.name||!body.category||!body.task_type){
+      alert("Complete resource code, service name, category and provider task code.");
+      return;
+    }
+
+    await adminAction(async()=>{
+      await request("/api/admin/services","POST",body);
+
+      document.getElementById("service-message").textContent="Service details saved.";
+
+      await reloadAdmin();
+
+      document.getElementById("admin-service-select").value=body.resource_code;
+      loadServiceEditor(body.resource_code);
+    });
+  };
+
+  document.getElementById("save-pricing").onclick=async()=>{
+    const resource_code=document.getElementById("price-service").value;
+
+    if(!resource_code)return alert("Select a service first.");
+
+    const finalValue=document.getElementById("final-price").value;
+
+    const body={
+      resource_code,
+      provider_cost_cents:Number(document.getElementById("provider-cost").value),
+      markup_type:document.getElementById("markup-type").value,
+      markup_value:Number(document.getElementById("markup-value").value),
+      final_price_cents:finalValue===""?null:Number(finalValue),
+      pricing_unit_quantity:Number(document.getElementById("pricing-unit").value),
+      minimum_order_quantity:Number(document.getElementById("minimum-quantity").value),
+      currency:document.getElementById("currency").value,
+      enabled:document.getElementById("pricing-enabled").checked
+    };
+
+    await adminAction(async()=>{
+      await request("/api/admin/pricing","POST",body);
+
+      document.getElementById("pricing-message").textContent="Pricing saved.";
+
+      await reloadAdmin();
+
+      document.getElementById("price-service").value=resource_code;
+      loadPricingEditor(resource_code);
+    });
+  };
+
+  document.getElementById("save-visibility").onclick=async()=>{
+    const resource_code=document.getElementById("visibility-service").value;
+
+    if(!resource_code)return alert("Select a service.");
+
+    const is_listed=document.getElementById("service-listed").checked?1:0;
+
+    await adminAction(async()=>{
+      await request("/api/admin/services/visibility","POST",{
+        resource_code,
+        is_listed
+      });
+
+      document.getElementById("visibility-message").textContent="Service visibility saved.";
+
+      await reloadAdmin();
+
+      document.getElementById("visibility-service").value=resource_code;
+
+      const s=adminServices.find(x=>x.resource_code===resource_code);
+
+      document.getElementById("service-listed").checked=
+        !!s&&Number(s.is_listed)===1;
+    });
+  };
+
+  document.getElementById("reload-admin").onclick=()=>adminAction(reloadAdmin);
+
+  
+  // Load admin upload history and manage review status
+  async function loadAdminUploads(){
+    const message=document.getElementById("admin-uploads-message");
+    const box=document.getElementById("admin-uploads-list");
+    const button=document.getElementById("refresh-admin-uploads");
+
+    if(!message||!box)return;
+
+    message.textContent="Loading uploaded files…";
+    box.innerHTML="";
+
+    if(button)button.disabled=true;
+
+    try{
+      const data=await request("/api/admin/uploads?limit=50&offset=0");
+
+      if(!data.ok){
+        throw new Error(data.error||"Unable to load uploads");
+      }
+
+      const uploads=data.uploads||[];
+
+      message.textContent="Total uploads: "+Number(data.pagination?.total||0);
+
+      if(!uploads.length){
+        box.innerHTML='<p class="muted">No uploaded files found.</p>';
+        return;
+      }
+
+      box.innerHTML=uploads.map(upload=>{
+        const size=(Number(upload.file_size||0)/1024).toFixed(1);
+
+        const expiry=upload.expires_at
+          ?new Date(upload.expires_at).toLocaleString()
+          :"Not available";
+
+        const created=upload.created_at
+          ?new Date(upload.created_at.replace(" ","T")+"Z").toLocaleString()
+          :"Not available";
+
+        const reviewed=upload.reviewed_at
+          ?new Date(upload.reviewed_at).toLocaleString()
+          :"Not reviewed";
+
+        const currentStatus=upload.status||"uploaded";
+
+        const statuses=["uploaded","reviewed","rejected","expired"];
+
+        const statusOptions=statuses.map(status=>
+          `<option value="${status}" ${currentStatus===status?"selected":""}>${status.charAt(0).toUpperCase()+status.slice(1)}</option>`
+        ).join("");
+
+        return `
+         <div
+  class="item"
+  data-upload-id="${Number(upload.id)}"
+  data-customer-id="${Number(upload.user_id)}"
+  data-file-name="${esc(upload.file_name||"").toLowerCase()}"
+  data-status="${esc(currentStatus)}"
+>
+            <div class="item-top">
+              <strong>${esc(upload.file_name||"Unnamed file")}</strong>
+              <span class="pill">${esc(currentStatus)}</span>
+            </div>
+
+            <div class="muted">Upload ID: ${Number(upload.id)}</div>
+            <div class="muted">Customer ID: ${Number(upload.user_id)}</div>
+            <div class="muted">Service: ${esc(upload.resource_code||"Not specified")}</div>
+            <div class="muted">File type: ${esc(upload.mime_type||"Unknown")}</div>
+            <div class="muted">File size: ${size} KB</div>
+            <div class="muted">Uploaded: ${esc(created)}</div>
+            <div class="muted">Expires: ${esc(expiry)}</div>
+
+            <div class="muted">Last reviewed: ${esc(reviewed)}</div>
+
+            <div class="muted">
+              Reviewed by admin ID: ${upload.reviewed_by==null?"Not reviewed":Number(upload.reviewed_by)}
+            </div>
+
+            <label class="field">Upload status</label>
+            <select class="upload-status">
+              ${statusOptions}
+            </select>
+
+            <label class="field">Private admin note</label>
+            <textarea class="upload-admin-note" maxlength="1000" placeholder="Enter a private review note">${esc(upload.admin_note||"")}</textarea>
+
+            <button class="btn save-upload-status" type="button">
+              Save Status
+            </button>
+          </div>
+        `;
+      }).join("");
+      function filterAdminUploads(){
+        const search=document.getElementById("upload-search");
+        const filter=document.getElementById("upload-status-filter");
+
+        const query=(search?.value||"").trim().toLowerCase();
+        const selectedStatus=filter?.value||"all";
+
+        const items=box.querySelectorAll("[data-upload-id]");
+
+        let visible=0;
+
+        items.forEach(item=>{
+          const uploadId=item.dataset.uploadId||"";
+          const customerId=item.dataset.customerId||"";
+          const fileName=item.dataset.fileName||"";
+          const status=item.dataset.status||"";
+
+          const matchesSearch=
+            !query ||
+            uploadId.includes(query) ||
+            customerId.includes(query) ||
+            fileName.includes(query);
+
+          const matchesStatus=
+            selectedStatus==="all" ||
+            status===selectedStatus;
+
+          const show=matchesSearch&&matchesStatus;
+
+          item.style.display=show?"":"none";
+
+          if(show)visible++;
+        });
+
+        const count=document.getElementById("upload-filter-count");
+
+        if(count){
+          count.textContent="Showing "+visible+" of "+items.length+" uploads";
+        }
+      }
+
+      const searchInput=document.getElementById("upload-search");
+      const statusFilter=document.getElementById("upload-status-filter");
+
+      if(searchInput){
+        searchInput.oninput=filterAdminUploads;
+      }
+
+      if(statusFilter){
+        statusFilter.onchange=filterAdminUploads;
+      }
+
+      filterAdminUploads();
+      box.querySelectorAll("[data-upload-id]").forEach(item=>{
+        const saveButton=item.querySelector(".save-upload-status");
+
+        saveButton.onclick=async()=>{
+          const uploadId=Number(item.dataset.uploadId);
+          const status=item.querySelector(".upload-status").value;
+          const adminNote=item.querySelector(".upload-admin-note").value.trim();
+
+          saveButton.disabled=true;
+          saveButton.textContent="Saving…";
+
+          try{
+            const result=await request("/api/admin/uploads/status","POST",{
+              upload_id:uploadId,
+              status,
+              admin_note:adminNote
+            });
+
+            if(!result.ok){
+              throw new Error(result.error||"Unable to update upload");
+            }
+
+            await loadAdminUploads();
+
+            message.textContent="Upload #"+uploadId+" status saved successfully.";
+
+          }catch(error){
+            alert("Could not save upload status: "+error.message);
+            saveButton.disabled=false;
+            saveButton.textContent="Save Status";
+          }
+        };
+      });
+
+    }catch(error){
+      message.textContent="Error: "+error.message;
+    }finally{
+      if(button)button.disabled=false;
+    }
+  }
+
+
+  const uploadRefreshButton=
+    document.getElementById("refresh-admin-uploads");
+
+  if(uploadRefreshButton){
+    uploadRefreshButton.onclick=loadAdminUploads;
+  }
+
+  loadAdminUploads();
+
+  document.getElementById("cn-validate-upload").onclick=async()=>{
+    const fileInput=document.getElementById("cn-upload-file");
+    const taskType=document.getElementById("cn-task-type").value;
+    const resultBox=document.getElementById("cn-upload-result");
+    const button=document.getElementById("cn-validate-upload");
+    const file=fileInput.files&&fileInput.files[0];
+
+    if(!file){
+      resultBox.textContent="Please select a TXT or CSV file.";
+      return;
+    }
+
+    if(!/\.(txt|csv)$/i.test(file.name)){
+      resultBox.textContent="Only .txt and .csv files are allowed.";
+      return;
+    }
+
+    if(file.size>2*1024*1024){
+      resultBox.textContent="File is too large. Maximum size is 2 MB.";
+      return;
+    }
+
+    const formData=new FormData();
+    formData.append("file",file);
+    formData.append("task_type",taskType);
+
+    button.disabled=true;
+    button.textContent="Validating…";
+    resultBox.textContent="Uploading file for validation only…";
+
+    try{
+      const response=await fetch(API+"/api/admin/checknumber/validate-upload",{
+        method:"POST",
+        headers:{
+          "Authorization":"Bearer "+token,
+          "Accept":"application/json"
+        },
+        body:formData
+      });
+
+      const data=await response.json();
+
+      if(!response.ok||!data.ok){
+        throw new Error(data.error||"Upload validation failed ("+response.status+")");
+      }
+
+      resultBox.textContent=JSON.stringify(data,null,2);
+    }catch(error){
+      resultBox.textContent="Error: "+error.message;
+    }finally{
+      button.disabled=false;
+      button.textContent="Validate File";
+    }
+  };
+
+  if(adminServices.length){
+    document.getElementById("price-service").value=adminServices[0].resource_code;
+    document.getElementById("visibility-service").value=adminServices[0].resource_code;
+
+    loadPricingEditor(adminServices[0].resource_code);
+
+    document.getElementById("service-listed").checked=
+      Number(adminServices[0].is_listed)===1;
+  }
+
+} // Correctly closes wireAdmin()
+
+async function reloadAdmin(){
+  const data=await request("/api/admin/catalogue");
+
+  categories=data.categories||[];
+  adminServices=data.services||[];
+
+  renderDashboard();
+}
+
+login();
+
+})();
+</script>
+</body>
+</html>
