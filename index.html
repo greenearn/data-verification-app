@@ -1594,7 +1594,7 @@ function adminMarkup(){
     <h2 style="margin-top:7px">Catalogue Management</h2>
     <p>Manage categories, services and pricing. Changes are saved to the database.</p>
     <div class="note success">${esc(adminRole==="main_admin"?"Main Admin":adminRole==="full_admin"?"Full Admin":"Sub Admin")} · Server-verified permissions</div>
-    \${adminRole==="main_admin"?\`
+    ${adminRole==="main_admin"?`
     <div class="panel" id="admin-management-panel">
       <div class="item-top">
         <h3>Administrator Management</h3>
@@ -1624,7 +1624,7 @@ function adminMarkup(){
       </div>
       <p id="admin-management-message" class="muted">Administrator list has not been loaded.</p>
       <div id="admin-management-list"></div>
-    </div>\`:""}
+    </div>`:""}
 
     <div class="panel">
       <div class="item-top">
@@ -2021,6 +2021,29 @@ function applyAdminUiPermissions(){
     ["#refresh-admin-uploads","uploads_manage"],
     ["#refresh-number-requests","number_requests"]
   ];
+  const panelPermissions=[
+    ["Wallet deposit review","wallet_deposits"],
+    ["Add a category","catalogue_manage"],
+    ["Add or edit a service","catalogue_manage"],
+    ["Service pricing","catalogue_manage"],
+    ["Publish / hide a service","catalogue_manage"],
+    ["CheckNumber.ai File Upload","checknumber_validate"],
+    ["Admin Upload Management","uploads_manage"],
+    ["Manual Number File Requests","number_requests"]
+  ];
+  section.querySelectorAll(".panel").forEach(panel=>{
+    if(panel===section)return;
+    const heading=panel.querySelector("h3,h2");
+    const title=heading?.textContent?.trim();
+    const match=panelPermissions.find(([label])=>label===title);
+    if(match&&!allowed(match[1]))panel.hidden=true;
+  });
+  if(!allowed("catalogue_manage")){
+    const categories=document.getElementById("admin-categories");
+    const heading=categories?.previousElementSibling;
+    if(heading)heading.hidden=true;
+    if(categories)categories.hidden=true;
+  }
   for(const [selector,permission] of rules){
     const el=section.querySelector(selector);
     if(el&&!allowed(permission)){
@@ -2090,21 +2113,21 @@ function wireAdminManagement(){
         const permissionText=admin.role==="sub_admin"
           ?permissions.map(key=>data.permission_options[key]||key).join(", ")||"No permissions assigned"
           :"All operational permissions";
-        return \`
-          <div class="item" data-admin-id="\${esc(admin.telegram_id)}">
+        return `
+          <div class="item" data-admin-id="${esc(admin.telegram_id)}">
             <div class="item-top">
-              <strong>\${esc(name)}</strong>
-              <span class="pill">\${active?"Active":"Restricted"}</span>
+              <strong>${esc(name)}</strong>
+              <span class="pill">${active?"Active":"Restricted"}</span>
             </div>
-            <div class="muted">Telegram ID: \${esc(admin.telegram_id)}</div>
-            <div class="muted">Role: \${esc(roleLabel)}</div>
-            <div class="muted">Permissions: \${esc(permissionText)}</div>
-            \${main?'<p class="note success">Protected Main Admin account</p>':\`
+            <div class="muted">Telegram ID: ${esc(admin.telegram_id)}</div>
+            <div class="muted">Role: ${esc(roleLabel)}</div>
+            <div class="muted">Permissions: ${esc(permissionText)}</div>
+            ${main?'<p class="note success">Protected Main Admin account</p>':`
               <div class="actions">
                 <button class="btn secondary edit-managed-admin" type="button">Edit / Promote</button>
-                <button class="btn \${active?"danger":"secondary"} toggle-managed-admin" data-action="\${active?"revoke":"restore"}" type="button">\${active?"Restrict / Revoke":"Restore access"}</button>
-              </div>\`}
-          </div>\`;
+                <button class="btn ${active?"danger":"secondary"} toggle-managed-admin" data-action="${active?"revoke":"restore"}" type="button">${active?"Restrict / Revoke":"Restore access"}</button>
+              </div>`}
+          </div>`;
       }).join("");
     }catch(error){
       message.textContent="Could not load administrators: "+error.message;
