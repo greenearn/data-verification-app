@@ -3755,7 +3755,7 @@ if (
       try {
         const user = await getSessionUser(request, env);
 
-        if (!env.@Jesuschrist579803) {
+        if (!env.ADMIN_SETUP_CODE) {
           return json({
             ok: false,
             error: "admin_setup_not_configured"
