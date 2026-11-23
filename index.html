@@ -956,31 +956,6 @@ function renderDashboard(){
 
   renderServices();
 
-  const refreshSessionButton=document.getElementById("refresh-session");
-  if(refreshSessionButton)refreshSessionButton.onclick=refreshSession;
-
-  const logoutButton=document.getElementById("account-logout");
-  if(logoutButton)logoutButton.onclick=async()=>{
-    logoutButton.disabled=true;
-    logoutButton.textContent="Logging out…";
-    const message=document.getElementById("account-auth-message");
-    try{
-      await request("/api/auth/logout","POST",{});
-      token="";
-      user={};
-      adminMode=false;
-      adminRole=null;
-      adminPermissions=[];
-      if(notificationPollTimer){clearInterval(notificationPollTimer);notificationPollTimer=null;}
-      if(window.walletBalanceTimer){clearInterval(window.walletBalanceTimer);window.walletBalanceTimer=null;}
-      renderLoginScreen("You have securely logged out.");
-    }catch(error){
-      if(message)message.textContent="Logout failed: "+error.message;
-      logoutButton.disabled=false;
-      logoutButton.textContent="Log out";
-    }
-  };
-
   wireNotifications();
   wireRequestHistory();
   wireWallet();
@@ -1357,51 +1332,28 @@ document.getElementById("refresh-session").onclick=refreshSession;
 
 loadOrders();
 updateEstimate();
-  const signupButton = document.getElementById("admin-signup");
-  const logoutButton = document.getElementById("admin-logout");
-
-  if(signupButton){
-    signupButton.onclick = async () => {
-      const setupCode = document.getElementById("admin-setup-code").value.trim();
-      const message = document.getElementById("admin-auth-message");
-
-      if(!setupCode){
-        message.textContent = "Enter your private setup code.";
-        return;
-      }
-
-      signupButton.disabled = true;
-      message.textContent = "Registering administrator...";
-
-      try{
-        await request("/api/admin/signup", "POST", {
-          setup_code: setupCode
-        });
-
-        message.textContent = "Administrator registered successfully.";
-        await reloadAdmin();
-      }catch(error){
-        message.textContent = "Registration failed: " + error.message;
-      }finally{
-        signupButton.disabled = false;
-      }
-    };
-  }
-
+  const logoutButton = document.getElementById("account-logout");
   if(logoutButton){
     logoutButton.onclick = async () => {
-      if(!confirm("Are you sure you want to log out?")) return;
-
+      if(!confirm("Log out of this Telegram Mini App session?")) return;
+      logoutButton.disabled=true;
+      logoutButton.textContent="Logging out…";
+      const message=document.getElementById("account-auth-message");
       try{
-        await request("/api/auth/logout", "POST", {});
+        await request("/api/auth/logout","POST",{});
+        token="";
+        user={};
+        adminMode=false;
+        adminRole=null;
+        adminPermissions=[];
+        if(notificationPollTimer){clearInterval(notificationPollTimer);notificationPollTimer=null;}
+        if(window.walletBalanceTimer){clearInterval(window.walletBalanceTimer);window.walletBalanceTimer=null;}
+        renderLoginScreen("You have securely logged out.");
       }catch(error){
-        console.warn("Server logout:", error.message);
+        if(message)message.textContent="Logout failed: "+error.message;
+        logoutButton.disabled=false;
+        logoutButton.textContent="Log out";
       }
-
-      token = "";
-      user = {};
-      adminMode = false;
-      location.reload();
     };
   }
   if(adminMode){
