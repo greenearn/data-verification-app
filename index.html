@@ -97,6 +97,8 @@ let adminServices=[];
 let categories=[];
 let selectedCode="";
 let adminMode=false;
+let adminRole=null;
+let adminPermissions=[];
 let notificationPollTimer = null;
 let notificationIds = new Set();
 let notificationsInitialized = false;
@@ -181,18 +183,26 @@ async function login(){
     const me=await request("/api/me");
     user=me.user||data.user||{};
 
+    adminMode=!!user.is_admin;
+    adminRole=user.admin_role||null;
+    adminPermissions=Array.isArray(user.admin_permissions)?user.admin_permissions:[];
     await loadCustomerServices();
-    renderDashboard();
 
-    try{
-      const admin=await request("/api/admin/catalogue");
-      categories=admin.categories||[];
-      adminServices=admin.services||adminServices;
-      adminMode=true;
-      renderDashboard();
-    }catch(error){
-      adminMode=false;
+    if(adminMode && (
+      adminRole==="main_admin" ||
+      adminRole==="full_admin" ||
+      adminPermissions.includes("catalogue_manage")
+    )){
+      try{
+        const admin=await request("/api/admin/catalogue");
+        categories=admin.categories||[];
+        adminServices=admin.services||adminServices;
+      }catch(error){
+        console.warn("Admin catalogue unavailable:",error.message);
+      }
     }
+
+    renderDashboard();
 
   }catch(error){
     showError(error.message||"Secure login failed.");
@@ -1362,7 +1372,10 @@ updateEstimate();
       location.reload();
     };
   }
-  if(adminMode)wireAdmin();
+  if(adminMode){
+    wireAdmin();
+    applyAdminUiPermissions();
+  }
 }
 
 function renderServices(){
@@ -1578,9 +1591,40 @@ function adminMarkup(){
   return `
   <section id="admin" class="panel">
     <div class="admin-label">ADMINISTRATOR AREA</div>
-    <h2 style="margin-top:7px">Catalogue Management</h2>
+    <h2 style="margin-top:7px">Administrator Dashboard</h2>
     <p>Manage categories, services and pricing. Changes are saved to the database.</p>
-    <div class="note success">Admin access verified by the server.</div>
+    <div class="note success">${esc(adminRole==="main_admin"?"Main Admin":adminRole==="full_admin"?"Full Admin":"Sub Admin")} · Server-verified permissions</div>
+    ${adminRole==="main_admin"?`
+    <div class="panel" id="admin-management-panel">
+      <div class="item-top">
+        <h3>Administrator Management</h3>
+        <button class="btn secondary" id="admin-management-refresh" type="button">Refresh</button>
+      </div>
+      <p class="muted">Only the Main Admin can manage administrator access. The Main Admin account is protected.</p>
+      <label class="field" for="managed-admin-telegram-id">Administrator Telegram ID</label>
+      <input id="managed-admin-telegram-id" inputmode="numeric" maxlength="20" placeholder="Enter numeric Telegram ID">
+      <label class="field" for="managed-admin-role">Administrator role</label>
+      <select id="managed-admin-role">
+        <option value="sub_admin">Sub Admin — selected permissions</option>
+        <option value="full_admin">Full Admin — all operational permissions</option>
+      </select>
+      <div id="managed-admin-permissions" class="item">
+        <strong>Sub Admin permissions</strong>
+        <label class="checkbox"><input type="checkbox" value="wallet_deposits"> Wallet deposit review</label>
+        <label class="checkbox"><input type="checkbox" value="catalogue_manage"> Catalogue, categories, services and pricing</label>
+        <label class="checkbox"><input type="checkbox" value="checknumber_validate"> CheckNumber file validation</label>
+        <label class="checkbox"><input type="checkbox" value="uploads_manage"> Customer upload review</label>
+        <label class="checkbox"><input type="checkbox" value="number_requests"> Manual number-file requests</label>
+        <label class="checkbox"><input type="checkbox" value="provider_balance"> Provider balance</label>
+        <label class="checkbox"><input type="checkbox" value="storage_test"> Telegram storage test</label>
+      </div>
+      <div class="actions">
+        <button class="btn" id="managed-admin-save" type="button">Grant administrator access</button>
+        <button class="btn secondary" id="managed-admin-clear" type="button">Clear form</button>
+      </div>
+      <p id="admin-management-message" class="muted">Administrator list has not been loaded.</p>
+      <div id="admin-management-list"></div>
+    </div>`:""}
 
     <div class="panel">
       <div class="item-top">
@@ -1731,6 +1775,20 @@ function adminMarkup(){
       </div>
 
       <pre id="cn-upload-result" class="note muted" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+    </div>
+
+    <div class="panel">
+      <h3>Provider Balance</h3>
+      <p class="muted">Check the current CheckNumber.ai provider balance.</p>
+      <button class="btn secondary" id="provider-balance-refresh" type="button">Check provider balance</button>
+      <pre id="provider-balance-result" class="note muted" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+    </div>
+
+    <div class="panel">
+      <h3>Telegram Storage Connection</h3>
+      <p class="muted">Send a test message to the configured private Telegram storage channel.</p>
+      <button class="btn secondary" id="admin-storage-test" type="button">Test storage connection</button>
+      <p id="admin-storage-test-result" class="muted"></p>
     </div>
 
     <div class="panel">
@@ -1959,9 +2017,246 @@ async function adminAction(action){
   }
 }
 
+
+function applyAdminUiPermissions(){
+  if(!adminMode)return;
+  const allowed=permission=>adminRole==="main_admin"||
+    adminRole==="full_admin"||adminPermissions.includes(permission);
+  const section=document.getElementById("admin");
+  if(!section)return;
+  const rules=[
+    ["#admin-deposits-refresh","wallet_deposits"],
+    ["#new-category","catalogue_manage"],
+    ["#admin-service-select","catalogue_manage"],
+    ["#price-service","catalogue_manage"],
+    ["#visibility-service","catalogue_manage"],
+    ["#cn-validate-upload","checknumber_validate"],
+    ["#refresh-admin-uploads","uploads_manage"],
+    ["#refresh-number-requests","number_requests"]
+  ];
+  const panelPermissions=[
+    ["Wallet deposit review","wallet_deposits"],
+    ["Add a category","catalogue_manage"],
+    ["Add or edit a service","catalogue_manage"],
+    ["Service pricing","catalogue_manage"],
+    ["Publish / hide a service","catalogue_manage"],
+    ["CheckNumber.ai File Upload","checknumber_validate"],
+    ["Provider Balance","provider_balance"],
+    ["Telegram Storage Connection","storage_test"],
+    ["Admin Upload Management","uploads_manage"],
+    ["Manual Number File Requests","number_requests"]
+  ];
+  section.querySelectorAll(".panel").forEach(panel=>{
+    if(panel===section)return;
+    const heading=panel.querySelector("h3,h2");
+    const title=heading?.textContent?.trim();
+    const match=panelPermissions.find(([label])=>label===title);
+    if(match&&!allowed(match[1]))panel.hidden=true;
+  });
+  if(!allowed("catalogue_manage")){
+    const categories=document.getElementById("admin-categories");
+    const heading=categories?.previousElementSibling;
+    if(heading)heading.hidden=true;
+    if(categories)categories.hidden=true;
+  }
+  for(const [selector,permission] of rules){
+    const el=section.querySelector(selector);
+    if(el&&!allowed(permission)){
+      const panel=el.closest(".panel")||el.parentElement;
+      if(panel)panel.hidden=true;
+    }
+  }
+  if(adminRole!=="main_admin"){
+    const manager=document.getElementById("admin-management-panel");
+    if(manager)manager.hidden=true;
+  }
+}
+
+function wireAdminManagement(){
+  if(adminRole!=="main_admin")return;
+  const panel=document.getElementById("admin-management-panel");
+  if(!panel)return;
+  const idInput=document.getElementById("managed-admin-telegram-id");
+  const roleSelect=document.getElementById("managed-admin-role");
+  const permissionBox=document.getElementById("managed-admin-permissions");
+  const saveButton=document.getElementById("managed-admin-save");
+  const clearButton=document.getElementById("managed-admin-clear");
+  const refreshButton=document.getElementById("admin-management-refresh");
+  const message=document.getElementById("admin-management-message");
+  const list=document.getElementById("admin-management-list");
+  let editingId="";
+
+  function selectedPermissions(){
+    return [...permissionBox.querySelectorAll('input[type="checkbox"]:checked')]
+      .map(input=>input.value);
+  }
+  function setPermissions(values){
+    permissionBox.querySelectorAll('input[type="checkbox"]').forEach(input=>{
+      input.checked=values.includes(input.value);
+    });
+  }
+  function clearForm(){
+    editingId="";
+    idInput.value="";
+    idInput.disabled=false;
+    roleSelect.value="sub_admin";
+    setPermissions([]);
+    saveButton.textContent="Grant administrator access";
+    permissionBox.hidden=false;
+  }
+  roleSelect.onchange=()=>{permissionBox.hidden=roleSelect.value!=="sub_admin";};
+  clearButton.onclick=clearForm;
+
+  async function loadAdmins(){
+    message.textContent="Loading administrators…";
+    list.innerHTML="";
+    refreshButton.disabled=true;
+    try{
+      const data=await request("/api/admin/management");
+      const admins=data.admins||[];
+      message.textContent="Total administrator accounts: "+admins.length;
+      if(!admins.length){
+        list.innerHTML='<p class="muted">No administrators found.</p>';
+        return;
+      }
+      list.innerHTML=admins.map(admin=>{
+        const main=admin.role==="main_admin";
+        const active=Number(admin.is_active)===1;
+        const permissions=Array.isArray(admin.permissions)?admin.permissions:[];
+        const roleLabel=main?"Main Admin":admin.role==="full_admin"?"Full Admin":"Sub Admin";
+        const name=admin.first_name||admin.username||("Telegram ID "+admin.telegram_id);
+        const permissionText=admin.role==="sub_admin"
+          ?permissions.map(key=>data.permission_options[key]||key).join(", ")||"No permissions assigned"
+          :"All operational permissions";
+        return `
+          <div class="item" data-admin-id="${esc(admin.telegram_id)}">
+            <div class="item-top">
+              <strong>${esc(name)}</strong>
+              <span class="pill">${active?"Active":"Restricted"}</span>
+            </div>
+            <div class="muted">Telegram ID: ${esc(admin.telegram_id)}</div>
+            <div class="muted">Role: ${esc(roleLabel)}</div>
+            <div class="muted">Permissions: ${esc(permissionText)}</div>
+            ${main?'<p class="note success">Protected Main Admin account</p>':`
+              <div class="actions">
+                <button class="btn secondary edit-managed-admin" type="button">Edit / Promote</button>
+                <button class="btn ${active?"danger":"secondary"} toggle-managed-admin" data-action="${active?"revoke":"restore"}" type="button">${active?"Restrict / Revoke":"Restore access"}</button>
+              </div>`}
+          </div>`;
+      }).join("");
+    }catch(error){
+      message.textContent="Could not load administrators: "+error.message;
+    }finally{
+      refreshButton.disabled=false;
+    }
+  }
+
+  saveButton.onclick=async()=>{
+    const targetId=idInput.value.trim();
+    const role=roleSelect.value;
+    const permissions=role==="sub_admin"?selectedPermissions():[];
+    if(!/^\d{5,20}$/.test(targetId)){
+      message.textContent="Enter a valid numeric Telegram ID.";
+      return;
+    }
+    if(role==="sub_admin"&&!permissions.length){
+      message.textContent="Select at least one permission for a Sub Admin.";
+      return;
+    }
+    saveButton.disabled=true;
+    try{
+      await request("/api/admin/management","POST",{
+        action:editingId?"update":"grant",
+        telegram_id:targetId,
+        role,
+        permissions
+      });
+      message.textContent="Administrator access saved.";
+      clearForm();
+      await loadAdmins();
+    }catch(error){
+      message.textContent="Could not save administrator: "+error.message;
+    }finally{
+      saveButton.disabled=false;
+    }
+  };
+
+  refreshButton.onclick=loadAdmins;
+  list.addEventListener("click",async event=>{
+    const item=event.target.closest("[data-admin-id]");
+    if(!item)return;
+    const targetId=item.dataset.adminId;
+    const editButton=event.target.closest(".edit-managed-admin");
+    const toggleButton=event.target.closest(".toggle-managed-admin");
+    if(editButton){
+      const data=await request("/api/admin/management");
+      const admin=(data.admins||[]).find(entry=>String(entry.telegram_id)===targetId);
+      if(!admin)return;
+      editingId=targetId;
+      idInput.value=targetId;
+      idInput.disabled=true;
+      roleSelect.value=admin.role;
+      setPermissions(Array.isArray(admin.permissions)?admin.permissions:[]);
+      permissionBox.hidden=admin.role!=="sub_admin";
+      saveButton.textContent="Save administrator changes";
+      idInput.scrollIntoView({behavior:"smooth",block:"center"});
+      return;
+    }
+    if(toggleButton){
+      const action=toggleButton.dataset.action;
+      if(!confirm((action==="revoke"?"Restrict and revoke":"Restore")+" admin access for Telegram ID "+targetId+"?"))return;
+      toggleButton.disabled=true;
+      try{
+        await request("/api/admin/management","POST",{action,telegram_id:targetId});
+        message.textContent=action==="revoke"?"Access revoked and active sessions cleared.":"Access restored.";
+        await loadAdmins();
+      }catch(error){
+        message.textContent="Could not update access: "+error.message;
+        toggleButton.disabled=false;
+      }
+    }
+  });
+  loadAdmins();
+}
+
 function wireAdmin(){
+  wireAdminManagement();
   renderAdminCategories();
   fillServiceDropdowns();
+
+  const providerBalanceButton=document.getElementById("provider-balance-refresh");
+  const providerBalanceResult=document.getElementById("provider-balance-result");
+  if(providerBalanceButton){
+    providerBalanceButton.onclick=async()=>{
+      providerBalanceButton.disabled=true;
+      providerBalanceResult.textContent="Checking provider balance…";
+      try{
+        const data=await request("/api/admin/provider-balance");
+        providerBalanceResult.textContent=JSON.stringify(data.balance,null,2);
+      }catch(error){
+        providerBalanceResult.textContent="Error: "+error.message;
+      }finally{
+        providerBalanceButton.disabled=false;
+      }
+    };
+  }
+
+  const storageTestButton=document.getElementById("admin-storage-test");
+  const storageTestMessage=document.getElementById("admin-storage-test-result");
+  if(storageTestButton){
+    storageTestButton.onclick=async()=>{
+      storageTestButton.disabled=true;
+      storageTestMessage.textContent="Testing Telegram storage…";
+      try{
+        await request("/api/admin/storage-test","POST",{});
+        storageTestMessage.textContent="Telegram storage connection successful.";
+      }catch(error){
+        storageTestMessage.textContent="Storage test failed: "+error.message;
+      }finally{
+        storageTestButton.disabled=false;
+      }
+    };
+  }
 
   // WALLET DEPOSIT REVIEW
   const depositsMessage=document.getElementById("admin-deposits-message");

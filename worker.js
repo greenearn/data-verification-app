@@ -4,6 +4,7 @@ const WORKER_ORIGIN = "https://data-verification-api.shrestharaj980888.workers.d
 const SESSION_DAYS = 7;
 const MAX_INIT_DATA_AGE = 3600;
 const MAX_BODY_SIZE = 20000;
+let adminAccessSchemaReady = false;
 // --------------------------------------------------
 // CHECKNUMBER.AI AUTOMATIC CATALOGUE
 // --------------------------------------------------
@@ -317,25 +318,166 @@ async function getSessionUser(request, env) {
   return user;
 }
 
-async function isAdmin(user, env) {
-  const admin = await env.DB.prepare(`
-    SELECT role
+const ADMIN_PERMISSION_LABELS = {
+  wallet_deposits: "Wallet deposit review",
+  catalogue_manage: "Catalogue, categories, services and pricing",
+  checknumber_validate: "CheckNumber file validation",
+  uploads_manage: "Customer upload review",
+  number_requests: "Manual number-file requests",
+  provider_balance: "Provider balance",
+  storage_test: "Telegram storage test"
+};
+
+const ADMIN_ROUTE_PERMISSIONS = {
+  "GET /api/admin/wallet/deposits": "wallet_deposits",
+  "POST /api/admin/wallet/deposits/review": "wallet_deposits",
+  "GET /api/admin/catalogue": "catalogue_manage",
+  "POST /api/admin/catalogue/import": "catalogue_manage",
+  "POST /api/admin/checknumber/validate-upload": "checknumber_validate",
+  "GET /api/admin/uploads": "uploads_manage",
+  "POST /api/admin/uploads/status": "uploads_manage",
+  "POST /api/admin/categories": "catalogue_manage",
+  "POST /api/admin/services": "catalogue_manage",
+  "POST /api/admin/services/visibility": "catalogue_manage",
+  "POST /api/admin/pricing": "catalogue_manage",
+  "GET /api/admin/provider-balance": "provider_balance",
+  "POST /api/admin/storage-test": "storage_test",
+  "GET /api/admin/number-file-requests": "number_requests",
+  "POST /api/admin/number-file-requests/upload": "number_requests",
+  "POST /api/admin/number-file-requests/reject": "number_requests"
+};
+
+async function ensureAdminAccessSchema(env) {
+  if (adminAccessSchemaReady) return;
+
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS admin_access (
+      telegram_id TEXT PRIMARY KEY,
+      role TEXT NOT NULL DEFAULT 'sub_admin',
+      permissions_json TEXT NOT NULL DEFAULT '[]',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS admin_audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      actor_telegram_id TEXT NOT NULL,
+      target_telegram_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      details_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+
+  // Preserve existing administrators. The earliest registered admin becomes
+  // the protected Main Admin; any other legacy admins become Full Admins.
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO admin_access (
+      telegram_id, role, permissions_json, is_active, created_by
+    )
+    SELECT
+      telegram_id,
+      CASE
+        WHEN telegram_id = (
+          SELECT telegram_id
+          FROM admin_users
+          WHERE role = 'admin'
+          ORDER BY created_at ASC, telegram_id ASC
+          LIMIT 1
+        ) THEN 'main_admin'
+        ELSE 'full_admin'
+      END,
+      '[]',
+      1,
+      telegram_id
     FROM admin_users
+    WHERE role = 'admin'
+  `).run();
+
+  adminAccessSchemaReady = true;
+}
+
+async function getAdminAccess(user, env) {
+  await ensureAdminAccessSchema(env);
+  return await env.DB.prepare(`
+    SELECT telegram_id, role, permissions_json, is_active,
+           created_by, created_at, updated_at
+    FROM admin_access
     WHERE telegram_id = ?
     LIMIT 1
-  `).bind(user.telegram_id).first();
+  `).bind(String(user.telegram_id)).first();
+}
 
-  return !!admin && admin.role === "admin";
+async function isAdmin(user, env) {
+  const admin = await getAdminAccess(user, env);
+  return !!admin &&
+    Number(admin.is_active) === 1 &&
+    ["main_admin", "full_admin", "sub_admin"].includes(admin.role);
 }
 
 async function requireAdmin(request, env) {
   const user = await getSessionUser(request, env);
+  const admin = await getAdminAccess(user, env);
 
-  if (!(await isAdmin(user, env))) {
+  if (
+    !admin ||
+    Number(admin.is_active) !== 1 ||
+    !["main_admin", "full_admin", "sub_admin"].includes(admin.role)
+  ) {
     throw new Error("admin_access_required");
   }
 
+  const routeKey = request.method.toUpperCase() + " " +
+    new URL(request.url).pathname;
+  const permission = ADMIN_ROUTE_PERMISSIONS[routeKey];
+
+  if (admin.role === "sub_admin") {
+    let permissions = [];
+    try {
+      permissions = JSON.parse(admin.permissions_json || "[]");
+    } catch {
+      permissions = [];
+    }
+
+    if (!permission || !Array.isArray(permissions) ||
+        !permissions.includes(permission)) {
+      throw new Error("admin_access_required");
+    }
+  }
+
+  return {
+    ...user,
+    admin_role: admin.role,
+    admin_permissions: admin.role === "sub_admin"
+      ? JSON.parse(admin.permissions_json || "[]")
+      : Object.keys(ADMIN_PERMISSION_LABELS)
+  };
+}
+
+async function requireAdminManager(request, env) {
+  const user = await requireAdmin(request, env);
+  if (user.admin_role !== "main_admin") {
+    throw new Error("admin_management_required");
+  }
   return user;
+}
+
+async function writeAdminAudit(env, actorId, targetId, action, details = {}) {
+  await env.DB.prepare(`
+    INSERT INTO admin_audit_log (
+      actor_telegram_id, target_telegram_id, action, details_json
+    )
+    VALUES (?, ?, ?, ?)
+  `).bind(
+    String(actorId),
+    String(targetId),
+    String(action),
+    JSON.stringify(details)
+  ).run();
 }
 
 // --------------------------------------------------
@@ -887,10 +1029,11 @@ async function notifyAdmins(env, message) {
     throw new Error("telegram_bot_configuration_missing");
   }
 
+  await ensureAdminAccessSchema(env);
   const result = await env.DB.prepare(`
     SELECT telegram_id
-    FROM admin_users
-    WHERE role = 'admin'
+    FROM admin_access
+    WHERE is_active = 1
   `).all();
 
   const admins = result.results || [];
@@ -960,11 +1103,12 @@ async function createAdminNotifications(
   type = "general",
   requestId = null
 ) {
+  await ensureAdminAccessSchema(env);
   const result = await env.DB.prepare(`
     SELECT u.id
-    FROM admin_users a
+    FROM admin_access a
     JOIN users u ON u.telegram_id = a.telegram_id
-    WHERE a.role = 'admin'
+    WHERE a.is_active = 1
   `).all();
 
   const admins = result.results || [];
@@ -1731,6 +1875,15 @@ if (
     if (request.method === "GET" && url.pathname === "/api/me") {
       try {
         const user = await getSessionUser(request, env);
+        const admin = await getAdminAccess(user, env);
+        let adminPermissions = [];
+        if (admin?.role === "sub_admin") {
+          try {
+            adminPermissions = JSON.parse(admin.permissions_json || "[]");
+          } catch {
+            adminPermissions = [];
+          }
+        }
 
         return json({
           ok: true,
@@ -1738,7 +1891,12 @@ if (
             telegram_id: user.telegram_id,
             username: user.username,
             first_name: user.first_name,
-            wallet_balance_cents: user.wallet_balance_cents
+            wallet_balance_cents: user.wallet_balance_cents,
+            is_admin: !!admin && Number(admin.is_active) === 1,
+            admin_role: admin && Number(admin.is_active) === 1
+              ? admin.role
+              : null,
+            admin_permissions: adminPermissions
           }
         }, 200, origin);
       } catch {
@@ -3662,7 +3820,16 @@ if (
   url.pathname === "/api/admin/number-file-requests/reject" &&
   request.method === "POST"
 ) {
-  const admin = await requireAdmin(request, env);
+  let admin;
+  try {
+    admin = await requireAdmin(request, env);
+  } catch (error) {
+    const unauthorized = error.message === "unauthorized";
+    return json({
+      ok: false,
+      error: unauthorized ? "unauthorized" : "admin_access_required"
+    }, unauthorized ? 401 : 403, origin);
+  }
   const body = await request.json();
 
   const requestId = Number(body.request_id);
@@ -3745,6 +3912,177 @@ if (
 }
 
     // --------------------------------------------------
+    // ADMIN MANAGEMENT: LIST AND CONTROL ADMIN ACCESS
+    // --------------------------------------------------
+
+    if (
+      request.method === "GET" &&
+      url.pathname === "/api/admin/management"
+    ) {
+      try {
+        await requireAdminManager(request, env);
+        const result = await env.DB.prepare(`
+          SELECT
+            a.telegram_id,
+            u.username,
+            u.first_name,
+            a.role,
+            a.permissions_json,
+            a.is_active,
+            a.created_by,
+            a.created_at,
+            a.updated_at
+          FROM admin_access a
+          LEFT JOIN users u ON u.telegram_id = a.telegram_id
+          ORDER BY
+            CASE a.role
+              WHEN 'main_admin' THEN 0
+              WHEN 'full_admin' THEN 1
+              ELSE 2
+            END,
+            a.created_at ASC
+        `).all();
+
+        const admins = (result.results || []).map(item => {
+          let permissions = [];
+          try {
+            permissions = JSON.parse(item.permissions_json || "[]");
+          } catch {
+            permissions = [];
+          }
+          return { ...item, permissions };
+        });
+
+        return json({
+          ok: true,
+          admins,
+          permission_options: ADMIN_PERMISSION_LABELS
+        }, 200, origin);
+      } catch (error) {
+        const status = error.message === "unauthorized" ? 401 :
+          ["admin_access_required", "admin_management_required"].includes(error.message) ? 403 : 500;
+        return json({ ok: false, error: error.message || "admin_management_failed" }, status, origin);
+      }
+    }
+
+    if (
+      request.method === "POST" &&
+      url.pathname === "/api/admin/management"
+    ) {
+      try {
+        const actor = await requireAdminManager(request, env);
+        const body = await readBody(request);
+        const action = String(body.action || "").trim().toLowerCase();
+        const targetId = String(body.telegram_id || "").trim();
+
+        if (!/^\d{5,20}$/.test(targetId)) {
+          return json({ ok: false, error: "invalid_telegram_id" }, 400, origin);
+        }
+
+        if (targetId === String(actor.telegram_id)) {
+          return json({ ok: false, error: "cannot_change_own_admin_access" }, 400, origin);
+        }
+
+        const existing = await env.DB.prepare(`
+          SELECT telegram_id, role, is_active
+          FROM admin_access
+          WHERE telegram_id = ?
+          LIMIT 1
+        `).bind(targetId).first();
+
+        if (existing?.role === "main_admin") {
+          return json({ ok: false, error: "main_admin_is_protected" }, 403, origin);
+        }
+
+        if (action === "grant" || action === "update") {
+          const role = String(body.role || "").trim().toLowerCase();
+          if (!["full_admin", "sub_admin"].includes(role)) {
+            return json({ ok: false, error: "invalid_admin_role" }, 400, origin);
+          }
+
+          let permissions = [];
+          if (role === "sub_admin") {
+            if (!Array.isArray(body.permissions) || body.permissions.length > 20) {
+              return json({ ok: false, error: "invalid_admin_permissions" }, 400, origin);
+            }
+            permissions = [...new Set(body.permissions)];
+            if (permissions.some(permission =>
+              !Object.prototype.hasOwnProperty.call(ADMIN_PERMISSION_LABELS, permission)
+            )) {
+              return json({ ok: false, error: "invalid_admin_permissions" }, 400, origin);
+            }
+          }
+
+          if (action === "grant" && existing && Number(existing.is_active) === 1) {
+            return json({ ok: false, error: "admin_already_active" }, 409, origin);
+          }
+
+          await env.DB.prepare(`
+            INSERT INTO admin_access (
+              telegram_id, role, permissions_json, is_active, created_by
+            )
+            VALUES (?, ?, ?, 1, ?)
+            ON CONFLICT(telegram_id) DO UPDATE SET
+              role = excluded.role,
+              permissions_json = excluded.permissions_json,
+              is_active = 1,
+              created_by = excluded.created_by,
+              updated_at = CURRENT_TIMESTAMP
+          `).bind(
+            targetId,
+            role,
+            JSON.stringify(permissions),
+            String(actor.telegram_id)
+          ).run();
+
+          await writeAdminAudit(
+            env, actor.telegram_id, targetId,
+            action === "grant" ? "admin_granted" : "admin_updated",
+            { role, permissions }
+          );
+
+          return json({ ok: true, message: action === "grant" ? "admin_access_granted" : "admin_access_updated" }, 200, origin);
+        }
+
+        if (action === "revoke" || action === "restore") {
+          if (!existing) {
+            return json({ ok: false, error: "admin_not_found" }, 404, origin);
+          }
+
+          const active = action === "restore" ? 1 : 0;
+          await env.DB.prepare(`
+            UPDATE admin_access
+            SET is_active = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE telegram_id = ? AND role != 'main_admin'
+          `).bind(active, targetId).run();
+
+          if (action === "revoke") {
+            await env.DB.prepare(`
+              DELETE FROM sessions
+              WHERE user_id IN (
+                SELECT id FROM users WHERE telegram_id = ?
+              )
+            `).bind(targetId).run();
+          }
+
+          await writeAdminAudit(
+            env, actor.telegram_id, targetId,
+            action === "revoke" ? "admin_access_revoked" : "admin_access_restored"
+          );
+
+          return json({ ok: true, message: action === "revoke" ? "admin_access_revoked" : "admin_access_restored" }, 200, origin);
+        }
+
+        return json({ ok: false, error: "invalid_admin_management_action" }, 400, origin);
+      } catch (error) {
+        const status = error.message === "unauthorized" ? 401 :
+          ["admin_access_required", "admin_management_required", "admin_permission_denied"].includes(error.message) ? 403 :
+          error.message === "invalid_json" ? 400 : 500;
+        return json({ ok: false, error: error.message || "admin_management_failed" }, status, origin);
+      }
+    }
+
+    // --------------------------------------------------
     // ADMIN: FIRST-TIME REGISTRATION
     // --------------------------------------------------
 
@@ -3793,6 +4131,14 @@ if (
             error: "admin_already_registered"
           }, 409, origin);
         }
+
+        await ensureAdminAccessSchema(env);
+        await env.DB.prepare(`
+          INSERT OR IGNORE INTO admin_access (
+            telegram_id, role, permissions_json, is_active, created_by
+          )
+          VALUES (?, 'main_admin', '[]', 1, ?)
+        `).bind(String(user.telegram_id), String(user.telegram_id)).run();
 
         return json({
           ok: true,
