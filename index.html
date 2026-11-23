@@ -1591,7 +1591,7 @@ function adminMarkup(){
   return `
   <section id="admin" class="panel">
     <div class="admin-label">ADMINISTRATOR AREA</div>
-    <h2 style="margin-top:7px">Catalogue Management</h2>
+    <h2 style="margin-top:7px">Administrator Dashboard</h2>
     <p>Manage categories, services and pricing. Changes are saved to the database.</p>
     <div class="note success">${esc(adminRole==="main_admin"?"Main Admin":adminRole==="full_admin"?"Full Admin":"Sub Admin")} · Server-verified permissions</div>
     ${adminRole==="main_admin"?`
@@ -2026,7 +2026,6 @@ function applyAdminUiPermissions(){
   if(!section)return;
   const rules=[
     ["#admin-deposits-refresh","wallet_deposits"],
-    ["#admin-categories","catalogue_manage"],
     ["#new-category","catalogue_manage"],
     ["#admin-service-select","catalogue_manage"],
     ["#price-service","catalogue_manage"],
