@@ -145,7 +145,7 @@ input,select,textarea{border-radius:14px;padding:13px}
 .back-button{border:1px solid #e1e7f2;background:#fff;color:#34405a;border-radius:12px;padding:9px 13px;font-weight:700}
 @media(max-width:650px){.support-contact-grid,.support-admin-layout{grid-template-columns:1fr}.support-compose{grid-template-columns:1fr}.admin-workspace{padding:10px;border-radius:18px}.wrap{padding:14px 12px 45px}}
 
-.admin-shell-actions{display:flex;align-items:center;gap:8px;position:relative}.admin-bell-wrap{position:relative}.admin-bell{position:relative;width:38px;height:38px;border:1px solid #ffffff35;border-radius:12px;background:#ffffff14;color:#fff;font-size:19px;cursor:pointer}.admin-bell-count{position:absolute;top:-6px;right:-6px;min-width:17px;height:17px;padding:0 4px;border-radius:99px;background:#ff5268;color:#fff;font-size:10px;display:grid;place-items:center}.admin-bell-count:empty{display:none}.admin-notification-panel{display:none;position:absolute;z-index:1000;top:46px;right:0;width:min(360px,calc(100vw - 32px));max-height:65vh;overflow:auto;padding:12px;background:#fff;color:#1d2740;border:1px solid #e5eaf5;border-radius:16px;box-shadow:0 16px 42px #07111d44}.admin-notification-panel.open{display:block}.admin-notification-entry{padding:10px;border-bottom:1px solid #e8edf5;overflow-wrap:anywhere}.admin-notification-entry.unread{background:#f0f5ff}.admin-notification-entry p{color:#59677b}@media(max-width:560px){.admin-workspace>header{align-items:flex-start;gap:10px}.admin-shell-actions{flex-wrap:wrap;justify-content:flex-end}.admin-notification-panel{position:fixed;top:72px;right:12px;width:calc(100vw - 24px)}}
+.admin-shell-actions{display:flex;align-items:center;gap:8px;position:relative}.admin-bell-wrap{position:relative}.admin-bell{position:relative;width:38px;height:38px;border:1px solid #ffffff35;border-radius:12px;background:#ffffff14;color:#fff;font-size:19px;cursor:pointer}.admin-bell-count{position:absolute;top:-6px;right:-6px;min-width:17px;height:17px;padding:0 4px;border-radius:99px;background:#ff5268;color:#fff;font-size:10px;display:grid;place-items:center}.admin-bell-count:empty{display:none}.admin-notification-panel{display:none;position:absolute;z-index:1000;top:46px;right:0;width:min(360px,calc(100vw - 32px));max-height:65vh;overflow:auto;padding:12px;background:#fff;color:#1d2740;border:1px solid #e5eaf5;border-radius:16px;box-shadow:0 16px 42px #07111d44}.admin-notification-panel.open{display:block}.notification-close{white-space:nowrap}.admin-notification-entry{padding:10px;border-bottom:1px solid #e8edf5;overflow-wrap:anywhere}.admin-notification-entry.unread{background:#f0f5ff}.admin-notification-entry p{color:#59677b}@media(max-width:560px){.admin-workspace>header{align-items:flex-start;gap:10px}.admin-shell-actions{flex-wrap:wrap;justify-content:flex-end}.admin-notification-panel{position:fixed;top:72px;right:12px;width:calc(100vw - 24px)}}
 /* Responsive notification popover */
 .notification-area{position:static;flex:0 1 auto;min-width:0}
 .notification-panel{
@@ -516,15 +516,39 @@ async function loadNotifications(isPoll=false){
   }
 }
 
+async function loadReferralData(){
+  const summary=document.getElementById("referral-summary"),link=document.getElementById("referral-link"),count=document.getElementById("referral-count"),earned=document.getElementById("referral-earned"),tiers=document.getElementById("referral-tiers");
+  if(!summary||!link||!count||!earned||!tiers)return;
+  try{
+    const data=await request("/api/referrals");
+    link.value=data.referral_link||"";
+    count.textContent=String(data.referred_count||0);
+    earned.textContent=money(Number(data.earned_cents||0),"USDT");
+    summary.textContent="Share your link. Your commission is added to your wallet after a referred customer's deposit is approved.";
+    tiers.innerHTML=(data.tiers||[]).length?(data.tiers||[]).map(t=>'<div class="item">'+money(Number(t.min_deposit_cents),"USDT")+' deposit or more · '+(Number(t.percentage_basis_points)/100).toFixed(2)+'% commission</div>').join(""):'<p class="muted">No active commission tiers.</p>';
+  }catch(error){summary.textContent="Could not load referral details: "+error.message;}
+}
+function wireReferral(){
+  const copy=document.getElementById("referral-copy"),link=document.getElementById("referral-link");
+  if(copy&&link)copy.onclick=async()=>{if(!link.value)return;try{await navigator.clipboard.writeText(link.value);copy.textContent="Copied!";}catch(error){link.select();document.execCommand("copy");copy.textContent="Copied!";}setTimeout(()=>copy.textContent="Copy referral link",1800);};
+  loadReferralData();
+}
 function wireNotifications(){
   const toggle=document.getElementById("notification-toggle");
   const panel=document.getElementById("notification-panel");
   const refresh=document.getElementById("notification-refresh");
   const sound=document.getElementById("notification-sound-toggle");
   const markAll=document.getElementById("notification-mark-all");
+  const close=document.getElementById("notification-close");
   const list=document.getElementById("notification-list");
 
   if(!toggle||!panel||!refresh||!sound||!markAll||!list)return;
+  const closePanel=()=>{panel.classList.remove("open");toggle.setAttribute("aria-expanded","false");};
+  if(close)close.onclick=closePanel;
+  document.addEventListener("pointerdown",event=>{
+    if(panel.classList.contains("open")&&!panel.contains(event.target)&&!toggle.contains(event.target))closePanel();
+  });
+  document.addEventListener("keydown",event=>{if(event.key==="Escape")closePanel();});
 
   toggle.onclick=()=>{
     const opened=panel.classList.toggle("open");
@@ -789,7 +813,7 @@ async function lockAdminDashboard(){
   if(!adminUnlockToken)return;
   const old=adminUnlockToken;
   adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");
-  if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(window.adminNotificationTimer){clearInterval(window.adminNotificationTimer);window.adminNotificationTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}
+  if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(window.adminNotificationTimer){clearInterval(window.adminNotificationTimer);window.adminNotificationTimer=null;}if(window.adminNumberRequestTimer){clearInterval(window.adminNumberRequestTimer);window.adminNumberRequestTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}
   try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":old}});}catch(e){}
   renderAdminGate(true);
 }
@@ -800,15 +824,52 @@ async function renderAdminWorkspace(){
       const data=await request("/api/admin/catalogue");
       categories=data.categories||[];adminServices=data.services||[];globalMarkupPercentage=Number(data.global_markup_percentage??10);
     }else{categories=[];adminServices=[];}
-    app.innerHTML='<main class="wrap admin-workspace"><header><div><div class="admin-label">CONTROL CENTRE</div><div class="admin-shell-title">Administrator Dashboard</div><div class="admin-shell-subtitle">Secure operations · '+esc(adminRole||"Admin")+'</div></div><div class="admin-shell-actions"><div class="admin-bell-wrap"><button class="admin-bell" id="admin-notification-toggle" type="button" aria-label="Admin notifications" aria-expanded="false">🔔<span id="admin-notification-count" class="admin-bell-count">0</span></button><div class="admin-notification-panel" id="admin-notification-panel"><div class="item-top"><strong>Activity notifications</strong><button class="btn secondary" id="admin-notification-refresh" type="button">Refresh</button></div><button class="btn secondary" id="admin-notification-mark-all" type="button">Mark all read</button><div id="admin-notification-list"><p class="muted">Loading notifications…</p></div></div></div><button class="back-button" id="admin-back">← Customer portal</button><button class="back-button" id="admin-lock">Lock dashboard</button></div></header>'+adminMarkup()+'</main>';
+    app.innerHTML='<main class="wrap admin-workspace"><header><div><div class="admin-label">CONTROL CENTRE</div><div class="admin-shell-title">Administrator Dashboard</div><div class="admin-shell-subtitle">Secure operations · '+esc(adminRole||"Admin")+'</div></div><div class="admin-shell-actions"><div class="admin-bell-wrap"><button class="admin-bell" id="admin-notification-toggle" type="button" aria-label="Admin notifications" aria-expanded="false">🔔<span id="admin-notification-count" class="admin-bell-count">0</span></button><div class="admin-notification-panel" id="admin-notification-panel"><div class="item-top"><strong>Activity notifications</strong><div class="notification-tools"><button class="btn secondary" id="admin-notification-refresh" type="button">Refresh</button><button class="btn secondary" id="admin-notification-close" type="button" aria-label="Close notifications">✕ Close</button></div></div><button class="btn secondary" id="admin-notification-mark-all" type="button">Mark all read</button><div id="admin-notification-list"><p class="muted">Loading notifications…</p></div></div></div><button class="back-button" id="admin-back">← Customer portal</button><button class="back-button" id="admin-lock">Lock dashboard</button></div></header>'+adminMarkup()+'</main>';
     document.getElementById("admin-back").onclick=async()=>{const oldToken=adminUnlockToken;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}if(oldToken){try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":oldToken}});}catch(e){}}adminMode=true;renderDashboard();};
     document.getElementById("admin-lock").onclick=lockAdminDashboard;
     const lockNow=document.getElementById("admin-lock-now");if(lockNow)lockNow.onclick=lockAdminDashboard;
     applyAdminUiPermissions();
-    wireAdmin();wireSupportAdmin();wireAdminNotifications();startAdminIdleLock();
+    wireAdmin();wireSupportAdmin();wireAdminNotifications();wireAdminReferralTiers();startAdminIdleLock();
   }catch(error){if(error.message==="admin_unlock_required"){adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderAdminGate(true);}else showError("Admin dashboard could not load: "+error.message);}
 }
 
+async function wireAdminReferralTiers(){
+  const list=document.getElementById("admin-referral-tiers"),message=document.getElementById("admin-referral-message");
+  const minimum=document.getElementById("admin-referral-minimum"),rate=document.getElementById("admin-referral-rate"),idInput=document.getElementById("admin-referral-tier-id"),save=document.getElementById("admin-referral-save"),refresh=document.getElementById("admin-referral-refresh");
+  if(!list||!message||!minimum||!rate||!idInput||!save||!refresh)return;
+  async function load(){
+    message.textContent="Loading commission tiers…";
+    try{
+      const data=await request("/api/admin/referral-tiers");
+      const rows=data.tiers||[];
+      message.textContent="Commission tiers: "+rows.length;
+      list.innerHTML=rows.map(t=>'<div class="item"><div class="item-top"><strong>'+money(Number(t.min_deposit_cents),"USDT")+' minimum</strong><span class="pill">'+(Number(t.percentage_basis_points)/100).toFixed(2)+'%</span></div><div class="muted">'+(Number(t.is_active)===1?"Active":"Inactive")+'</div><div class="notification-tools"><button class="btn secondary" data-edit-tier="'+Number(t.id)+'" type="button">Edit</button><button class="btn danger" data-delete-tier="'+Number(t.id)+'" type="button">Delete</button></div></div>').join("")||'<p class="muted">No tiers configured.</p>';
+      list._tiers=rows;
+    }catch(error){message.textContent="Could not load tiers: "+error.message;}
+  }
+  save.onclick=async()=>{
+    const min=Number(minimum.value),pct=Number(rate.value),id=Number(idInput.value||0);
+    if(!Number.isFinite(min)||min<=0||!Number.isFinite(pct)||pct<0||pct>100){message.textContent="Enter a valid minimum deposit and percentage.";return;}
+    save.disabled=true;
+    try{
+      await request("/api/admin/referral-tiers","POST",{action:"save",id,min_deposit_cents:Math.round(min*100),percentage_basis_points:Math.round(pct*100),is_active:1});
+      idInput.value="";minimum.value="";rate.value="";save.textContent="Add commission tier";await load();message.textContent="Tier saved.";
+    }catch(error){message.textContent="Could not save tier: "+error.message;}
+    finally{save.disabled=false;}
+  };
+  list.onclick=async event=>{
+    const edit=event.target.closest("[data-edit-tier]"),del=event.target.closest("[data-delete-tier]");
+    if(edit){
+      const t=(list._tiers||[]).find(x=>Number(x.id)===Number(edit.dataset.editTier));if(!t)return;
+      idInput.value=t.id;minimum.value=(Number(t.min_deposit_cents)/100).toFixed(2);rate.value=(Number(t.percentage_basis_points)/100).toFixed(2);save.textContent="Save changes";minimum.focus();
+    }else if(del){
+      const id=Number(del.dataset.deleteTier);if(!confirm("Delete this commission tier? Existing paid commissions will not change."))return;
+      try{await request("/api/admin/referral-tiers","POST",{action:"delete",id});await load();message.textContent="Tier deleted.";}catch(error){message.textContent="Could not delete tier: "+error.message;}
+    }
+  };
+  refresh.onclick=load;
+  await load();
+}
 async function wireAdminNotifications(){
   const toggle=document.getElementById("admin-notification-toggle");
   const panel=document.getElementById("admin-notification-panel");
@@ -816,7 +877,14 @@ async function wireAdminNotifications(){
   const count=document.getElementById("admin-notification-count");
   const refresh=document.getElementById("admin-notification-refresh");
   const markAll=document.getElementById("admin-notification-mark-all");
+  const close=document.getElementById("admin-notification-close");
   if(!toggle||!panel||!list||!count||!refresh||!markAll)return;
+  const closePanel=()=>{panel.classList.remove("open");toggle.setAttribute("aria-expanded","false");};
+  if(close)close.onclick=closePanel;
+  document.addEventListener("pointerdown",event=>{
+    if(panel.classList.contains("open")&&!panel.contains(event.target)&&!toggle.contains(event.target))closePanel();
+  });
+  document.addEventListener("keydown",event=>{if(event.key==="Escape")closePanel();});
   async function load(){
     try{
       const data=await request("/api/admin/notifications");
@@ -922,7 +990,10 @@ function renderDashboard(){
     <div class="notification-panel" id="notification-panel">
       <div class="item-top">
         <strong>Notifications</strong>
-        <button class="btn secondary" id="notification-refresh" type="button">Refresh</button>
+        <div class="notification-tools">
+          <button class="btn secondary" id="notification-refresh" type="button">Refresh</button>
+          <button class="btn secondary notification-close" id="notification-close" type="button" aria-label="Close notifications">✕ Close</button>
+        </div>
       </div>
       <div class="notification-tools">
         <button class="btn secondary" id="notification-sound-toggle" type="button">Sound: On</button>
@@ -945,6 +1016,7 @@ function renderDashboard(){
   <a href="#orders">Orders</a>
   <a href="#support">Support</a>
   <a href="#account">Account</a>
+  <a href="#refer-earn">Refer &amp; Earn</a>
   ${adminMode?'<a href="#admin" id="open-admin-dashboard">Admin dashboard</a>':""}
 </nav>
 
@@ -1010,6 +1082,22 @@ function renderDashboard(){
         <h3>Wallet transactions</h3>
         <p class="muted">The complete transaction ledger will be connected separately. This list currently shows deposit requests and their review status only.</p>
       </div>
+    </section>
+
+    <section id="refer-earn" class="panel">
+      <div class="item-top"><h2>Refer &amp; Earn</h2><span class="pill">USDT rewards</span></div>
+      <p>Invite friends to Data Verification. Earn a commission when their deposit is approved.</p>
+      <div id="referral-summary" class="muted">Loading your referral link…</div>
+      <label class="field" for="referral-link">Your personal referral link</label>
+      <input id="referral-link" type="text" readonly>
+      <button class="btn" id="referral-copy" type="button">Copy referral link</button>
+      <div class="grid" style="margin-top:12px">
+        <div class="item"><strong id="referral-count">0</strong><small>Referred customers</small></div>
+        <div class="item"><strong id="referral-earned">0.00 USDT</strong><small>Total commissions earned</small></div>
+      </div>
+      <h3>Current commission tiers</h3>
+      <div id="referral-tiers" class="muted">Loading tiers…</div>
+      <p class="muted">Commission is calculated separately for each approved deposit and credited to your wallet. Only deposits from customers who joined through your link qualify.</p>
     </section>
 
     <section id="services">
@@ -1245,6 +1333,7 @@ function renderDashboard(){
   wireSupportCustomer();
 
   wireNotifications();
+  wireReferral();
   wireRequestHistory();
   wireWallet();
   if(window.walletBalanceTimer){
@@ -2039,6 +2128,7 @@ function adminMarkup(){
         <label class="checkbox"><input type="checkbox" value="storage_test"> Telegram storage test</label>
         <label class="checkbox"><input type="checkbox" value="support_manage"> Customer support inbox and contact settings</label>
         <label class="checkbox"><input type="checkbox" value="users_manage"> User management, wallet adjustments and Telegram messaging</label>
+        <label class="checkbox"><input type="checkbox" value="referrals_manage"> Manage referral commission tiers</label>
       </div>
       <div class="actions">
         <button class="btn" id="managed-admin-save" type="button">Grant administrator access</button>
@@ -2056,6 +2146,19 @@ function adminMarkup(){
       <p>New registrations, customer requests and wallet events are shown here for administrators.</p>
       <div id="admin-activity-message" class="muted">Loading platform activity…</div>
       <div id="admin-activity-list"></div>
+    </div>
+
+    <div class="panel" id="admin-referral-panel">
+      <div class="item-top"><h3>Refer &amp; Earn Commission Tiers</h3><button class="btn secondary" id="admin-referral-refresh" type="button">Refresh</button></div>
+      <p>Set the minimum amount of each individual approved deposit and the referral commission percentage. The highest matching active tier applies.</p>
+      <input id="admin-referral-tier-id" type="hidden">
+      <label class="field" for="admin-referral-minimum">Minimum deposit (USDT)</label>
+      <input id="admin-referral-minimum" type="number" min="0.01" step="0.01" placeholder="100">
+      <label class="field" for="admin-referral-rate">Commission percentage (%)</label>
+      <input id="admin-referral-rate" type="number" min="0" max="100" step="0.01" placeholder="5">
+      <button class="btn" id="admin-referral-save" type="button">Add commission tier</button>
+      <div id="admin-referral-message" class="muted">Loading commission tiers…</div>
+      <div id="admin-referral-tiers"></div>
     </div>
 
     <div class="panel" id="admin-users-panel">
@@ -3232,6 +3335,8 @@ async function loadNumberRequests() {
     }
   }
   refreshRequests.onclick = loadNumberRequests;
+  if(window.adminNumberRequestTimer)clearInterval(window.adminNumberRequestTimer);
+  window.adminNumberRequestTimer=setInterval(()=>{if(document.getElementById("number-requests-list"))loadNumberRequests();},15000);
 
    requestList.addEventListener("click", async event => {
 
