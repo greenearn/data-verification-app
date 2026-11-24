@@ -1162,14 +1162,6 @@ function renderDashboard(){
     <button class="btn secondary" id="refresh-session" type="button">Refresh session</button>
     <button class="btn danger" id="account-logout" type="button">Log out</button>
   </div>
-  ${!adminMode?`<div class="item" id="first-admin-setup">
-    <h3>Initial Main Admin Setup</h3>
-    <p class="muted">Use this one-time setup only for the first administrator account. Keep the setup code private.</p>
-    <label class="field" for="first-admin-setup-code">Private setup code</label>
-    <input id="first-admin-setup-code" type="password" autocomplete="off" maxlength="256" placeholder="Enter your Cloudflare setup code">
-    <button class="btn" id="first-admin-register" type="button">Register this account as Main Admin</button>
-    <p id="first-admin-message" class="muted"></p>
-  </div>`:""}
   <p id="account-auth-message" class="muted">Your session is protected by Telegram verification.</p>
 </section>
 
@@ -1602,30 +1594,6 @@ document.getElementById("customer-file").addEventListener("change", async functi
  document.getElementById("orders-refresh").onclick=loadOrders;
 document.getElementById("refresh-session").onclick=refreshSession;
 
-const firstAdminRegister=document.getElementById("first-admin-register");
-if(firstAdminRegister){
-  firstAdminRegister.onclick=async()=>{
-    const codeInput=document.getElementById("first-admin-setup-code");
-    const message=document.getElementById("first-admin-message");
-    const setupCode=codeInput?codeInput.value.trim():"";
-    if(!setupCode){message.textContent="Enter the private setup code.";return;}
-    firstAdminRegister.disabled=true;
-    firstAdminRegister.textContent="Registering…";
-    message.textContent="Verifying one-time administrator setup…";
-    try{
-      await request("/api/admin/signup","POST",{setup_code:setupCode});
-      codeInput.value="";
-      message.textContent="Main Admin registration successful. Refreshing account…";
-      await refreshSession();
-    }catch(error){
-      message.textContent=error.message||"Administrator registration failed.";
-    }finally{
-      firstAdminRegister.disabled=false;
-      firstAdminRegister.textContent="Register this account as Main Admin";
-    }
-  };
-}
-
 loadOrders();
 updateEstimate();
   const logoutButton = document.getElementById("account-logout");
@@ -1976,7 +1944,7 @@ function adminMarkup(){
         <h3>Administrator Management</h3>
         <button class="btn secondary" id="admin-management-refresh" type="button">Refresh</button>
       </div>
-      <p class="muted">Add or manage administrators by their numeric Telegram User ID. The invited person must open this Mini App through Telegram; access is attached to that exact ID. Full Admin receives all operational permissions. Sub Admin receives only the permissions selected below. Only the protected Main Admin can manage administrator roles.</p>
+      <p class="muted">Add or manage administrators by their numeric Telegram User ID. The invited person must open this Mini App through Telegram; access is attached to that exact ID. Full Admin receives all operational permissions. Sub Admin receives only the permissions selected below. Only the protected Main Admin can grant, change or revoke administrator access. Customers cannot view this management area.</p>
       <label class="field" for="managed-admin-telegram-id">Administrator Telegram ID</label>
       <input id="managed-admin-telegram-id" inputmode="numeric" maxlength="20" placeholder="Enter numeric Telegram ID">
       <label class="field" for="managed-admin-role">Administrator role</label>
