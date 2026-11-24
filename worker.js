@@ -269,7 +269,8 @@ async function verifyTelegram(initData, botToken) {
 // USER SESSIONS
 // --------------------------------------------------
 
-async function createSession(env, telegramUser) {
+async function createSession(env, telegramUser, referralCode = null) {
+  await ensureReferralSchema(env);
   const telegramId = String(telegramUser.id);
 
   const registration = await env.DB.prepare(`
@@ -313,6 +314,11 @@ async function createSession(env, telegramUser) {
     FROM users
     WHERE telegram_id = ?
   `).bind(telegramId).first();
+  await ensureUserReferralCode(env,user.id);
+  if(referralCode){
+    const referrer=await env.DB.prepare("SELECT id FROM users WHERE referral_code=? LIMIT 1").bind(String(referralCode).trim().toUpperCase()).first();
+    if(referrer&&Number(referrer.id)!==Number(user.id))await env.DB.prepare("UPDATE users SET referred_by_user_id=? WHERE id=? AND referred_by_user_id IS NULL").bind(referrer.id,user.id).run();
+  }
 
   if (!user || user.status !== "active") {
     throw new Error("account_unavailable");
@@ -384,7 +390,8 @@ const ADMIN_PERMISSION_LABELS = {
   storage_test: "Telegram storage test",
   support_manage: "Customer support inbox and contact settings",
   users_manage: "Customer account management, wallet adjustments and Telegram messaging",
-  notifications_view: "View and manage admin activity notifications"
+  notifications_view: "View and manage admin activity notifications",
+  referrals_manage: "Manage referral commission tiers"
 };
 
 const ADMIN_ROUTE_PERMISSIONS = {
@@ -420,6 +427,8 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "POST /api/admin/support/settings": "support_manage",
   "GET /api/admin/users": "users_manage",
   "GET /api/admin/notifications": "notifications_view",
+  "GET /api/admin/referral-tiers": "referrals_manage",
+  "POST /api/admin/referral-tiers": "referrals_manage",
   "POST /api/admin/notifications/read": "notifications_view",
   "POST /api/admin/notifications/read-all": "notifications_view",
   "POST /api/admin/users/balance": "users_manage",
@@ -1642,6 +1651,45 @@ async function processBroadcastQueue(env) {
 
 // --------------------------------------------------
 // WORKER REQUEST HANDLER
+
+let referralSchemaReady=false;
+async function ensureReferralSchema(env){
+  if(referralSchemaReady)return;
+  for(const [column,type] of [["referral_code","TEXT"],["referred_by_user_id","INTEGER"]]){
+    try{await env.DB.prepare("ALTER TABLE users ADD COLUMN "+column+" "+type).run();}
+    catch(error){if(!String(error.message||"").toLowerCase().includes("duplicate column"))throw error;}
+  }
+  await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS referral_tiers (id INTEGER PRIMARY KEY AUTOINCREMENT,min_deposit_cents INTEGER NOT NULL UNIQUE,percentage_basis_points INTEGER NOT NULL CHECK(percentage_basis_points BETWEEN 0 AND 10000),is_active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS referral_commissions (id INTEGER PRIMARY KEY AUTOINCREMENT,referrer_user_id INTEGER NOT NULL,referred_user_id INTEGER NOT NULL,deposit_id INTEGER NOT NULL UNIQUE,deposit_amount_cents INTEGER NOT NULL,commission_cents INTEGER NOT NULL,percentage_basis_points INTEGER NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+  const defaults=[[10000,500],[50000,1500],[100000,2000],[500000,3000]];
+  for(const [minimum,rate] of defaults)await env.DB.prepare("INSERT OR IGNORE INTO referral_tiers(min_deposit_cents,percentage_basis_points) VALUES(?,?)").bind(minimum,rate).run();
+  referralSchemaReady=true;
+}
+async function ensureUserReferralCode(env,userId){
+  const existing=await env.DB.prepare("SELECT referral_code FROM users WHERE id=?").bind(userId).first();
+  if(existing&&existing.referral_code)return existing.referral_code;
+  const code=hex(crypto.getRandomValues(new Uint8Array(5))).toUpperCase();
+  await env.DB.prepare("UPDATE users SET referral_code=? WHERE id=? AND (referral_code IS NULL OR referral_code='')").bind(code,userId).run();
+  const saved=await env.DB.prepare("SELECT referral_code FROM users WHERE id=?").bind(userId).first();
+  return saved&&saved.referral_code?saved.referral_code:code;
+}
+async function applyReferralCommission(env,depositId){
+  await ensureReferralSchema(env);
+  const deposit=await env.DB.prepare("SELECT id,user_id,amount_cents FROM wallet_deposit_requests WHERE id=? AND status='approved'").bind(depositId).first();
+  if(!deposit)return;
+  await env.DB.batch([
+    env.DB.prepare("INSERT OR IGNORE INTO referral_commissions(referrer_user_id,referred_user_id,deposit_id,deposit_amount_cents,commission_cents,percentage_basis_points) SELECT u.referred_by_user_id,u.id,?, ?,CAST(ROUND(?*t.percentage_basis_points/10000.0) AS INTEGER),t.percentage_basis_points FROM users u JOIN referral_tiers t ON t.is_active=1 AND t.min_deposit_cents<=? WHERE u.id=? AND u.referred_by_user_id IS NOT NULL ORDER BY t.min_deposit_cents DESC LIMIT 1").bind(deposit.id,deposit.amount_cents,deposit.amount_cents,deposit.amount_cents,deposit.user_id),
+    env.DB.prepare("INSERT OR IGNORE INTO wallet_ledger(user_id,amount_cents,transaction_type,reference_id,description) SELECT referrer_user_id,commission_cents,'referral_commission','referral:'||deposit_id,'Referral commission for approved deposit #'||deposit_id FROM referral_commissions WHERE deposit_id=? AND commission_cents>0").bind(deposit.id),
+    env.DB.prepare("UPDATE users SET wallet_balance_cents=wallet_balance_cents+(SELECT commission_cents FROM referral_commissions WHERE deposit_id=?) WHERE id=(SELECT referrer_user_id FROM referral_commissions WHERE deposit_id=?) AND EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id='referral:'||? AND transaction_type='referral_commission')").bind(deposit.id,deposit.id,deposit.id)
+  ]);
+  const commission=await env.DB.prepare("SELECT referrer_user_id,commission_cents FROM referral_commissions WHERE deposit_id=?").bind(deposit.id).first();
+  if(commission&&Number(commission.commission_cents)>0){
+    try{await createUserNotification(env,commission.referrer_user_id,"Referral commission credited",(Number(commission.commission_cents)/100).toFixed(2)+" USDT earned from a referred customer's approved deposit.","referral_commission",deposit.id);}
+    catch(error){console.error("Referral notification failed:",error.message);}
+  }
+}
+
 let walletDepositSchemaReady=false;
 async function ensureWalletDepositSchema(env){
  if(walletDepositSchemaReady)return;
@@ -2032,7 +2080,9 @@ document.getElementById("importCatalogue").onclick=async()=>{
           env.TELEGRAM_BOT_TOKEN
         );
 
-        const session = await createSession(env, telegramUser);
+        const startParam=new URLSearchParams(String(body.initData||"")).get("start_param")||"";
+        const referralCode=startParam.startsWith("ref_")?startParam.slice(4):null;
+        const session = await createSession(env, telegramUser, referralCode);
 
         return json({
           ok: true,
@@ -2463,6 +2513,11 @@ if (
 
       ]);
 
+      try {
+        await applyReferralCommission(env,depositId);
+      } catch(referralError) {
+        console.error("Referral commission processing failed:",referralError.message);
+      }
       try {
         const depositOwner=await env.DB.prepare(
           "SELECT user_id,amount_cents FROM wallet_deposit_requests WHERE id=?"
