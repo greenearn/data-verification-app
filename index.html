@@ -145,6 +145,33 @@ input,select,textarea{border-radius:14px;padding:13px}
 .back-button{border:1px solid #e1e7f2;background:#fff;color:#34405a;border-radius:12px;padding:9px 13px;font-weight:700}
 @media(max-width:650px){.support-contact-grid,.support-admin-layout{grid-template-columns:1fr}.support-compose{grid-template-columns:1fr}.admin-workspace{padding:10px;border-radius:18px}.wrap{padding:14px 12px 45px}}
 
+/* Responsive notification popover */
+.notification-area{position:static;flex:0 1 auto;min-width:0}
+.notification-panel{
+  position:fixed;top:76px;right:12px;left:auto;
+  width:min(390px,calc(100vw - 24px));
+  max-width:calc(100vw - 24px);
+  max-height:min(68dvh,520px);
+  overflow-x:hidden;overflow-y:auto;
+  overscroll-behavior:contain;
+}
+.notification-panel .item-top{align-items:center;flex-wrap:wrap}
+.notification-tools{margin:8px 0;gap:6px}
+.notification-tools .btn{flex:1;min-width:0;padding:9px 10px}
+.notification-entry{min-width:0;overflow-wrap:anywhere;word-break:break-word}
+.notification-entry p{overflow-wrap:anywhere;word-break:break-word;white-space:normal}
+.notification-entry small{overflow-wrap:anywhere}
+@media(max-width:560px){
+  header{flex-wrap:wrap;align-items:center}
+  .notification-area{order:3;width:100%;margin:0}
+  .notification-button{width:100%;text-align:left}
+  .notification-panel{top:110px;right:12px;left:12px;width:auto;max-width:none}
+  .status{margin-left:auto}
+}
+@media(max-width:360px){
+  .notification-panel{top:118px;max-height:60dvh;padding:10px}
+  .notification-tools .btn{font-size:10px}
+}
 </style>
 </head>
 <body>
@@ -1970,6 +1997,26 @@ function adminMarkup(){
       <div id="admin-management-list"></div>
     </div>`:""}
 
+    <div class="panel" id="admin-activity-panel">
+      <div class="item-top">
+        <h3>Platform activity notifications</h3>
+        <button class="btn secondary" id="admin-activity-refresh" type="button">Refresh</button>
+      </div>
+      <p>New registrations, customer requests and wallet events are shown here for administrators.</p>
+      <div id="admin-activity-message" class="muted">Loading platform activity…</div>
+      <div id="admin-activity-list"></div>
+    </div>
+
+    <div class="panel" id="admin-users-panel">
+      <div class="item-top">
+        <h3>Registered customers</h3>
+        <button class="btn secondary" id="admin-users-refresh" type="button">Refresh</button>
+      </div>
+      <p>Customer account details visible only to authorized administrators. Telegram IDs and wallet balances are shown for account support; never share them publicly.</p>
+      <div id="admin-users-message" class="muted">Customer list has not been loaded.</div>
+      <div id="admin-users-list"></div>
+    </div>
+
     <div class="panel">
       <div class="item-top">
         <h3>Wallet deposit review</h3>
@@ -2618,7 +2665,58 @@ function wireAdminManagement(){
   loadAdmins();
 }
 
+let adminActivityTimer=null;
+function wireAdminActivityAndUsers(){
+  const activityMessage=document.getElementById("admin-activity-message");
+  const activityList=document.getElementById("admin-activity-list");
+  const activityRefresh=document.getElementById("admin-activity-refresh");
+  const usersMessage=document.getElementById("admin-users-message");
+  const usersList=document.getElementById("admin-users-list");
+  const usersRefresh=document.getElementById("admin-users-refresh");
+
+  async function loadActivity(){
+    if(!activityMessage||!activityList)return;
+    activityMessage.textContent="Loading recent platform activity…";
+    activityList.innerHTML="";
+    if(activityRefresh)activityRefresh.disabled=true;
+    try{
+      const data=await request("/api/notifications");
+      const items=data.notifications||[];
+      activityMessage.textContent="Unread notifications: "+Number(data.unread_count||0)+" · Recent items: "+items.length;
+      activityList.innerHTML=items.map(item=>'<div class="item"><div class="item-top"><strong>'+esc(item.title||"Activity")+'</strong><span class="pill">'+esc(item.notification_type||"event")+'</span></div><p>'+esc(item.message||"")+'</p><small>'+esc(formatDate(item.created_at))+' · '+(item.read_at?"Read":"Unread")+'</small></div>').join("")||'<p class="muted">No platform activity notifications yet.</p>';
+    }catch(error){activityMessage.textContent="Could not load activity: "+error.message;}
+    finally{if(activityRefresh)activityRefresh.disabled=false;}
+  }
+
+  async function loadUsers(){
+    if(!usersMessage||!usersList)return;
+    usersMessage.textContent="Loading registered customers…";
+    usersList.innerHTML="";
+    if(usersRefresh)usersRefresh.disabled=true;
+    try{
+      const data=await request("/api/admin/users");
+      const users=data.users||[];
+      usersMessage.textContent="Registered accounts: "+Number(data.total||users.length)+" · Showing latest "+users.length;
+      usersList.innerHTML=users.map(customer=>{
+        const displayName=[customer.first_name,customer.username?"@"+customer.username:""].filter(Boolean).join(" · ")||"Telegram customer";
+        return '<div class="item"><div class="item-top"><strong>'+esc(displayName)+'</strong><span class="pill">'+esc(customer.status||"unknown")+'</span></div>'+
+          '<div class="muted">Customer ID: '+esc(customer.id)+' · Telegram ID: '+esc(customer.telegram_id)+'</div>'+
+          '<div class="muted">Wallet: '+esc(money(customer.wallet_balance_cents,"USDT"))+'</div>'+
+          '<small>Registered: '+esc(formatDate(customer.created_at))+'</small></div>';
+      }).join("")||'<p class="muted">No customer accounts found.</p>';
+    }catch(error){usersMessage.textContent="Could not load customers: "+error.message;}
+    finally{if(usersRefresh)usersRefresh.disabled=false;}
+  }
+  if(activityRefresh)activityRefresh.onclick=loadActivity;
+  if(usersRefresh)usersRefresh.onclick=loadUsers;
+  loadActivity();
+  loadUsers();
+  if(adminActivityTimer)clearInterval(adminActivityTimer);
+  adminActivityTimer=setInterval(loadActivity,30000);
+}
+
 function wireAdmin(){
+  wireAdminActivityAndUsers();
   wireAdminManagement();
   renderAdminCategories();
   fillServiceDropdowns();
