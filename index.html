@@ -1846,6 +1846,15 @@ function adminMarkup(){
       <div id="admin-uploads-list"></div>
     </div>
 <div class="panel">
+  <div class="item-top">
+    <h3>CheckNumber provider tasks</h3>
+    <button class="btn secondary" id="refresh-provider-tasks" type="button">Refresh tasks</button>
+  </div>
+  <p>Only authorized phoneCheck uploads can be submitted. Provider processing may use provider balance. Customer wallets are not charged.</p>
+  <div id="provider-tasks-message" class="muted">Provider task history has not been loaded.</div>
+  <div id="provider-tasks-list"></div>
+</div>
+<div class="panel">
   <h3>Manual Number File Requests</h3>
   <p class="muted">
     Review pending requests and upload an eligible TXT or CSV file
@@ -1862,7 +1871,7 @@ function adminMarkup(){
 
   <div id="number-requests-list"></div>
 </div>
-    <div class="note">Safety: customer ordering, provider submissions, deposits, withdrawals and wallet deductions remain disabled.</div>
+    <div class="note">Safety: provider tasks can be submitted by authorized admins for consented phoneCheck uploads. Customer orders, customer wallet deductions and automatic billing remain disabled.</div>
     <button class="btn secondary" id="reload-admin">Refresh admin catalogue</button>
     <div id="admin-message" class="muted"></div>
   </section>`;
@@ -2759,6 +2768,7 @@ async function loadNumberRequests() {
             <button class="btn save-upload-status" type="button">
               Save Status
             </button>
+            ${upload.resource_code==="phoneCheck" && ["uploaded","reviewed"].includes(currentStatus) && !String(upload.admin_note||"").startsWith("Submitted to CheckNumber") ? '<button class="btn submit-provider-task" type="button">Submit to CheckNumber</button>' : ''}
           </div>
         `;
       }).join("");
@@ -2849,6 +2859,26 @@ async function loadNumberRequests() {
         };
       });
 
+      box.querySelectorAll(".submit-provider-task").forEach(button=>{
+        button.onclick=async()=>{
+          const item=button.closest("[data-upload-id]");
+          const uploadId=Number(item?.dataset.uploadId);
+          if(!uploadId || !confirm("Submit upload #"+uploadId+" to CheckNumber? This may consume provider balance and cannot be automatically reversed.")) return;
+          button.disabled=true;
+          button.textContent="Submitting…";
+          try{
+            const result=await request("/api/admin/provider-tasks/submit","POST",{upload_id:uploadId});
+            alert("Provider task submitted. Local task #"+result.task.id+" / Provider ID: "+result.task.provider_task_id);
+            await loadProviderTasks();
+            await loadAdminUploads();
+          }catch(error){
+            alert("Submission result: "+error.message+". If the result is uncertain, do not submit again; check provider dashboard first.");
+            button.disabled=false;
+            button.textContent="Submit to CheckNumber";
+          }
+        };
+      });
+
     }catch(error){
       message.textContent="Error: "+error.message;
     }finally{
@@ -2856,6 +2886,47 @@ async function loadNumberRequests() {
     }
   }
 
+
+  async function loadProviderTasks(){
+    const message=document.getElementById("provider-tasks-message");
+    const box=document.getElementById("provider-tasks-list");
+    if(!message||!box)return;
+    message.textContent="Loading provider tasks…";
+    try{
+      const data=await request("/api/admin/provider-tasks");
+      const tasks=data.tasks||[];
+      message.textContent="Provider tasks: "+tasks.length;
+      box.innerHTML=tasks.map(task=>{
+        const canPoll=["submitted","processing","delivery_pending"].includes(task.status);
+        return '<div class="item"><div class="item-top"><strong>Task #'+esc(task.id)+'</strong><span class="pill">'+esc(task.status)+'</span></div>'+
+          '<div class="muted">Upload #'+esc(task.upload_id)+' · '+esc(task.resource_code)+' · Provider ID: '+esc(task.provider_task_id||"not assigned")+'</div>'+
+          '<div class="muted">Total: '+esc(task.total??"—")+' · Success: '+esc(task.success??"—")+' · Failed: '+esc(task.failure??"—")+'</div>'+
+          (task.last_error?'<div class="error">'+esc(task.last_error)+'</div>':'')+
+          (canPoll?'<button class="btn secondary poll-provider-task" data-task-id="'+Number(task.id)+'" type="button">Check status now</button>':'')+
+        '</div>';
+      }).join("")||'<p class="muted">No provider tasks yet.</p>';
+      box.querySelectorAll(".poll-provider-task").forEach(button=>{
+        button.onclick=async()=>{
+          button.disabled=true;
+          button.textContent="Checking…";
+          try{
+            await request("/api/admin/provider-tasks/poll","POST",{task_id:Number(button.dataset.taskId)});
+            await loadProviderTasks();
+          }catch(error){
+            alert("Could not refresh task: "+error.message);
+            button.disabled=false;
+            button.textContent="Check status now";
+          }
+        };
+      });
+    }catch(error){
+      message.textContent="Could not load provider tasks: "+error.message;
+    }
+  }
+
+  const providerRefresh=document.getElementById("refresh-provider-tasks");
+  if(providerRefresh)providerRefresh.onclick=loadProviderTasks;
+  loadProviderTasks();
 
   const uploadRefreshButton=
     document.getElementById("refresh-admin-uploads");

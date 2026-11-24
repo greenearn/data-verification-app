@@ -2,6 +2,9 @@ name = "data-verification-api"
 main = "worker.js"
 compatibility_date = "2026-11-20"
 
+[triggers]
+crons = ["*/2 * * * *"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "data-verification-test"
