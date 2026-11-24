@@ -1099,7 +1099,7 @@ async function submitStagedProviderTask(env, uploadId) {
     if (entries[0] && ["phone","phone_number","number"].includes(entries[0].toLowerCase())) {
       entries.shift();
     }
-    if (!entries.length || entries.length > 1000000) throw new Error("provider_quantity_out_of_range");
+    if (entries.length < 2000 || entries.length > 10000) throw new Error("provider_quantity_out_of_range");
     if (entries.some(x => !/^\+?[1-9]\d{7,14}$/.test(x))) throw new Error("invalid_phone_numbers");
 
     const form = new FormData();
@@ -2432,13 +2432,14 @@ if (
           }
 
           if (
-            consentNumbers.length === 0 ||
-            consentNumbers.length > 1000
+            consentNumbers.length < 2000 ||
+            consentNumbers.length > 10000
           ) {
             return json({
               ok: false,
               error: "invalid_phone_number_count",
-              maximum: 1000,
+              minimum: 2000,
+              maximum: 10000,
               received: consentNumbers.length
             }, 400, origin);
           }
