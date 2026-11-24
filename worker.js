@@ -344,6 +344,7 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "GET /api/admin/provider-tasks": "checknumber_validate",
   "POST /api/admin/provider-tasks/submit": "checknumber_validate",
   "POST /api/admin/provider-tasks/poll": "checknumber_validate",
+  "POST /api/admin/provider-tasks/delivery-review": "checknumber_validate",
   "POST /api/admin/storage-test": "storage_test",
   "POST /api/admin/storage-file-test": "storage_test",
   "GET /api/admin/number-file-requests": "number_requests",
@@ -3424,6 +3425,71 @@ if (request.method === "POST" && url.pathname === "/api/admin/provider-tasks/pol
     const status = error.message === "unauthorized" ? 401 :
       error.message === "admin_access_required" ? 403 : 502;
     return json({ ok: false, error: error.message || "provider_poll_failed" }, status, origin);
+  }
+}
+
+// ADMIN: MANUAL REVIEW FOR UNCERTAIN TELEGRAM RESULT DELIVERY
+if (request.method === "POST" && url.pathname === "/api/admin/provider-tasks/delivery-review") {
+  try {
+    const admin = await requireAdminManager(request, env);
+    const body = await readBody(request);
+    const taskId = Number(body.task_id);
+    const action = String(body.action || "");
+    const note = String(body.note || "").trim();
+
+    if (!Number.isSafeInteger(taskId) || taskId < 1) {
+      return json({ ok: false, error: "invalid_task_id" }, 400, origin);
+    }
+    if (!["confirm_delivered", "retry_delivery"].includes(action)) {
+      return json({ ok: false, error: "invalid_delivery_review_action" }, 400, origin);
+    }
+    if (note.length < 8 || note.length > 500) {
+      return json({ ok: false, error: "delivery_review_note_required" }, 400, origin);
+    }
+
+    await ensureProviderTasksSchema(env);
+    const task = await env.DB.prepare(
+      "SELECT id, telegram_id, status, result_url, provider_task_id FROM provider_tasks WHERE id=? LIMIT 1"
+    ).bind(taskId).first();
+    if (!task) return json({ ok: false, error: "provider_task_not_found" }, 404, origin);
+    if (task.status !== "delivery_sending") {
+      return json({ ok: false, error: "task_not_awaiting_delivery_review", current_status: task.status }, 409, origin);
+    }
+
+    if (action === "confirm_delivered") {
+      const update = await env.DB.prepare(`
+        UPDATE provider_tasks SET status='completed', result_url=NULL, last_error=NULL,
+          completed_at=COALESCE(completed_at, CURRENT_TIMESTAMP), updated_at=CURRENT_TIMESTAMP
+        WHERE id=? AND status='delivery_sending'
+      `).bind(taskId).run();
+      if (!update.meta?.changes) {
+        return json({ ok: false, error: "task_delivery_review_conflict" }, 409, origin);
+      }
+      await writeAdminAudit(env, admin.telegram_id, task.telegram_id,
+        "provider_delivery_confirmed_delivered", { task_id: taskId, note });
+      return json({ ok: true, task_id: taskId, status: "completed" }, 200, origin);
+    }
+
+    if (!task.result_url || !task.provider_task_id) {
+      return json({ ok: false, error: "delivery_retry_data_missing" }, 409, origin);
+    }
+    const update = await env.DB.prepare(`
+      UPDATE provider_tasks SET status='delivery_pending',
+        last_error='admin_authorized_delivery_retry', updated_at=CURRENT_TIMESTAMP
+      WHERE id=? AND status='delivery_sending'
+    `).bind(taskId).run();
+    if (!update.meta?.changes) {
+      return json({ ok: false, error: "task_delivery_review_conflict" }, 409, origin);
+    }
+    await writeAdminAudit(env, admin.telegram_id, task.telegram_id,
+      "provider_delivery_retry_authorized", { task_id: taskId, note });
+    const outcomes = await pollProviderTasks(env, taskId);
+    return json({ ok: true, task_id: taskId, outcomes }, 200, origin);
+  } catch (error) {
+    const status = error.message === "unauthorized" ? 401 :
+      ["admin_access_required", "admin_management_required"].includes(error.message) ? 403 :
+      error.message === "invalid_json" ? 400 : 500;
+    return json({ ok: false, error: error.message || "provider_delivery_review_failed" }, status, origin);
   }
 }
 

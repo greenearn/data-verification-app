@@ -2948,7 +2948,7 @@ async function loadNumberRequests() {
           '<div class="muted">Upload #'+esc(task.upload_id)+' · '+esc(task.resource_code)+' · Provider ID: '+esc(task.provider_task_id||"not assigned")+'</div>'+
           '<div class="muted">Total: '+esc(task.total??"—")+' · Success: '+esc(task.success??"—")+' · Failed: '+esc(task.failure??"—")+'</div>'+
           (task.last_error?'<div class="error">'+esc(task.last_error)+'</div>':'')+
-          (task.status==="delivery_sending"?'<div class="error">Delivery outcome needs manual review. Do not resubmit this task; check the customer chat and Telegram delivery status first.</div>':'')+(canPoll?'<button class="btn secondary poll-provider-task" data-task-id="'+Number(task.id)+'" type="button">Check status now</button>':'')+
+          (task.status==="delivery_sending"?'<div class="error">Delivery outcome is uncertain. Main Admin must check the customer chat before choosing an action.</div><div class="actions"><button class="btn secondary confirm-provider-delivered" data-task-id="'+Number(task.id)+'" type="button">Confirm file was delivered</button><button class="btn secondary retry-provider-delivery" data-task-id="'+Number(task.id)+'" type="button">Retry delivery (may duplicate)</button></div>':'')+(canPoll?'<button class="btn secondary poll-provider-task" data-task-id="'+Number(task.id)+'" type="button">Check status now</button>':'')+
         '</div>';
       }).join("")||'<p class="muted">No provider tasks yet.</p>';
       box.querySelectorAll(".poll-provider-task").forEach(button=>{
@@ -2962,6 +2962,44 @@ async function loadNumberRequests() {
             alert("Could not refresh task: "+error.message);
             button.disabled=false;
             button.textContent="Check status now";
+          }
+        };
+      });
+      box.querySelectorAll(".confirm-provider-delivered, .retry-provider-delivery").forEach(button=>{
+        button.onclick=async()=>{
+          const taskId=Number(button.dataset.taskId);
+          const retry=button.classList.contains("retry-provider-delivery");
+          const warning=retry
+            ? "Only continue if you have independently confirmed the customer did NOT receive the result file. Retrying may send a duplicate if that check is wrong."
+            : "Only continue if you have independently confirmed the result file is visible in the customer's Telegram chat. This marks the task completed without sending another file.";
+          if(!confirm(warning)) return;
+          const note=prompt(retry
+            ? "Record how you confirmed the customer did not receive the file (minimum 8 characters):"
+            : "Record how you confirmed the file was delivered (minimum 8 characters):");
+          if(note===null) return;
+          if(note.trim().length<8){
+            alert("Please enter a review note of at least 8 characters.");
+            return;
+          }
+          button.disabled=true;
+          button.textContent=retry?"Retrying…":"Saving…";
+          try{
+            const result=await request("/api/admin/provider-tasks/delivery-review","POST",{
+              task_id:taskId,
+              action:retry?"retry_delivery":"confirm_delivered",
+              note:note.trim()
+            });
+            if(retry){
+              const outcome=(result.outcomes||[])[0];
+              alert("Delivery review recorded. Current outcome: "+(outcome?.status||"pending")+". Refresh the task list to confirm its status.");
+            }else{
+              alert("Task marked completed based on your delivery confirmation.");
+            }
+            await loadProviderTasks();
+          }catch(error){
+            alert("Delivery review failed: "+error.message);
+            button.disabled=false;
+            button.textContent=retry?"Retry delivery (may duplicate)":"Confirm file was delivered";
           }
         };
       });
