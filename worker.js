@@ -996,7 +996,7 @@ async function saveServicePricing(body, env) {
 // --------------------------------------------------
 
 async function ensureProviderTasksSchema(env) {
-  await env.DB.prepare(\`
+  await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS provider_tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       upload_id INTEGER NOT NULL UNIQUE,
@@ -1016,7 +1016,7 @@ async function ensureProviderTasksSchema(env) {
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       completed_at TEXT
     )
-  \`).run();
+  `).run();
 }
 
 function safeProviderResultUrl(value) {
@@ -1052,12 +1052,12 @@ async function providerApi(env, path, options = {}) {
 
 async function submitStagedProviderTask(env, uploadId) {
   await ensureProviderTasksSchema(env);
-  const upload = await env.DB.prepare(\`
+  const upload = await env.DB.prepare(`
     SELECT s.id, s.user_id, s.telegram_file_id, s.file_name,
            s.file_size, s.resource_code, s.status, u.telegram_id
     FROM upload_staging s JOIN users u ON u.id = s.user_id
     WHERE s.id = ? LIMIT 1
-  \`).bind(uploadId).first();
+  `).bind(uploadId).first();
   if (!upload) throw new Error("upload_not_found");
   if (!["uploaded", "reviewed"].includes(upload.status)) throw new Error("upload_not_ready");
   // The first live adapter is phoneCheck only: its upload flow already records
@@ -1069,24 +1069,24 @@ async function submitStagedProviderTask(env, uploadId) {
   ).bind(uploadId).first();
   if (existing) throw new Error("provider_task_already_created");
 
-  const claim = await env.DB.prepare(\`
+  const claim = await env.DB.prepare(`
     INSERT INTO provider_tasks (upload_id,user_id,telegram_id,resource_code,task_type,status)
     VALUES (?,?,?,'phoneCheck','phoneCheck','submitting')
-  \`).bind(upload.id, upload.user_id, String(upload.telegram_id)).run();
+  `).bind(upload.id, upload.user_id, String(upload.telegram_id)).run();
   const localId = Number(claim.meta.last_row_id);
 
   let providerSubmissionStarted = false;
   try {
     if (!env.TELEGRAM_BOT_TOKEN) throw new Error("telegram_storage_configuration_missing");
     const infoResponse = await fetch(
-      \`https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=\${encodeURIComponent(upload.telegram_file_id)}\`
+      `https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=\${encodeURIComponent(upload.telegram_file_id)}`
     );
     const info = await infoResponse.json();
     const filePath = info?.result?.file_path;
     if (!infoResponse.ok || !info.ok || !filePath || filePath.includes("..")) {
       throw new Error("telegram_source_file_unavailable");
     }
-    const source = await fetch(\`https://api.telegram.org/file/bot\${env.TELEGRAM_BOT_TOKEN}/\${filePath}\`);
+    const source = await fetch(`https://api.telegram.org/file/bot\${env.TELEGRAM_BOT_TOKEN}/\${filePath}`);
     if (!source.ok) throw new Error("telegram_source_download_failed");
     const bytes = await source.arrayBuffer();
     if (!bytes.byteLength || bytes.byteLength > 20 * 1024 * 1024) throw new Error("provider_file_size_invalid");
@@ -1105,24 +1105,24 @@ async function submitStagedProviderTask(env, uploadId) {
     const providerTaskId = String(providerResult.task_id || "");
     if (!providerTaskId || providerTaskId.length > 200) throw new Error("provider_task_id_missing");
 
-    await env.DB.prepare(\`
+    await env.DB.prepare(`
       UPDATE provider_tasks SET provider_task_id=?, status='submitted',
         provider_status=?, total=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='submitting'
-    \`).bind(
+    `).bind(
       providerTaskId, String(providerResult.status || "pending"),
       Number.isSafeInteger(Number(providerResult.total)) ? Number(providerResult.total) : entries.length,
       localId
     ).run();
-    await env.DB.prepare(\`
+    await env.DB.prepare(`
       UPDATE upload_staging SET status='reviewed',
         admin_note='Submitted to CheckNumber provider task ' || ?,
         reviewed_at=CURRENT_TIMESTAMP WHERE id=?
-    \`).bind(providerTaskId, uploadId).run();
+    `).bind(providerTaskId, uploadId).run();
     return { id: localId, provider_task_id: providerTaskId, status: "submitted", quantity: entries.length };
   } catch (error) {
-    await env.DB.prepare(\`
+    await env.DB.prepare(`
       UPDATE provider_tasks SET status=?, last_error=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
-    \`).bind(
+    `).bind(
       providerSubmissionStarted ? "submission_unknown" : "failed",
       String(error.message || "submission_failed").slice(0, 200), localId
     ).run();
@@ -1132,7 +1132,7 @@ async function submitStagedProviderTask(env, uploadId) {
 
 async function sendProviderTaskNotice(env, telegramId, message) {
   if (!env.TELEGRAM_BOT_TOKEN || !telegramId) return;
-  await fetch(\`https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}/sendMessage\`, {
+  await fetch(`https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: String(telegramId), text: message })
   });
@@ -1145,19 +1145,19 @@ async function processProviderTask(env, task) {
   const status = String(provider.status || "").toLowerCase();
 
   if (status === "failed") {
-    await env.DB.prepare(\`
+    await env.DB.prepare(`
       UPDATE provider_tasks SET status='failed', provider_status=?, total=?, success=?, failure=?,
         last_error='provider_task_failed', updated_at=CURRENT_TIMESTAMP WHERE id=?
-    \`).bind(status, Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
+    `).bind(status, Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
     await sendProviderTaskNotice(env, task.telegram_id, "Your verification task #" + task.id + " failed at the provider. Please contact support before resubmitting.");
     return "failed";
   }
 
   if (status !== "exported") {
-    await env.DB.prepare(\`
+    await env.DB.prepare(`
       UPDATE provider_tasks SET status='processing', provider_status=?, total=?, success=?, failure=?,
         updated_at=CURRENT_TIMESTAMP WHERE id=?
-    \`).bind(status || "unknown", Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
+    `).bind(status || "unknown", Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
     return "processing";
   }
 
@@ -1174,24 +1174,24 @@ async function processProviderTask(env, task) {
   deliveryForm.append("document", new Blob([resultBytes], { type: "application/zip" }), "verification-result-" + task.id + ".zip");
   deliveryForm.append("caption", "Your CheckNumber verification result is ready. Task #" + task.id);
   const deliveryResponse = await fetch(
-    \`https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}/sendDocument\`,
+    `https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}/sendDocument`,
     { method: "POST", body: deliveryForm }
   );
   const delivery = await deliveryResponse.json();
   if (!deliveryResponse.ok || !delivery.ok) {
-    await env.DB.prepare(\`
+    await env.DB.prepare(`
       UPDATE provider_tasks SET status='delivery_pending', provider_status='exported',
         result_url=?, total=?, success=?, failure=?, last_error='telegram_delivery_failed',
         updated_at=CURRENT_TIMESTAMP WHERE id=?
-    \`).bind(resultUrl, Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
+    `).bind(resultUrl, Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
     throw new Error("telegram_result_delivery_failed");
   }
 
-  await env.DB.prepare(\`
+  await env.DB.prepare(`
     UPDATE provider_tasks SET status='completed', provider_status='exported',
       result_url=NULL, total=?, success=?, failure=?, last_error=NULL,
       completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?
-  \`).bind(Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
+  `).bind(Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
   await sendProviderTaskNotice(env, task.telegram_id, "Your verification result for task #" + task.id + " has been delivered in this Telegram chat.");
   return "completed";
 }
@@ -1199,14 +1199,14 @@ async function processProviderTask(env, task) {
 async function pollProviderTasks(env, onlyId = null) {
   await ensureProviderTasksSchema(env);
   const result = onlyId
-    ? await env.DB.prepare(\`
+    ? await env.DB.prepare(`
         SELECT * FROM provider_tasks WHERE id=?
           AND status IN ('submitted','processing','delivery_pending') LIMIT 1
-      \`).bind(onlyId).all()
-    : await env.DB.prepare(\`
+      `).bind(onlyId).all()
+    : await env.DB.prepare(`
         SELECT * FROM provider_tasks WHERE status IN ('submitted','processing','delivery_pending')
         ORDER BY updated_at ASC LIMIT 10
-      \`).all();
+      `).all();
   const outcomes = [];
   for (const task of (result.results || [])) {
     try {
@@ -3264,12 +3264,12 @@ if (request.method === "GET" && url.pathname === "/api/admin/provider-tasks") {
   try {
     await requireAdmin(request, env);
     await ensureProviderTasksSchema(env);
-    const result = await env.DB.prepare(\`
+    const result = await env.DB.prepare(`
       SELECT id, upload_id, user_id, resource_code, task_type, provider_task_id,
         status, provider_status, total, success, failure, last_error,
         created_at, updated_at, completed_at
       FROM provider_tasks ORDER BY id DESC LIMIT 50
-    \`).all();
+    `).all();
     return json({ ok: true, tasks: result.results || [] }, 200, origin);
   } catch (error) {
     const status = error.message === "unauthorized" ? 401 :
