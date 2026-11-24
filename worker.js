@@ -4859,10 +4859,16 @@ if (url.pathname === "/api/admin/support/chats/reply" && request.method === "POS
 if(request.method==="GET" && url.pathname==="/api/admin/users"){
   try{
     await requireAdmin(request,env);
+    const columns=await env.DB.prepare("PRAGMA table_info(users)").all();
+    const hasCreatedAt=(columns.results||[]).some(column=>column.name==="created_at");
+    const registrationDate=hasCreatedAt
+      ? "u.created_at"
+      : "(SELECT MIN(s.created_at) FROM sessions s WHERE s.user_id=u.id)";
     const result=await env.DB.prepare(`
-      SELECT id,telegram_id,username,first_name,wallet_balance_cents,status,created_at
-      FROM users
-      ORDER BY id DESC
+      SELECT u.id,u.telegram_id,u.username,u.first_name,
+             u.wallet_balance_cents,u.status,${registrationDate} AS created_at
+      FROM users u
+      ORDER BY u.id DESC
       LIMIT 500
     `).all();
     const count=await env.DB.prepare("SELECT COUNT(*) AS total FROM users").first();
