@@ -5198,6 +5198,12 @@ if (url.pathname === "/api/admin/support/chats/reply" && request.method === "POS
 if(request.method==="GET" && url.pathname==="/api/admin/users"){
   try{
     await requireAdmin(request,env);
+    const limit=Number(url.searchParams.get("limit")||500);
+    const offset=Number(url.searchParams.get("offset")||0);
+    if(!Number.isSafeInteger(limit)||limit<1||limit>500||
+       !Number.isSafeInteger(offset)||offset<0||offset>1000000){
+      return json({ok:false,error:"invalid_pagination",maximum_limit:500},400,origin);
+    }
     const columns=await env.DB.prepare("PRAGMA table_info(users)").all();
     const hasCreatedAt=(columns.results||[]).some(column=>column.name==="created_at");
     const registrationDate=hasCreatedAt
@@ -5208,10 +5214,12 @@ if(request.method==="GET" && url.pathname==="/api/admin/users"){
              u.wallet_balance_cents,u.status,${registrationDate} AS created_at
       FROM users u
       ORDER BY u.id DESC
-      LIMIT 500
-    `).all();
+      LIMIT ? OFFSET ?
+    `).bind(limit,offset).all();
     const count=await env.DB.prepare("SELECT COUNT(*) AS total FROM users").first();
-    return json({ok:true,users:result.results||[],total:Number(count?.total||0),limit:500},200,origin);
+    const total=Number(count?.total||0);
+    return json({ok:true,users:result.results||[],total,limit,offset,
+      pagination:{total,limit,offset,has_more:offset+(result.results||[]).length<total}},200,origin);
   }catch(error){
     const status=error.message==="unauthorized"?401:
       ["admin_access_required","admin_unlock_required"].includes(error.message)?403:500;
