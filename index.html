@@ -732,7 +732,8 @@ function renderDashboard(){
         <select id="wallet-deposit-method">
           <option value="usdt_trc20">USDT · TRC20</option>
         </select>
-        l
+        <label class="field" for="wallet-deposit-reference">Transaction ID / hash</label>
+        <input id="wallet-deposit-reference" type="text" maxlength="200" placeholder="Enter the transaction hash after payment">
         <label class="field" for="wallet-deposit-screenshot">Payment screenshot (JPG, PNG, WEBP · max 5 MB)</label>
         <input id="wallet-deposit-screenshot" type="file" accept="image/jpeg,image/png,image/webp" required>
         <p class="muted">Submit only after completing a transfer using the official payment instructions. An administrator will independently verify the transaction before crediting your wallet.</p>
