@@ -1188,14 +1188,15 @@ async function submitStagedProviderTask(env, uploadId) {
         reviewed_at=CURRENT_TIMESTAMP WHERE id=?
     `).bind(providerTaskId, uploadId).run();
     return { id: localId, provider_task_id: providerTaskId, status: "submitted", quantity: entries.length };
+  } catch (error) {
     const definiteProviderRejection =
       [400, 401, 402, 403, 404, 413].includes(Number(error.providerStatus));
     const finalStatus = providerSubmissionStarted && !definiteProviderRejection
       ? "submission_unknown"
       : "failed";
-    await env.DB.prepare(\`
+    await env.DB.prepare(`
       UPDATE provider_tasks SET status=?, last_error=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
-    \`).bind(
+    `).bind(
       finalStatus,
       String(error.message || "submission_failed").slice(0, 200), localId
     ).run();
@@ -1248,11 +1249,11 @@ async function processProviderTask(env, task) {
   // Claim delivery before calling Telegram. If the network outcome is uncertain,
   // leave the task in delivery_sending for manual review rather than auto-sending
   // a duplicate result file on the next cron run.
-  const deliveryClaim = await env.DB.prepare(\`
+  const deliveryClaim = await env.DB.prepare(`
     UPDATE provider_tasks SET status='delivery_sending', result_url=?,
       updated_at=CURRENT_TIMESTAMP
     WHERE id=? AND status IN ('submitted','processing','delivery_pending')
-  \`).bind(resultUrl, task.id).run();
+  `).bind(resultUrl, task.id).run();
   if (!deliveryClaim.meta?.changes) throw new Error("provider_delivery_already_claimed");
 
   const deliveryForm = new FormData();
