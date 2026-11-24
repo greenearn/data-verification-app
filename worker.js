@@ -1079,14 +1079,14 @@ async function submitStagedProviderTask(env, uploadId) {
   try {
     if (!env.TELEGRAM_BOT_TOKEN) throw new Error("telegram_storage_configuration_missing");
     const infoResponse = await fetch(
-      `https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=\${encodeURIComponent(upload.telegram_file_id)}`
+      `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${encodeURIComponent(upload.telegram_file_id)}`
     );
     const info = await infoResponse.json();
     const filePath = info?.result?.file_path;
     if (!infoResponse.ok || !info.ok || !filePath || filePath.includes("..")) {
       throw new Error("telegram_source_file_unavailable");
     }
-    const source = await fetch(`https://api.telegram.org/file/bot\${env.TELEGRAM_BOT_TOKEN}/\${filePath}`);
+    const source = await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`);
     if (!source.ok) throw new Error("telegram_source_download_failed");
     const bytes = await source.arrayBuffer();
     if (!bytes.byteLength || bytes.byteLength > 20 * 1024 * 1024) throw new Error("provider_file_size_invalid");
@@ -1139,7 +1139,7 @@ async function submitStagedProviderTask(env, uploadId) {
 
 async function sendProviderTaskNotice(env, telegramId, message) {
   if (!env.TELEGRAM_BOT_TOKEN || !telegramId) return;
-  await fetch(`https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: String(telegramId), text: message })
   });
@@ -1181,7 +1181,7 @@ async function processProviderTask(env, task) {
   deliveryForm.append("document", new Blob([resultBytes], { type: "application/zip" }), "verification-result-" + task.id + ".zip");
   deliveryForm.append("caption", "Your CheckNumber verification result is ready. Task #" + task.id);
   const deliveryResponse = await fetch(
-    `https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}/sendDocument`,
+    `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendDocument`,
     { method: "POST", body: deliveryForm }
   );
   const delivery = await deliveryResponse.json();
