@@ -151,7 +151,7 @@ async function request(path,method="GET",body=null){
     if (data.error === "invalid_phone_number_count") {
       message = "Phone file count is outside the allowed range. " +
         "Unique valid numbers: " + Number(data.unique_valid_numbers ?? data.received ?? 0) +
-        "; required: " + Number(data.minimum ?? 2000) + "–" + Number(data.maximum ?? 10000) +
+        "; required: " + Number(data.minimum ?? 500) + "–" + Number(data.maximum ?? 10000) +
         ". Non-empty lines: " + Number(data.non_empty_lines ?? 0) +
         "; valid entries: " + Number(data.valid_entries ?? 0) +
         "; duplicates: " + Number(data.duplicate_entries ?? 0) + ".";
