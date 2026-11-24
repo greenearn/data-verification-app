@@ -126,6 +126,7 @@ input,select,textarea{border-radius:14px;padding:13px}
 .support-card{background:linear-gradient(145deg,#fff,#f8faff)}.support-heading{display:flex;justify-content:space-between;align-items:center;gap:15px}
 .support-avatar{width:54px;height:54px;display:grid;place-items:center;border-radius:19px;color:white;font-size:25px;background:linear-gradient(135deg,#3478f6,#9b70ed);box-shadow:0 9px 20px #6f77dc55}
 .support-contact-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}
+.support-contact{display:flex;align-items:center;gap:12px;padding:15px;border:1px solid #e5eaf5;border-radius:18px;background:#fff;box-shadow:0 5px 15px #243b6810;text-decoration:none;color:#26324b;min-width:0}.support-contact p{margin:3px 0 0}.support-contact-icon{width:42px;height:42px;display:grid;place-items:center;flex:0 0 42px;border-radius:14px;background:#edf3ff;color:#3677ed;font-size:19px}
 .support-chat-box{padding:16px;border:1px solid #e5eaf5;border-radius:20px;background:#fff}
 .support-messages{height:260px;overflow:auto;display:flex;flex-direction:column;gap:9px;padding:12px;background:#f5f7fc;border-radius:16px;margin:12px 0}
 .support-bubble{max-width:85%;padding:11px 14px;border-radius:16px;background:#fff;box-shadow:0 3px 9px #1b315010;align-self:flex-start;overflow-wrap:anywhere}
@@ -222,7 +223,7 @@ async function request(path,method="GET",body=null){
   const data=await response.json();
 
   if(!response.ok||!data.ok){
-    if(data.error==="admin_unlock_required"&&adminMode){adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderAdminGate(true);}
+    if(data.error==="admin_unlock_required"&&adminMode){adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}renderAdminGate(true);}
     let message = data.error || "Request failed (" + response.status + ")";
     if (data.error === "invalid_phone_number_count") {
       message = "Phone file count is outside the allowed range. " +
@@ -748,7 +749,7 @@ async function lockAdminDashboard(){
   if(!adminUnlockToken)return;
   const old=adminUnlockToken;
   adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");
-  if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}
+  if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}
   try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":old}});}catch(e){}
   renderAdminGate(true);
 }
@@ -866,6 +867,7 @@ function renderDashboard(){
     </header>
 
    
+<button class="back-button" id="customer-back" type="button">← Back</button>
 <nav class="nav">
   <a href="#services">Services</a>
   <a href="#wallet">Wallet</a>
@@ -1172,6 +1174,8 @@ function renderDashboard(){
     <footer>Data Verification · Secure access · Authorized validation only.</footer>
   </main>`;
 
+  const backButton=document.getElementById("customer-back");
+  if(backButton)backButton.onclick=()=>{if(location.hash){history.back();}else{window.scrollTo({top:0,behavior:"smooth"});}};
   renderServices();
   wireSupportCustomer();
 
