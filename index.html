@@ -1293,7 +1293,8 @@ if (selectedCode === "phoneCheck") {
       uploadedFileId=Number(result.upload_id);
       const orderButton=document.getElementById("place-order-button");
       if(orderButton){
-        orderButton.classList.toggle("hidden",selectedCode!=="phoneCheck");
+        const orderable=services.some(service=>service.resource_code==="phoneCheck"&&service.can_order);
+        orderButton.classList.toggle("hidden",selectedCode!=="phoneCheck"||!orderable);
         orderButton.disabled=false;
       }
       resultBox.textContent=
