@@ -127,6 +127,7 @@ let token="";
 let user={};
 let services=[];
 let adminServices=[];
+let globalMarkupPercentage=10;
 let categories=[];
 let selectedCode="";
 let uploadedFileId=null;
@@ -260,8 +261,7 @@ async function login(){
         const admin=await request("/api/admin/catalogue");
         categories=admin.categories||[];
         adminServices=admin.services||adminServices;
-        const globalMarkupInput=document.getElementById("global-markup");
-        if(globalMarkupInput)globalMarkupInput.value=String(admin.global_markup_percentage??10);
+        globalMarkupPercentage=Number(admin.global_markup_percentage??10);
       }catch(error){
         console.warn("Admin catalogue unavailable:",error.message);
       }
@@ -1887,7 +1887,7 @@ function adminMarkup(){
       <h3>Global platform profit margin</h3>
       <p class="muted">Apply one percentage markup to every product's provider cost. Existing per-product final-price overrides are cleared when you apply a global margin.</p>
       <label class="field" for="global-markup">Global markup percentage</label>
-      <input id="global-markup" type="number" min="0" max="10000" step="1" value="10" placeholder="10">
+      <input id="global-markup" type="number" min="0" max="10000" step="1" value="${globalMarkupPercentage}" placeholder="10">
       <button class="btn" id="apply-global-markup" type="button">Apply to all products</button>
       <p id="global-markup-message" class="muted"></p>
     </div>
@@ -3415,6 +3415,7 @@ async function reloadAdmin(){
 
   categories=data.categories||[];
   adminServices=data.services||[];
+  globalMarkupPercentage=Number(data.global_markup_percentage??globalMarkupPercentage);
 
   renderDashboard();
 }
