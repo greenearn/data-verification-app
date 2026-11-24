@@ -1733,7 +1733,7 @@ document.getElementById("orderTest").onclick=async()=>{
   });
   document.getElementById("result").textContent=JSON.stringify({
     http_status:r.status,response:r.data,
-    safe_rejection:r.status===403&&r.data.error==="service_disabled"
+    route_ready:r.status===400&&r.data.error==="invalid_order_request"
   },null,2);
 };
 document.getElementById("servicesTest").onclick=async()=>{
