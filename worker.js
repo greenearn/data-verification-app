@@ -3593,7 +3593,7 @@ if (
     if (request.method === "POST" && url.pathname === "/api/admin/storage-file-test") {
       try {
         await requireAdmin(request, env);
-        const testContent = "DATA VERIFICATION STORAGE TEST\\nSynthetic test file only. No customer data or provider task.\\n";
+        const testContent = ["DATA VERIFICATION STORAGE TEST", "Synthetic test file only. No customer data or provider task.", ""].join("\n");
         const testFile = new File([testContent], "data-verification-storage-test.txt", { type: "text/plain" });
         const stored = await telegramStoreDocument(env, testFile);
         const infoResponse = await fetch("https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/getFile?file_id=" + encodeURIComponent(stored.file_id));
