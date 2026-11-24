@@ -2736,8 +2736,17 @@ function wireAdminActivityAndUsers(){
     usersList.innerHTML="";
     if(usersRefresh)usersRefresh.disabled=true;
     try{
-      const data=await request("/api/admin/users");
-      adminCustomers=data.users||[];
+      const allUsers=[];
+      let offset=0;
+      let hasMore=true;
+      while(hasMore){
+        const data=await request("/api/admin/users?limit=500&offset="+offset);
+        const page=data.users||[];
+        allUsers.push(...page);
+        offset+=page.length;
+        hasMore=!!data.pagination?.has_more&&page.length>0;
+      }
+      adminCustomers=allUsers;
       renderAdminUsers();
     }catch(error){usersMessage.textContent="Could not load customers: "+error.message;}
     finally{if(usersRefresh)usersRefresh.disabled=false;}
