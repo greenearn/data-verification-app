@@ -1166,7 +1166,6 @@ function renderDashboard(){
   <p id="account-auth-message" class="muted">Your session is protected by Telegram verification.</p>
 </section>
 
-    ${adminMode?adminMarkup():""}
 
     <footer>Data Verification · Secure access · Authorized validation only.</footer>
   </main>`;
@@ -1622,7 +1621,6 @@ updateEstimate();
     };
   }
   if(adminMode){
-    wireAdmin();
     applyAdminUiPermissions();
   }
 }
