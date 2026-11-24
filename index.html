@@ -789,7 +789,7 @@ async function lockAdminDashboard(){
   if(!adminUnlockToken)return;
   const old=adminUnlockToken;
   adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");
-  if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}
+  if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(window.adminNotificationTimer){clearInterval(window.adminNotificationTimer);window.adminNotificationTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}
   try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":old}});}catch(e){}
   renderAdminGate(true);
 }
@@ -821,7 +821,7 @@ async function wireAdminNotifications(){
     try{
       const data=await request("/api/admin/notifications");
       const rows=data.notifications||[];
-      count.textContent=Number(data.unread_count||0)>99?"99+":String(data.unread_count||0);
+      const unread=Number(data.unread_count||0);count.textContent=unread>99?"99+":(unread?String(unread):"");
       list.innerHTML=rows.length?rows.map(n=>'<div class="admin-notification-entry '+(n.read_at?"":"unread")+'" data-id="'+Number(n.id)+'"><strong>'+esc(n.title||"User activity")+'</strong><p>'+esc(n.message||"")+'</p><small>'+esc(formatDate(n.created_at))+'</small>'+(n.read_at?"":'<div><small>Unread · click to mark read</small></div>')+'</div>').join(""):'<p class="muted">No admin notifications yet.</p>';
     }catch(error){list.innerHTML='<p class="error">'+esc(error.message)+'</p>';}
   }
