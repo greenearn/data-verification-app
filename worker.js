@@ -2989,6 +2989,9 @@ if (
 
   throw consentError;
 }
+try { await createAdminNotifications(env,"New customer file upload",
+  (user.first_name||"Customer")+(user.username?" · @"+user.username:"")+" uploaded "+fileName+" for service "+service.resource_code+". Upload #"+inserted.meta.last_row_id,
+  "customer_upload",inserted.meta.last_row_id); } catch(notificationError) { console.error("Upload admin notification failed:",notificationError.message); }
 return json({
           ok: true,
           message: "file_uploaded_successfully",
@@ -4860,12 +4863,7 @@ claimedRequestId = requestId;
                 "\n3. Select the service shown in your request." +
                 "\n4. Upload this file." +
                 "\n5. Click Review Input and follow the instructions." +
-                "\\n\\nPlease use it in the Mini App:" +
-                "\\n1. Open Data Verification." +
-                "\\n2. Go to Prepare Your Input List." +
-                "\\n3. Select the service shown in your request." +
-                "\\n4. Upload this file." +
-                "\\n5. Click Review Input and follow the instructions."
+
             })
           }
         );
