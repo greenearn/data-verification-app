@@ -4624,10 +4624,11 @@ if (
         const quantity = Number(body.quantity);
         const numberType = String(body.number_type || "mobile").toLowerCase();
         const serviceCode=String(body.resource_code||"").trim().slice(0,100);
-        const serviceName=String(body.service_name||"").trim().slice(0,160);
+        const requestedService=serviceCode?await env.DB.prepare("SELECT resource_code,name FROM service_catalogue WHERE resource_code=? AND is_listed=1 LIMIT 1").bind(serviceCode).first():null;
+        const serviceName=String(requestedService?.name||"").trim().slice(0,160);
 
         if (
-          body.consent_confirmed!==true || !serviceCode || !serviceName ||
+          body.consent_confirmed!==true || !requestedService || !serviceCode || !serviceName ||
           !countries[countryCode] ||
           !Number.isInteger(quantity) ||
           quantity < 1 ||
@@ -4862,8 +4863,7 @@ claimedRequestId = requestId;
                 "\n2. Go to Prepare Your Input List." +
                 "\n3. Select the service shown in your request." +
                 "\n4. Upload this file." +
-                "\n5. Click Review Input and follow the instructions." +
-
+                "\n5. Click Review Input and follow the instructions."
             })
           }
         );
