@@ -1091,7 +1091,14 @@ async function submitStagedProviderTask(env, uploadId) {
     const bytes = await source.arrayBuffer();
     if (!bytes.byteLength || bytes.byteLength > 20 * 1024 * 1024) throw new Error("provider_file_size_invalid");
     const content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    const entries = content.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+    const extension = String(upload.file_name || "").toLowerCase().split(".").pop();
+    const entries = content.split(/\r?\n/).map(line => {
+      const value = extension === "csv" ? line.split(",")[0] : line;
+      return value.trim().replace(/^["']|["']$/g, "");
+    }).filter(Boolean);
+    if (entries[0] && ["phone","phone_number","number"].includes(entries[0].toLowerCase())) {
+      entries.shift();
+    }
     if (!entries.length || entries.length > 1000000) throw new Error("provider_quantity_out_of_range");
     if (entries.some(x => !/^\+?[1-9]\d{7,14}$/.test(x))) throw new Error("invalid_phone_numbers");
 
