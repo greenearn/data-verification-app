@@ -1030,6 +1030,7 @@ function safeProviderResultUrl(value, env) {
         url.port || url.hash || !base.hostname) return null;
     const allowedHosts = new Set([
       base.hostname.toLowerCase(),
+      "wapic.s3.ap-southeast-1.amazonaws.com",
       ...String(env.CN_RESULT_HOSTS || "").split(",")
         .map(host => host.trim().toLowerCase())
         .filter(Boolean)
