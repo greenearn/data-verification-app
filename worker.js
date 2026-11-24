@@ -2752,7 +2752,10 @@ if (
   resource_code,
   admin_note,
   reviewed_at,
-  reviewed_by
+  reviewed_by,
+  CASE WHEN EXISTS (
+    SELECT 1 FROM provider_tasks pt WHERE pt.upload_id = upload_staging.id
+  ) THEN 1 ELSE 0 END AS provider_task_exists
 FROM upload_staging
       ORDER BY id DESC
       LIMIT ?
@@ -3380,7 +3383,7 @@ if (request.method === "POST" && url.pathname === "/api/admin/provider-tasks/sub
       error.message === "admin_access_required" ? 403 :
       error.message === "upload_not_found" ? 404 :
       ["upload_not_ready","provider_task_already_created"].includes(error.message) ? 409 :
-      ["invalid_json","invalid_upload_id","invalid_phone_numbers","provider_quantity_out_of_range"].includes(error.message) ? 400 :
+      ["invalid_json","invalid_upload_id","invalid_phone_numbers","provider_quantity_out_of_range","ambiguous_or_invalid_csv_row","invalid_csv_quotes","unsupported_file_type"].includes(error.message) ? 400 :
       error.message === "service_not_enabled_for_provider_submission" ? 403 : 502;
     return json({
       ok: false,
