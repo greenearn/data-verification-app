@@ -1179,7 +1179,9 @@ function parseProviderEntries(content, extension, inputType) {
 
 async function providerApi(env, path, options = {}) {
   if (!env.CN_API_KEY || !env.CN_BASE_URL) throw new Error("provider_configuration_missing");
-  const base = String(env.CN_BASE_URL).replace(/\/+$/, "");
+  let base = String(env.CN_BASE_URL).replace(/\/+$/, "");
+  // Accept either the API origin or an origin ending in /v1.
+  if (base.toLowerCase().endsWith("/v1")) base = base.slice(0, -3);
   const response = await fetch(base + path, {
     ...options,
     headers: { ...(options.headers || {}), "X-API-Key": env.CN_API_KEY }
@@ -1191,6 +1193,10 @@ async function providerApi(env, path, options = {}) {
     const error = new Error("provider_request_failed");
     error.providerStatus = response.status;
     throw error;
+  }
+  // Some account gateways wrap the task payload in a "data" object.
+  if (data && data.data && typeof data.data === "object" && !Array.isArray(data.data)) {
+    data = { ...data, ...data.data };
   }
   return data;
 }
@@ -3682,8 +3688,10 @@ if(request.method==="POST"&&url.pathname==="/api/services/order"){
     await ensureCustomerOrderSchema(env);
     const upload=await env.DB.prepare(`
       SELECT s.id,s.telegram_file_id,s.file_name,s.status,s.expires_at,c.input_type,c.task_type
-      FROM upload_staging s JOIN service_catalogue c ON c.resource_code=s.resource_code
-      WHERE s.id=? AND s.user_id=? AND s.resource_code=? LIMIT 1
+      FROM upload_staging s
+      JOIN service_catalogue c ON c.resource_code=s.resource_code
+      JOIN service_categories sc ON sc.category=c.category COLLATE NOCASE
+      WHERE s.id=? AND s.user_id=? AND s.resource_code=? AND c.is_listed=1 AND sc.is_listed=1 LIMIT 1
     `).bind(uploadId,user.id,code).first();
     if(!upload||!["uploaded","reviewed"].includes(upload.status)||!upload.expires_at||
        new Date(upload.expires_at).getTime()<=Date.now()||upload.task_type==="VERIFY_IN_DASHBOARD")
