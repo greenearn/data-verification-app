@@ -758,7 +758,7 @@ async function renderAdminWorkspace(){
     const data=await request("/api/admin/catalogue");
     categories=data.categories||[];adminServices=data.services||[];globalMarkupPercentage=Number(data.global_markup_percentage??10);
     app.innerHTML='<main class="wrap admin-workspace"><header><div><div class="admin-label">CONTROL CENTRE</div><div class="admin-shell-title">Administrator Dashboard</div><div class="admin-shell-subtitle">Secure operations · '+esc(adminRole||"Admin")+'</div></div><div class="admin-shell-actions"><button class="back-button" id="admin-back">← Customer portal</button><button class="back-button" id="admin-lock">Lock dashboard</button></div></header>'+adminMarkup()+'</main>';
-    document.getElementById("admin-back").onclick=()=>{if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}adminMode=false;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderDashboard();};
+    document.getElementById("admin-back").onclick=async()=>{const oldToken=adminUnlockToken;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}if(oldToken){try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":oldToken}});}catch(e){}}adminMode=false;renderDashboard();};
     document.getElementById("admin-lock").onclick=lockAdminDashboard;
     const lockNow=document.getElementById("admin-lock-now");if(lockNow)lockNow.onclick=lockAdminDashboard;
     wireAdmin();wireSupportAdmin();startAdminIdleLock();
@@ -2838,7 +2838,7 @@ function wireAdmin(){
          let objectUrl=null;
          let overlay=null;
          try{
-           const response=await fetch(API+"/api/admin/wallet/deposits/screenshot?deposit_id="+Number(proofButton.dataset.id),{headers:{Authorization:"Bearer "+token}});
+           const response=await fetch(API+"/api/admin/wallet/deposits/screenshot?deposit_id="+Number(proofButton.dataset.id),{headers:{Authorization:"Bearer "+token,...(adminUnlockToken?{"X-Admin-Unlock":adminUnlockToken}:{})}});
            if(!response.ok)throw Error("Could not retrieve screenshot ("+response.status+")");
            const blob=await response.blob();
            if(!blob.type.startsWith("image/"))throw Error("The stored file is not being returned as an image.");
