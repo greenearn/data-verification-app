@@ -1,10 +1,29 @@
 
-const ALLOWED_ORIGIN = "https://greenearn.github.io";
-const WORKER_ORIGIN = "https://data-verification-api.shrestharaj980888.workers.dev";
+const ALLOWED_ORIGINS = new Set(["https://greenearn.github.io","https://data-verification-app-git-manual-a72ddf-shrestharaj980888-6433.vercel.app"]);
+const DEFAULT_ALLOWED_ORIGIN = "https://greenearn.github.io";
+const WORKER_ORIGIN = "https://manual-customer-orders-launch-data-verification-api.shrestharaj980888.workers.dev";
 const SESSION_DAYS = 7;
 const MAX_INIT_DATA_AGE = 3600;
 const MAX_BODY_SIZE = 20000;
 let adminAccessSchemaReady = false;
+let customerOrderSchemaReady = false;
+
+async function ensureCustomerOrderSchema(env) {
+  if (customerOrderSchemaReady) return;
+  await env.DB.batch([
+    env.DB.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS orders_unique_phonecheck_upload
+      ON orders(result_reference)
+      WHERE resource_code='phoneCheck' AND substr(result_reference,1,7)='upload:'
+    `),
+    env.DB.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS wallet_ledger_unique_order_refund
+      ON wallet_ledger(reference_id)
+      WHERE transaction_type='order_refund'
+    `)
+  ]);
+  customerOrderSchemaReady = true;
+}
 // --------------------------------------------------
 // CHECKNUMBER.AI AUTOMATIC CATALOGUE
 // --------------------------------------------------
@@ -50,7 +69,7 @@ function json(data, status = 200, origin = "") {
     status,
     headers: {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": origin || ALLOWED_ORIGIN,
+      "Access-Control-Allow-Origin": origin || DEFAULT_ALLOWED_ORIGIN,
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Vary": "Origin",
@@ -319,7 +338,7 @@ async function getSessionUser(request, env) {
 }
 
 const ADMIN_PERMISSION_LABELS = {
-  wallet_deposits: "Wallet deposit review",
+  wallet_deposits: "Wallet deposits and customer order refunds",
   catalogue_manage: "Catalogue, categories, services and pricing",
   checknumber_validate: "CheckNumber validation and provider task processing",
   uploads_manage: "Customer upload review",
@@ -331,6 +350,8 @@ const ADMIN_PERMISSION_LABELS = {
 const ADMIN_ROUTE_PERMISSIONS = {
   "GET /api/admin/wallet/deposits": "wallet_deposits",
   "POST /api/admin/wallet/deposits/review": "wallet_deposits",
+  "GET /api/admin/orders": "wallet_deposits",
+  "POST /api/admin/orders/refund": "wallet_deposits",
   "GET /api/admin/catalogue": "catalogue_manage",
   "POST /api/admin/catalogue/import": "catalogue_manage",
   "POST /api/admin/checknumber/validate-upload": "checknumber_validate",
@@ -1184,12 +1205,21 @@ async function submitStagedProviderTask(env, uploadId) {
     if (!["csv", "txt"].includes(extension)) throw new Error("unsupported_file_type");
     const entries = parseProviderPhoneEntries(content, extension);
 
-    // One-time, explicitly approved phoneCheck test guard:
-    // exactly 2,000 unique numbers and a maximum estimated provider cost of $0.30.
-    // This is an application-side estimate guard, not a provider-side price guarantee.
-    const testQuantityLimit = 2000;
-    const maxProviderCostCents = 30;
-    if (entries.length !== testQuantityLimit) {
+    const paidOrder = await env.DB.prepare(`
+      SELECT id, quantity, estimated_provider_cost_cents, status
+      FROM orders
+      WHERE result_reference = ? AND resource_code = 'phoneCheck'
+      LIMIT 1
+    `).bind("upload:" + uploadId).first();
+    if (paidOrder) {
+      if (paidOrder.status !== "pending" || Number(paidOrder.quantity) !== entries.length) {
+        throw new Error("paid_order_not_ready_or_quantity_mismatch");
+      }
+      if (entries.length < 500 || entries.length > 10000) {
+        throw new Error("provider_quantity_out_of_range");
+      }
+    } else if (entries.length !== 2000) {
+      // Preserve the existing admin-only test path for unbilled uploads.
       throw new Error("provider_test_requires_exactly_2000_unique_numbers");
     }
 
@@ -1212,7 +1242,11 @@ async function submitStagedProviderTask(env, uploadId) {
     const estimatedProviderCostCents = Math.ceil(
       configuredProviderCost * entries.length / configuredUnitQuantity
     );
-    if (estimatedProviderCostCents > maxProviderCostCents) {
+    if (paidOrder &&
+        estimatedProviderCostCents > Number(paidOrder.estimated_provider_cost_cents)) {
+      throw new Error("provider_cost_now_exceeds_paid_order_estimate");
+    }
+    if (!paidOrder && estimatedProviderCostCents > 30) {
       throw new Error("provider_cost_exceeds_approved_30_cent_limit");
     }
 
@@ -1241,7 +1275,14 @@ async function submitStagedProviderTask(env, uploadId) {
         admin_note='Submitted to CheckNumber provider task ' || ?,
         reviewed_at=CURRENT_TIMESTAMP WHERE id=?
     `).bind(providerTaskId, uploadId).run();
-    return { id: localId, provider_task_id: providerTaskId, status: "submitted", quantity: entries.length };
+    if (paidOrder) {
+      await env.DB.prepare(`
+        UPDATE orders SET provider_task_id=?, status='processing'
+        WHERE id=? AND status='pending' AND result_reference=?
+      `).bind(providerTaskId, paidOrder.id, "upload:" + uploadId).run();
+    }
+    return { id: localId, provider_task_id: providerTaskId, status: "submitted", quantity: entries.length,
+      paid_order_id: paidOrder?.id || null };
   } catch (error) {
     const definiteProviderRejection =
       [400, 401, 402, 403, 404, 413].includes(Number(error.providerStatus));
@@ -1254,6 +1295,12 @@ async function submitStagedProviderTask(env, uploadId) {
       finalStatus,
       String(error.message || "submission_failed").slice(0, 200), localId
     ).run();
+    if (finalStatus === "failed") {
+      await env.DB.prepare(`
+        UPDATE orders SET status='failed'
+        WHERE result_reference=? AND status='pending'
+      `).bind("upload:" + uploadId).run();
+    }
     throw error;
   }
 }
@@ -1273,10 +1320,16 @@ async function processProviderTask(env, task) {
   const status = String(provider.status || "").toLowerCase();
 
   if (status === "failed") {
-    await env.DB.prepare(`
-      UPDATE provider_tasks SET status='failed', provider_status=?, total=?, success=?, failure=?,
-        last_error='provider_task_failed', updated_at=CURRENT_TIMESTAMP WHERE id=?
-    `).bind(status, Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE provider_tasks SET status='failed', provider_status=?, total=?, success=?, failure=?,
+          last_error='provider_task_failed', updated_at=CURRENT_TIMESTAMP WHERE id=?
+      `).bind(status, Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id),
+      env.DB.prepare(`
+        UPDATE orders SET status='failed'
+        WHERE result_reference=? AND provider_task_id=? AND status='processing'
+      `).bind("upload:" + task.upload_id, task.provider_task_id)
+    ]);
     await sendProviderTaskNotice(env, task.telegram_id, "Your verification task #" + task.id + " failed at the provider. Please contact support before resubmitting.");
     return "failed";
   }
@@ -1330,11 +1383,17 @@ async function processProviderTask(env, task) {
     throw new Error("telegram_result_delivery_failed");
   }
 
-  await env.DB.prepare(`
-    UPDATE provider_tasks SET status='completed', provider_status='exported',
-      result_url=NULL, total=?, success=?, failure=?, last_error=NULL,
-      completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?
-  `).bind(Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
+  await env.DB.batch([
+    env.DB.prepare(`
+      UPDATE provider_tasks SET status='completed', provider_status='exported',
+        result_url=NULL, total=?, success=?, failure=?, last_error=NULL,
+        completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?
+    `).bind(Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id),
+    env.DB.prepare(`
+      UPDATE orders SET status='completed'
+      WHERE result_reference=? AND provider_task_id=? AND status='processing'
+    `).bind("upload:" + task.upload_id, task.provider_task_id)
+  ]);
   await sendProviderTaskNotice(env, task.telegram_id, "Your verification result for task #" + task.id + " has been delivered in this Telegram chat.");
   return "completed";
 }
@@ -1521,7 +1580,7 @@ export default {
 
     if (
       origin &&
-      origin !== ALLOWED_ORIGIN &&
+      !ALLOWED_ORIGINS.has(origin) &&
       origin !== WORKER_ORIGIN
     ) {
       return new Response("Origin not allowed", { status: 403 });
@@ -1531,7 +1590,7 @@ export default {
       return new Response(null, {
         status: 204,
         headers: {
-          "Access-Control-Allow-Origin": origin || ALLOWED_ORIGIN,
+          "Access-Control-Allow-Origin": origin || DEFAULT_ALLOWED_ORIGIN,
           "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Authorization",
           "Vary": "Origin"
@@ -1682,7 +1741,7 @@ document.getElementById("orderTest").onclick=async()=>{
   });
   document.getElementById("result").textContent=JSON.stringify({
     http_status:r.status,response:r.data,
-    safe_rejection:r.status===403&&r.data.error==="service_disabled"
+    route_ready:r.status===400&&r.data.error==="invalid_order_request"
   },null,2);
 };
 document.getElementById("servicesTest").onclick=async()=>{
@@ -2351,7 +2410,8 @@ if (
             display_order: Number(row.display_order),
             configured,
             enabled: configured && Number(row.enabled) === 1,
-            can_order: false,
+            can_order: row.resource_code === "phoneCheck" &&
+              configured && Number(row.enabled) === 1 && row.currency === "USDT",
             minimum_order_quantity:
               configured ? Number(row.minimum_order_quantity) : null,
             pricing_unit_quantity:
@@ -2369,8 +2429,8 @@ if (
           ok: true,
           categories,
           services,
-          ordering_enabled: false,
-          message: "Catalogue loaded. Customer ordering is disabled."
+          ordering_enabled: services.some(service => service.can_order),
+          message: "Phone Number Validation orders are available when enabled by the administrator; other services are not connected yet."
         }, 200, origin);
       } catch (error) {
         return json({
@@ -2468,6 +2528,7 @@ if (
             AND c.is_listed = 1
             AND sc.is_listed = 1
             AND p.enabled = 1
+            AND c.resource_code = 'phoneCheck'
           LIMIT 1
         `).bind(resourceCode).first();
 
@@ -2596,13 +2657,13 @@ if (
           }
 
           if (
-            consentNumbers.length < 2000 ||
+            consentNumbers.length < 500 ||
             consentNumbers.length > 10000
           ) {
             return json({
               ok: false,
               error: "invalid_phone_number_count",
-              minimum: 2000,
+              minimum: 500,
               maximum: 10000,
               received: consentNumbers.length,
               ...uploadStats
@@ -2761,7 +2822,10 @@ return json({
             currency,
             status,
             result_reference,
-            created_at
+            created_at,
+            EXISTS(SELECT 1 FROM wallet_ledger l
+              WHERE l.reference_id='order_refund:' || orders.id
+                AND l.transaction_type='order_refund') AS refunded
           FROM orders
           WHERE user_id = ?
           ORDER BY id DESC
@@ -2849,7 +2913,16 @@ if (
   reviewed_by,
   CASE WHEN EXISTS (
     SELECT 1 FROM provider_tasks pt WHERE pt.upload_id = upload_staging.id
-  ) THEN 1 ELSE 0 END AS provider_task_exists
+  ) THEN 1 ELSE 0 END AS provider_task_exists,
+  (SELECT o.id FROM orders o WHERE
+    o.result_reference = 'upload:' || upload_staging.id OR
+    o.result_reference LIKE 'upload:' || upload_staging.id || '|%' LIMIT 1) AS paid_order_id,
+  (SELECT o.customer_charge_cents FROM orders o WHERE
+    o.result_reference = 'upload:' || upload_staging.id OR
+    o.result_reference LIKE 'upload:' || upload_staging.id || '|%' LIMIT 1) AS paid_order_charge_cents,
+  (SELECT o.status FROM orders o WHERE
+    o.result_reference = 'upload:' || upload_staging.id OR
+    o.result_reference LIKE 'upload:' || upload_staging.id || '|%' LIMIT 1) AS paid_order_status
 FROM upload_staging
       ORDER BY id DESC
       LIMIT ?
@@ -3536,7 +3609,7 @@ if (request.method === "POST" && url.pathname === "/api/admin/provider-tasks/del
 
     await ensureProviderTasksSchema(env);
     const task = await env.DB.prepare(
-      "SELECT id, telegram_id, status, result_url, provider_task_id FROM provider_tasks WHERE id=? LIMIT 1"
+      "SELECT id, upload_id, telegram_id, status, result_url, provider_task_id FROM provider_tasks WHERE id=? LIMIT 1"
     ).bind(taskId).first();
     if (!task) return json({ ok: false, error: "provider_task_not_found" }, 404, origin);
     if (task.status !== "delivery_sending") {
@@ -3552,6 +3625,10 @@ if (request.method === "POST" && url.pathname === "/api/admin/provider-tasks/del
       if (!update.meta?.changes) {
         return json({ ok: false, error: "task_delivery_review_conflict" }, 409, origin);
       }
+      await env.DB.prepare(`
+        UPDATE orders SET status='completed'
+        WHERE result_reference=? AND provider_task_id=? AND status='processing'
+      `).bind("upload:" + task.upload_id, task.provider_task_id).run();
       await writeAdminAudit(env, admin.telegram_id, task.telegram_id,
         "provider_delivery_confirmed_delivered", { task_id: taskId, note });
       return json({ ok: true, task_id: taskId, status: "completed" }, 200, origin);
@@ -3580,9 +3657,8 @@ if (request.method === "POST" && url.pathname === "/api/admin/provider-tasks/del
   }
 }
 
-// PHONE CHECK: PRICE QUOTE ONLY
-    // Minimum quantity is read from saved pricing.
-    // No order is created and no wallet is deducted.
+// PHONE CHECK: CUSTOMER PRICE QUOTE
+    // The final order is recalculated server-side from the uploaded file.
     // ------------------------------------------------
 
     
@@ -3672,8 +3748,8 @@ if (
       total_price_cents: quote.totalCents,
       currency: pricing.currency,
       service_enabled: Number(pricing.enabled) === 1,
-      can_order: false,
-      message: "Price estimate only. Customer ordering is disabled."
+      can_order: true,
+      message: "Quote calculated from current USDT pricing. Upload an authorised file to place an order."
     }, 200, origin);
 
   } catch (error) {
@@ -3715,32 +3791,189 @@ if (
     }
 
     // ------------------------------------------------
-    // SAFE ORDER REJECTION
-    // No order creation. No wallet deduction.
-    // ------------------------------------------------
-
-    if (
-      request.method === "POST" &&
-      url.pathname === "/api/phone-check/order"
-    ) {
+    // CUSTOMER: PAID PHONE-CHECK ORDER (MANUAL ADMIN FULFILMENT)
+    if (request.method === "POST" && url.pathname === "/api/phone-check/order") {
       try {
-        await getSessionUser(request, env);
+        const user = await getSessionUser(request, env);
+        const body = await readBody(request);
+        const uploadId = Number(body.upload_id);
+        const key = String(body.idempotency_key || "");
+        if (!Number.isSafeInteger(uploadId) || uploadId < 1 || !/^[A-Za-z0-9_-]{12,100}$/.test(key)) {
+          return json({ ok: false, error: "invalid_order_request" }, 400, origin);
+        }
+        await ensureCustomerOrderSchema(env);
+        const upload = await env.DB.prepare(`
+          SELECT id,user_id,telegram_file_id,file_name,resource_code,status,expires_at
+          FROM upload_staging WHERE id=? AND user_id=? LIMIT 1
+        `).bind(uploadId,user.id).first();
+        if (!upload || upload.resource_code!=="phoneCheck" ||
+            !["uploaded","reviewed"].includes(upload.status) ||
+            !upload.expires_at || new Date(upload.expires_at).getTime()<=Date.now()) {
+          return json({ ok:false,error:"upload_not_orderable" },409,origin);
+        }
+        const prior = await env.DB.prepare(`
+          SELECT id,status FROM orders WHERE user_id=? AND
+            (result_reference=? OR result_reference LIKE ?) LIMIT 1
+        `).bind(user.id,"upload:"+uploadId,"upload:"+uploadId+"|%").first();
+        if(prior) return json({ok:false,error:"upload_already_ordered",order_id:prior.id,status:prior.status},409,origin);
 
-        return json({
-          ok: false,
-          error: "service_disabled",
-          can_order: false,
-          message: "Order processing is not enabled yet."
-        }, 403, origin);
-      } catch {
-        return json({
-          ok: false,
-          error: "unauthorized"
-        }, 401, origin);
+        const pricing = await env.DB.prepare(`
+          SELECT provider_cost_cents,markup_type,markup_value,final_price_cents,
+                 pricing_unit_quantity,minimum_order_quantity,currency,enabled
+          FROM resource_pricing WHERE resource_code='phoneCheck' LIMIT 1
+        `).first();
+        if(!pricing || Number(pricing.enabled)!==1 || pricing.currency!=="USDT") {
+          return json({ok:false,error:"service_unavailable"},403,origin);
+        }
+        if(!env.TELEGRAM_BOT_TOKEN) throw new Error("telegram_storage_configuration_missing");
+        const fileInfoResponse=await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${encodeURIComponent(upload.telegram_file_id)}`);
+        const fileInfo=await fileInfoResponse.json();
+        const filePath=fileInfo?.result?.file_path;
+        if(!fileInfoResponse.ok || !fileInfo.ok || !filePath || filePath.includes("..")) throw new Error("uploaded_file_unavailable");
+        const fileResponse=await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`);
+        if(!fileResponse.ok) throw new Error("uploaded_file_unavailable");
+        const bytes=await fileResponse.arrayBuffer();
+        if(!bytes.byteLength || bytes.byteLength>20*1024*1024) throw new Error("invalid_uploaded_file_size");
+        const content=new TextDecoder("utf-8",{fatal:true}).decode(bytes);
+        const extension=String(upload.file_name||"").toLowerCase().split(".").pop();
+        if(!["txt","csv"].includes(extension)) return json({ok:false,error:"unsupported_file_type"},400,origin);
+        const entries=parseProviderPhoneEntries(content,extension);
+        if(entries.length<500 || entries.length>10000) return json({
+          ok:false,error:"invalid_phone_number_count",minimum:500,maximum:10000,unique_valid_numbers:entries.length
+        },400,origin);
+        const quote=calculatePrice(pricing,entries.length);
+        const results=await env.DB.batch([
+          env.DB.prepare(`
+            INSERT INTO orders (
+              user_id,resource_code,idempotency_key,customer_charge_cents,
+              estimated_provider_cost_cents,status,result_reference,quantity,
+              unit_price_cents,pricing_unit_quantity,currency,markup_type,
+              markup_value,minimum_order_quantity,provider_currency
+            )
+            SELECT ?,'phoneCheck',?,?,?,'pending',?,?,?,?,'USDT',?,?,?,'USD'
+            WHERE EXISTS(SELECT 1 FROM users WHERE id=? AND wallet_balance_cents>=?)
+          `).bind(user.id,key,quote.totalCents,quote.estimatedCostCents,"upload:"+uploadId,
+            entries.length,quote.unitPriceCents,quote.unitQuantity,pricing.markup_type,
+            Number(pricing.markup_value),quote.minimum,user.id,quote.totalCents),
+          env.DB.prepare(`
+            UPDATE users SET wallet_balance_cents=wallet_balance_cents-
+              (SELECT customer_charge_cents FROM orders WHERE idempotency_key=?)
+            WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE idempotency_key=?)
+          `).bind(key,user.id,key),
+          env.DB.prepare(`
+            INSERT INTO wallet_ledger(user_id,amount_cents,transaction_type,reference_id,description)
+            SELECT user_id,-customer_charge_cents,'order_charge','order:'||id,
+              'Phone Number Validation order charge'
+            FROM orders WHERE idempotency_key=?
+              AND NOT EXISTS(SELECT 1 FROM wallet_ledger
+                WHERE reference_id='order:'||orders.id AND transaction_type='order_charge')
+          `).bind(key)
+        ]);
+        if(!results[0]?.meta?.changes) {
+          const dup=await env.DB.prepare("SELECT id FROM orders WHERE idempotency_key=? LIMIT 1").bind(key).first();
+          if(dup)return json({ok:false,error:"idempotency_key_already_used",order_id:dup.id},409,origin);
+          return json({ok:false,error:"insufficient_wallet_balance"},402,origin);
+        }
+        const order=await env.DB.prepare("SELECT id,customer_charge_cents,quantity,status FROM orders WHERE idempotency_key=? LIMIT 1").bind(key).first();
+        return json({ok:true,order,wallet_debited:true,message:"Order received. Our admin team will review and process it."},201,origin);
+      } catch(error) {
+        if (String(error.message||"").includes("UNIQUE constraint failed")) {
+          return json({ok:false,error:"upload_already_ordered"},409,origin);
+        }
+        const status=error.message==="unauthorized"?401:
+          ["invalid_json","unsupported_file_type","invalid_phone_numbers","ambiguous_or_invalid_csv_row"].includes(error.message)?400:
+          ["invalid_pricing_configuration","unsupported_pricing_type","invalid_order_amount"].includes(error.message)?500:502;
+        return json({ok:false,error:status===502?"order_creation_failed":error.message},status,origin);
       }
     }
 
-    // ------------------------------------------------
+    // ADMIN: PAID CUSTOMER ORDER QUEUE
+    if(request.method==="GET" && url.pathname==="/api/admin/orders") {
+      try {
+        await requireAdmin(request,env);
+        await ensureCustomerOrderSchema(env);
+        await ensureProviderTasksSchema(env);
+        const result=await env.DB.prepare(`
+          SELECT o.id,o.user_id,u.telegram_id,u.username,u.first_name,o.resource_code,
+            o.quantity,o.customer_charge_cents,o.currency,o.status,o.result_reference,
+            o.provider_task_id,o.created_at,
+            CAST(substr(o.result_reference,8) AS INTEGER) AS upload_id,
+            (SELECT pt.status FROM provider_tasks pt
+              WHERE pt.upload_id=CAST(substr(o.result_reference,8) AS INTEGER) LIMIT 1) AS provider_task_status,
+            EXISTS(SELECT 1 FROM provider_tasks pt
+              WHERE pt.upload_id=CAST(substr(o.result_reference,8) AS INTEGER)) AS provider_task_exists,
+            EXISTS(SELECT 1 FROM wallet_ledger l WHERE l.reference_id='order_refund:'||o.id
+              AND l.transaction_type='order_refund') AS refunded
+          FROM orders o JOIN users u ON u.id=o.user_id ORDER BY o.id DESC LIMIT 100
+        `).all();
+        return json({ok:true,orders:result.results||[]},200,origin);
+      } catch(error) {
+        const status=error.message==="unauthorized"?401:error.message==="admin_access_required"?403:500;
+        return json({ok:false,error:error.message||"admin_orders_failed"},status,origin);
+      }
+    }
+
+    // ADMIN: ONE-TIME MANUAL REFUND FOR FAILED ORDERS
+    if(request.method==="POST" && url.pathname==="/api/admin/orders/refund") {
+      try {
+        const admin=await requireAdmin(request,env);
+        await ensureCustomerOrderSchema(env);
+        const body=await readBody(request);
+        const orderId=Number(body.order_id);
+        const reason=String(body.reason||"").trim();
+        if(!Number.isSafeInteger(orderId)||orderId<1||reason.length<8||reason.length>500) {
+          return json({ok:false,error:"valid_order_id_and_refund_reason_required"},400,origin);
+        }
+        const order=await env.DB.prepare(`
+          SELECT o.id,o.user_id,o.status,o.customer_charge_cents,u.telegram_id
+          FROM orders o JOIN users u ON u.id=o.user_id WHERE o.id=? LIMIT 1
+        `).bind(orderId).first();
+        if(!order)return json({ok:false,error:"order_not_found"},404,origin);
+        if(order.status!=="failed")return json({ok:false,error:"only_failed_orders_can_be_refunded"},409,origin);
+        const ref="order_refund:"+orderId;
+        const already=await env.DB.prepare(
+          "SELECT id FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund' LIMIT 1"
+        ).bind(ref).first();
+        if(already)return json({ok:false,error:"order_already_refunded"},409,origin);
+        await env.DB.batch([
+          env.DB.prepare(`
+            INSERT INTO wallet_ledger(user_id,amount_cents,transaction_type,reference_id,description)
+            SELECT user_id,customer_charge_cents,'order_refund',?,?
+            FROM orders WHERE id=? AND status='failed'
+              AND NOT EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')
+          `).bind(ref,"Manual refund: "+reason,orderId,ref),
+          env.DB.prepare(`
+            UPDATE users SET wallet_balance_cents=wallet_balance_cents+
+              (SELECT amount_cents FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')
+            WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND status='failed'
+              AND result_reference NOT LIKE '%|refunded')
+              AND EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')
+          `).bind(ref,order.user_id,orderId,ref),
+          env.DB.prepare(`
+            UPDATE orders SET result_reference=COALESCE(result_reference,'')||'|refunded'
+            WHERE id=? AND status='failed' AND result_reference NOT LIKE '%|refunded'
+          `).bind(orderId)
+        ]);
+        await writeAdminAudit(env,admin.telegram_id,String(order.user_id),
+          "customer_order_manual_refund",{order_id:orderId,amount_cents:order.customer_charge_cents,reason});
+        try {
+          await sendProviderTaskNotice(env, order.telegram_id,
+            "Your refund for order #" + orderId + " has been credited to your Data Verification wallet: " +
+            (Number(order.customer_charge_cents)/100).toFixed(2) + " USDT. Reason: " + reason);
+        } catch {}
+        return json({ok:true,order_id:orderId,refunded_cents:order.customer_charge_cents},200,origin);
+      } catch(error) {
+        if (String(error.message||"").includes("UNIQUE constraint failed")) {
+          return json({ok:false,error:"order_already_refunded"},409,origin);
+        }
+        const status=error.message==="unauthorized"?401:
+          error.message==="admin_access_required"?403:error.message==="invalid_json"?400:500;
+        return json({ok:false,error:error.message||"manual_refund_failed"},status,origin);
+      }
+    }
+
+    // Customer order processing is implemented above.
+
     // ADMIN: TEST TELEGRAM STORAGE CONNECTION
     // ------------------------------------------------
 

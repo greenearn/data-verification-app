@@ -86,7 +86,7 @@ footer{text-align:center;border-top:1px solid var(--line);padding:17px;margin-to
 (function(){
 "use strict";
 
-const API="https://data-verification-api.shrestharaj980888.workers.dev";
+const API=window.location.hostname==="data-verification-app-git-manual-a72ddf-shrestharaj980888-6433.vercel.app"?"https://manual-customer-orders-launch-data-verification-api.shrestharaj980888.workers.dev":"https://data-verification-api.shrestharaj980888.workers.dev";
 const app=document.getElementById("app");
 const tg=window.Telegram&&Telegram.WebApp?Telegram.WebApp:null;
 
@@ -96,6 +96,7 @@ let services=[];
 let adminServices=[];
 let categories=[];
 let selectedCode="";
+let uploadedFileId=null;
 let adminMode=false;
 let adminRole=null;
 let adminPermissions=[];
@@ -150,7 +151,7 @@ async function request(path,method="GET",body=null){
     if (data.error === "invalid_phone_number_count") {
       message = "Phone file count is outside the allowed range. " +
         "Unique valid numbers: " + Number(data.unique_valid_numbers ?? data.received ?? 0) +
-        "; required: " + Number(data.minimum ?? 2000) + "–" + Number(data.maximum ?? 10000) +
+        "; required: " + Number(data.minimum ?? 500) + "–" + Number(data.maximum ?? 10000) +
         ". Non-empty lines: " + Number(data.non_empty_lines ?? 0) +
         "; valid entries: " + Number(data.valid_entries ?? 0) +
         "; duplicates: " + Number(data.duplicate_entries ?? 0) + ".";
@@ -305,7 +306,7 @@ async function loadOrders(){
           <div>Service: ${esc(order.resource_code || "Unknown")}</div>
           <div>Quantity: ${esc(String(order.quantity ?? "—"))}</div>
           <div>Amount: ${esc(amount)}</div>
-          <div>Status: ${esc(order.status || "Unknown")}</div>
+          <div>Status: ${esc(order.refunded?"REFUNDED":(order.status || "Unknown"))}</div>
           <small>Created: ${esc(String(order.created_at || "—"))}</small>
         </div>
       `;
@@ -790,6 +791,7 @@ function renderDashboard(){
 </label>
 
       <button class="btn secondary" id="upload-file-button" type="button">Upload file</button>
+      <button class="btn hidden" id="place-order-button" type="button">Place order from wallet</button>
       <div id="upload-file-result" class="note">No file uploaded.</div>
 
       <label class="field" for="entries">Input list — one entry per line</label>
@@ -807,7 +809,7 @@ function renderDashboard(){
 <div id="preview-result" class="note">
   No input has been reviewed.
 </div>
-      <div class="note">Ordering is disabled. This screen only prepares and reviews your input locally.</div>
+      <div class="note">Phone Number Validation orders are charged from your USDT wallet and sent to our admin team for manual processing. Other services will be enabled as their integrations are completed.</div>
     </section>
 
 
@@ -1244,6 +1246,9 @@ document.getElementById("submit-number-request").onclick = async function () {
 
   document.getElementById("service-select").addEventListener("change",function(){
     selectedCode=this.value;
+    uploadedFileId=null;
+    const orderButton=document.getElementById("place-order-button");
+    if(orderButton)orderButton.classList.add("hidden");
     renderServices();
     updateEstimate();
   });
@@ -1285,16 +1290,56 @@ if (selectedCode === "phoneCheck") {
 
     try{
       const result=await request("/api/uploads","POST",form);
-
+      uploadedFileId=Number(result.upload_id);
+      const orderButton=document.getElementById("place-order-button");
+      if(orderButton){
+        const orderable=services.some(service=>service.resource_code==="phoneCheck"&&service.can_order);
+        orderButton.classList.toggle("hidden",selectedCode!=="phoneCheck"||!orderable);
+        orderButton.disabled=false;
+      }
       resultBox.textContent=
-        "File uploaded successfully. Upload ID: "+result.upload_id;
+        "File uploaded successfully. Upload ID: "+result.upload_id+
+        (selectedCode==="phoneCheck"?" · Your file is ready for a paid order.":"");
 
     }catch(error){
+      uploadedFileId=null;
       resultBox.textContent="Upload failed: "+error.message;
     }
   };
 
+  document.getElementById("place-order-button").onclick=async()=>{
+    const button=document.getElementById("place-order-button");
+    const resultBox=document.getElementById("upload-file-result");
+    if(!uploadedFileId||selectedCode!=="phoneCheck"){
+      resultBox.textContent="Upload a Phone Number Validation file first.";
+      return;
+    }
+    if(!confirm("Place this Phone Number Validation order? The final price will be calculated from your uploaded file and deducted from your USDT wallet."))return;
+    button.disabled=true;
+    button.textContent="Placing order…";
+    try{
+      const result=await request("/api/phone-check/order","POST",{
+        upload_id:uploadedFileId,
+        idempotency_key:crypto.randomUUID().replace(/-/g,"")
+      });
+      uploadedFileId=null;
+      button.classList.add("hidden");
+      resultBox.textContent="Order #"+result.order.id+" received. Charged "+
+        money(result.order.customer_charge_cents,"USDT")+
+        ". Our admin team will process it and send the result to your Telegram chat.";
+      await refreshWalletBalance();
+      await loadOrders();
+    }catch(error){
+      resultBox.textContent="Order not placed: "+error.message;
+      button.disabled=false;
+      button.textContent="Place order from wallet";
+    }
+  };
+
 document.getElementById("customer-file").addEventListener("change", async function(){
+  uploadedFileId=null;
+  const orderButton=document.getElementById("place-order-button");
+  if(orderButton)orderButton.classList.add("hidden");
   const file = this.files && this.files[0];
   const resultBox = document.getElementById("upload-file-result");
   const entriesBox = document.getElementById("entries");
@@ -1501,6 +1546,9 @@ function renderServices(){
   box.querySelectorAll("[data-code]").forEach(card=>{
     card.onclick=()=>{
       selectedCode=card.dataset.code;
+      uploadedFileId=null;
+      const orderButton=document.getElementById("place-order-button");
+      if(orderButton)orderButton.classList.add("hidden");
       select.value=selectedCode;
       renderServices();
       updateEstimate();
@@ -1561,7 +1609,7 @@ function updateEstimate(){
       " · Minimum quantity: " + minimum +
       " · Minimum price estimate: " +
       money(minimumPrice, service.currency) +
-      ". Ordering is disabled.";
+      ". Upload an eligible file to place an order.";
 
     return;
   }
@@ -1575,7 +1623,7 @@ function updateEstimate(){
   box.textContent =
     "Estimated price: " + money(total, service.currency) +
     " · Estimate quantity: " + amount.toLocaleString() +
-    " · Estimate only; ordering is disabled.";
+    " · Final charge is calculated from your uploaded file before order submission.";
 }
 
 
@@ -1672,7 +1720,7 @@ function adminMarkup(){
       </select>
       <div id="managed-admin-permissions" class="item">
         <strong>Sub Admin permissions</strong>
-        <label class="checkbox"><input type="checkbox" value="wallet_deposits"> Wallet deposit review</label>
+        <label class="checkbox"><input type="checkbox" value="wallet_deposits"> Wallet deposits and customer order refunds</label>
         <label class="checkbox"><input type="checkbox" value="catalogue_manage"> Catalogue, categories, services and pricing</label>
         <label class="checkbox"><input type="checkbox" value="checknumber_validate"> CheckNumber file validation</label>
         <label class="checkbox"><input type="checkbox" value="uploads_manage"> Customer upload review</label>
@@ -1905,9 +1953,18 @@ function adminMarkup(){
     <h3>CheckNumber provider tasks</h3>
     <button class="btn secondary" id="refresh-provider-tasks" type="button">Refresh tasks</button>
   </div>
-  <p>Only authorized phoneCheck uploads can be submitted. Provider processing may use provider balance. Customer wallets are not charged.</p>
+  <p>Paid customer orders are charged when placed. Admins manually submit paid uploads to CheckNumber and monitor delivery. Unbilled admin test uploads remain subject to the original test limit.</p>
   <div id="provider-tasks-message" class="muted">Provider task history has not been loaded.</div>
   <div id="provider-tasks-list"></div>
+</div>
+<div class="panel">
+  <div class="item-top">
+    <h3>Customer Paid Orders</h3>
+    <button class="btn secondary" id="admin-orders-refresh" type="button">Refresh orders</button>
+  </div>
+  <p class="muted">Review paid customer orders, submit the associated upload to CheckNumber, and manually refund failed orders after review.</p>
+  <div id="admin-orders-message" class="muted">Customer orders have not been loaded.</div>
+  <div id="admin-orders-list"></div>
 </div>
 <div class="panel">
   <h3>Manual Number File Requests</h3>
@@ -1926,7 +1983,7 @@ function adminMarkup(){
 
   <div id="number-requests-list"></div>
 </div>
-    <div class="note">Safety: provider tasks can be submitted by authorized admins for consented phoneCheck uploads. Customer orders, customer wallet deductions and automatic billing remain disabled.</div>
+    <div class="note">Manual launch mode: customers pay from their USDT wallet when placing an order. Admins manually submit paid orders, monitor delivery, and issue refunds for failed orders.</div>
     <button class="btn secondary" id="reload-admin">Refresh admin catalogue</button>
     <div id="admin-message" class="muted"></div>
   </section>`;
@@ -2106,6 +2163,7 @@ function applyAdminUiPermissions(){
   if(!section)return;
   const rules=[
     ["#admin-deposits-refresh","wallet_deposits"],
+    ["#admin-orders-refresh","wallet_deposits"],
     ["#new-category","catalogue_manage"],
     ["#admin-service-select","catalogue_manage"],
     ["#price-service","catalogue_manage"],
@@ -2116,6 +2174,7 @@ function applyAdminUiPermissions(){
   ];
   const panelPermissions=[
     ["Wallet deposit review","wallet_deposits"],
+    ["Customer Paid Orders","wallet_deposits"],
     ["Add a category","catalogue_manage"],
     ["Add or edit a service","catalogue_manage"],
     ["Service pricing","catalogue_manage"],
@@ -2303,6 +2362,79 @@ function wireAdmin(){
   wireAdminManagement();
   renderAdminCategories();
   fillServiceDropdowns();
+
+  const adminOrdersMessage=document.getElementById("admin-orders-message");
+  const adminOrdersList=document.getElementById("admin-orders-list");
+  async function loadAdminOrders(){
+    if(!adminOrdersMessage||!adminOrdersList)return;
+    adminOrdersMessage.textContent="Loading customer orders…";
+    try{
+      const data=await request("/api/admin/orders");
+      const orders=data.orders||[];
+      adminOrdersMessage.textContent="Customer orders: "+orders.length;
+      adminOrdersList.innerHTML=orders.map(order=>{
+        const customer=[order.first_name,order.username?"@"+order.username:"", "Telegram "+order.telegram_id].filter(Boolean).join(" · ");
+        const refundButton=order.status==="failed"&&!Number(order.refunded)
+          ?'<button class="btn danger manual-order-refund" data-order-id="'+Number(order.id)+'" type="button">Issue manual refund</button>'
+          :Number(order.refunded)?'<span class="pill">REFUNDED</span>':"";
+        const canSubmitPaidOrders=adminRole==="main_admin"||adminRole==="full_admin"||adminPermissions.includes("checknumber_validate");
+        const submitButton=canSubmitPaidOrders&&order.status==="pending"&&!Number(order.provider_task_exists)
+          ?'<button class="btn admin-submit-order" data-order-id="'+Number(order.id)+'" data-upload-id="'+Number(order.upload_id)+'" type="button">Submit paid order to CheckNumber</button>'
+          :"";
+        const uncertain=order.provider_task_status==="submission_unknown"
+          ?'<p class="error">Provider submission outcome is uncertain. Check the provider dashboard before taking action.</p>':"";
+        return '<div class="item"><div class="item-top"><strong>Order #'+esc(order.id)+'</strong><span class="pill">'+esc(Number(order.refunded)?"refunded":order.status)+'</span></div>'+
+          '<div class="muted">'+esc(customer)+'</div>'+
+          '<div class="muted">Service: '+esc(order.resource_code)+' · Quantity: '+esc(order.quantity)+'</div>'+
+          '<div class="muted">Customer charge: '+esc(money(order.customer_charge_cents,order.currency||"USDT"))+'</div>'+
+          '<div class="muted">Upload: '+esc(String(order.result_reference||"").replace("|refunded",""))+' · Provider: '+esc(order.provider_task_id||"not submitted")+'</div>'+
+          '<small>'+esc(formatDate(order.created_at))+'</small>'+uncertain+submitButton+refundButton+'</div>';
+      }).join("")||'<p class="muted">No customer orders yet.</p>';
+      adminOrdersList.querySelectorAll(".admin-submit-order").forEach(button=>{
+        button.onclick=async()=>{
+          const uploadId=Number(button.dataset.uploadId);
+          if(!uploadId||!confirm("Submit this paid customer order to CheckNumber? This uses your provider balance."))return;
+          button.disabled=true;
+          button.textContent="Submitting…";
+          try{
+            const result=await request("/api/admin/provider-tasks/submit","POST",{upload_id:uploadId});
+            alert("Paid order submitted. Provider task #"+result.task.id+".");
+            await loadAdminOrders();
+            await loadProviderTasks();
+            await loadAdminUploads();
+          }catch(error){
+            alert("Submission result: "+error.message+". If uncertain, check the provider dashboard before retrying.");
+            await loadAdminOrders();
+            button.disabled=false;
+            button.textContent="Submit paid order to CheckNumber";
+          }
+        };
+      });
+      adminOrdersList.querySelectorAll(".manual-order-refund").forEach(button=>{
+        button.onclick=async()=>{
+          const orderId=Number(button.dataset.orderId);
+          if(!confirm("Refund the full amount for failed order #"+orderId+" to the customer's wallet?"))return;
+          const reason=prompt("Enter the refund reason (at least 8 characters):");
+          if(reason===null)return;
+          if(reason.trim().length<8){alert("Please enter a clear refund reason.");return;}
+          button.disabled=true;
+          try{
+            const result=await request("/api/admin/orders/refund","POST",{order_id:orderId,reason:reason.trim()});
+            alert("Refund credited: "+money(result.refunded_cents,"USDT"));
+            await loadAdminOrders();
+          }catch(error){
+            alert("Refund failed: "+error.message);
+            button.disabled=false;
+          }
+        };
+      });
+    }catch(error){
+      adminOrdersMessage.textContent="Could not load customer orders: "+error.message;
+    }
+  }
+  const adminOrdersRefresh=document.getElementById("admin-orders-refresh");
+  if(adminOrdersRefresh)adminOrdersRefresh.onclick=loadAdminOrders;
+  loadAdminOrders();
 
   const providerBalanceButton=document.getElementById("provider-balance-refresh");
   const providerBalanceResult=document.getElementById("provider-balance-result");
@@ -2837,6 +2969,7 @@ async function loadNumberRequests() {
 
             <div class="muted">Upload ID: ${Number(upload.id)}</div>
             <div class="muted">Customer ID: ${Number(upload.user_id)}</div>
+            ${upload.paid_order_id?'<div class="muted">Paid order #'+Number(upload.paid_order_id)+' · '+esc(money(upload.paid_order_charge_cents,"USDT"))+' · '+esc(upload.paid_order_status||"pending")+'</div>':'<div class="muted">No customer payment linked to this upload.</div>'}
             <div class="muted">Service: ${esc(upload.resource_code||"Not specified")}</div>
             <div class="muted">File type: ${esc(upload.mime_type||"Unknown")}</div>
             <div class="muted">File size: ${size} KB</div>
