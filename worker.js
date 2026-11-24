@@ -4671,6 +4671,7 @@ if (
             "User: " + (user.first_name || "Unknown") + "\n" +
             "Username: @" + (user.username || "Not set") + "\n" +
             "Telegram ID: " + user.telegram_id + "\n" +
+            "Service: " + serviceName + " (" + serviceCode + ")\n" +
             "Country: " + countries[countryCode] + " (+" + countryCode + ")\n" +
             "Quantity: " + quantity + "\n" +
             "Type: " + numberType + "\n\n" +
@@ -4850,6 +4851,12 @@ claimedRequestId = requestId;
               chat_id: String(numberRequest.telegram_id),
               document: stored.file_id,
               caption: "Your requested file is ready. Request #" + requestId +
+                "\n\nPlease use it in the Mini App:" +
+                "\n1. Open Data Verification." +
+                "\n2. Go to Prepare Your Input List." +
+                "\n3. Select the service shown in your request." +
+                "\n4. Upload this file." +
+                "\n5. Click Review Input and follow the instructions." +
                 "\\n\\nPlease use it in the Mini App:" +
                 "\\n1. Open Data Verification." +
                 "\\n2. Go to Prepare Your Input List." +
