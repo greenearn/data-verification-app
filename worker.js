@@ -331,6 +331,8 @@ const ADMIN_PERMISSION_LABELS = {
 const ADMIN_ROUTE_PERMISSIONS = {
   "GET /api/admin/wallet/deposits": "wallet_deposits",
   "POST /api/admin/wallet/deposits/review": "wallet_deposits",
+  "GET /api/admin/orders": "wallet_deposits",
+  "POST /api/admin/orders/refund": "wallet_deposits",
   "GET /api/admin/catalogue": "catalogue_manage",
   "POST /api/admin/catalogue/import": "catalogue_manage",
   "POST /api/admin/checknumber/validate-upload": "checknumber_validate",
@@ -3579,7 +3581,7 @@ if (request.method === "POST" && url.pathname === "/api/admin/provider-tasks/del
 
     await ensureProviderTasksSchema(env);
     const task = await env.DB.prepare(
-      "SELECT id, telegram_id, status, result_url, provider_task_id FROM provider_tasks WHERE id=? LIMIT 1"
+      "SELECT id, upload_id, telegram_id, status, result_url, provider_task_id FROM provider_tasks WHERE id=? LIMIT 1"
     ).bind(taskId).first();
     if (!task) return json({ ok: false, error: "provider_task_not_found" }, 404, origin);
     if (task.status !== "delivery_sending") {
@@ -3595,6 +3597,10 @@ if (request.method === "POST" && url.pathname === "/api/admin/provider-tasks/del
       if (!update.meta?.changes) {
         return json({ ok: false, error: "task_delivery_review_conflict" }, 409, origin);
       }
+      await env.DB.prepare(`
+        UPDATE orders SET status='completed'
+        WHERE result_reference=? AND provider_task_id=? AND status='processing'
+      `).bind("upload:" + task.upload_id, task.provider_task_id).run();
       await writeAdminAudit(env, admin.telegram_id, task.telegram_id,
         "provider_delivery_confirmed_delivered", { task_id: taskId, note });
       return json({ ok: true, task_id: taskId, status: "completed" }, 200, origin);
