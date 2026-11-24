@@ -1394,6 +1394,28 @@ updateEstimate();
   }
 }
 
+function getPrepareServices(){
+  const selectable=[...services];
+  const canStagePhoneCheck =
+    adminRole==="main_admin" ||
+    adminRole==="full_admin" ||
+    adminPermissions.includes("checknumber_validate");
+
+  if(canStagePhoneCheck && !selectable.some(s=>s.resource_code==="phoneCheck")){
+    const adminPhoneCheck=adminServices.find(s=>s.resource_code==="phoneCheck");
+    if(adminPhoneCheck){
+      selectable.push({
+        ...adminPhoneCheck,
+        configured:false,
+        enabled:false,
+        can_order:false
+      });
+    }
+  }
+
+  return selectable;
+}
+
 function renderServices(){
   const box=document.getElementById("services-list");
   const select=document.getElementById("service-select");
@@ -1451,8 +1473,13 @@ function renderServices(){
 
   box.innerHTML=html||'<div class="panel"><p>No services currently listed.</p></div>';
 
+  const selectableServices=getPrepareServices();
   select.innerHTML='<option value="">Choose service</option>'+
-    services.map(s=>`<option value="${esc(s.resource_code)}">${esc(s.category)} — ${esc(s.name)}</option>`).join("");
+    selectableServices.map(s=>{
+      const adminOnly=s.resource_code==="phoneCheck" &&
+        !services.some(customerService=>customerService.resource_code==="phoneCheck");
+      return `<option value="${esc(s.resource_code)}">${adminOnly?"ADMIN ONLY — ":""}${esc(s.category)} — ${esc(s.name)}</option>`;
+    }).join("");
 
   select.value=selectedCode;
 
@@ -1477,12 +1504,20 @@ function updateEstimate(){
 
   if (!box || !quantity) return;
 
-  const service = services.find(
+  const service = getPrepareServices().find(
     s => s.resource_code === selectedCode
   );
 
   if (!service) {
     box.textContent = "Select a service to view its pricing.";
+    return;
+  }
+
+  if (
+    selectedCode==="phoneCheck" &&
+    !services.some(s=>s.resource_code==="phoneCheck")
+  ) {
+    box.textContent = "Admin-only staging: Phone Number Validation. Uploading stores the file for review only; it does not submit a provider task or charge your wallet.";
     return;
   }
 
@@ -1535,7 +1570,7 @@ function updateEstimate(){
 
 
 function previewInput(){
-  const service = services.find(
+  const service = getPrepareServices().find(
     s => s.resource_code === selectedCode
   );
 
