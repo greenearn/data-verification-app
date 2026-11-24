@@ -260,6 +260,8 @@ async function login(){
         const admin=await request("/api/admin/catalogue");
         categories=admin.categories||[];
         adminServices=admin.services||adminServices;
+        const globalMarkupInput=document.getElementById("global-markup");
+        if(globalMarkupInput)globalMarkupInput.value=String(admin.global_markup_percentage??10);
       }catch(error){
         console.warn("Admin catalogue unavailable:",error.message);
       }
@@ -1314,7 +1316,7 @@ const consentBox = document.getElementById("phone-consent");
 
 if (!consentBox.checked) {
   resultBox.textContent =
-    "Please confirm that you have permission to submit these phone numbers.";
+    "Please confirm that you own this list or have permission to submit it for the selected service.";
   return;
 }
     const form=new FormData();
