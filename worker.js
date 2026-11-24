@@ -3159,6 +3159,13 @@ const form = await request.formData();
         }
       }
 
+      const uniqueValid = taskType === "phoneCheck"
+        ? [...new Set(valid)]
+        : valid;
+      const duplicateEntries = taskType === "phoneCheck"
+        ? valid.length - uniqueValid.length
+        : 0;
+
       return json({
         ok: true,
         mode: "dry_run",
@@ -3166,8 +3173,13 @@ const form = await request.formData();
         file_name: file.name,
         file_type: extension,
         task_type: taskType,
+        non_empty_lines: lines.length,
         total_entries: valid.length + invalid.length,
         valid_entries: valid.length,
+        unique_valid_numbers: taskType === "phoneCheck"
+          ? uniqueValid.length
+          : null,
+        duplicate_entries: duplicateEntries,
         invalid_entries: invalid.length,
         invalid_rows: invalid.slice(0, 50),
         message: "File validated. Nothing was submitted to CheckNumber.ai."
