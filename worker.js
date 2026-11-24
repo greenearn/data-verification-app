@@ -1969,11 +1969,11 @@ if (
 
     try {
       await createUserNotification(env,user.id,"Deposit request received",
-        "Your deposit request #"+result.meta.last_row_id+" for "+money(amountCents,"USDT")+" is awaiting admin review.",
+        "Your deposit request #"+result.meta.last_row_id+" for "+(amountCents/100).toFixed(2)+" USDT"+" is awaiting admin review.",
         "deposit_pending",result.meta.last_row_id);
       await createAdminNotifications(env,"New deposit request",
         (user.first_name||"Customer")+(user.username?" · @"+user.username:"")+
-        " · Telegram "+user.telegram_id+" submitted "+money(amountCents,"USDT")+
+        " · Telegram "+user.telegram_id+" submitted "+(amountCents/100).toFixed(2)+" USDT"+
         " via "+paymentMethod+". Deposit #"+result.meta.last_row_id,
         "deposit_pending",result.meta.last_row_id);
     } catch(notificationError) {
@@ -2299,7 +2299,7 @@ if (
         ).bind(depositId).first();
         if(depositOwner) await createUserNotification(env,depositOwner.user_id,
           "Deposit approved","Deposit #"+depositId+" was approved. "+
-          money(depositOwner.amount_cents,"USDT")+" has been credited to your wallet.",
+          (depositOwner.amount_cents/100).toFixed(2)+" USDT"+" has been credited to your wallet.",
           "deposit_approved",depositId);
       } catch(notificationError) {
         console.error("Deposit approval notification failed:",notificationError.message);
