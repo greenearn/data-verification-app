@@ -1019,17 +1019,79 @@ async function ensureProviderTasksSchema(env) {
   `).run();
 }
 
-function safeProviderResultUrl(value) {
+function safeProviderResultUrl(value, env) {
   try {
     const url = new URL(String(value || ""));
-    if (url.protocol !== "https:" || url.username || url.password) return null;
-    const host = url.hostname.toLowerCase();
-    if (host === "localhost" || host.endsWith(".localhost") ||
-        host.endsWith(".local") || /^127\./.test(host) ||
-        /^10\./.test(host) || /^192\.168\./.test(host) ||
-        /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host)) return null;
+    const base = new URL(String(env.CN_BASE_URL || ""));
+    if (url.protocol !== "https:" || url.username || url.password ||
+        url.port || url.hash || !base.hostname) return null;
+    const allowedHosts = new Set([
+      base.hostname.toLowerCase(),
+      ...String(env.CN_RESULT_HOSTS || "").split(",")
+        .map(host => host.trim().toLowerCase())
+        .filter(Boolean)
+    ]);
+    if (!allowedHosts.has(url.hostname.toLowerCase())) return null;
     return url.toString();
   } catch { return null; }
+}
+
+function parseCsvFields(line) {
+  const fields = [];
+  let value = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (quoted && line[i + 1] === '"') {
+        value += '"';
+        i++;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (ch === "," && !quoted) {
+      fields.push(value.trim());
+      value = "";
+    } else {
+      value += ch;
+    }
+  }
+  if (quoted) throw new Error("invalid_csv_quotes");
+  fields.push(value.trim());
+  return fields;
+}
+
+function parseProviderPhoneEntries(content, extension) {
+  const lines = String(content || "").replace(/^\\uFEFF/, "").split(/\\r?\\n/);
+  const csv = extension === "csv";
+  let phoneColumn = -1;
+  const entries = [];
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex].trim();
+    if (!line) continue;
+    const fields = csv ? parseCsvFields(line) : [line.replace(/^["']|["']$/g, "")];
+    if (lineIndex === 0 && csv) {
+      phoneColumn = fields.findIndex(field =>
+        ["phone", "phone_number", "number", "mobile", "mobile_number"]
+          .includes(field.toLowerCase().replace(/[\\s-]+/g, "_"))
+      );
+      if (phoneColumn >= 0) continue;
+    }
+    let candidate;
+    if (phoneColumn >= 0) {
+      candidate = (fields[phoneColumn] || "").trim().replace(/^["']|["']$/g, "");
+    } else {
+      const matches = fields.map(field => field.trim().replace(/^["']|["']$/g, ""))
+        .filter(field => /^\\+?[1-9]\\d{7,14}$/.test(field));
+      if (matches.length !== 1) throw new Error("ambiguous_or_invalid_csv_row");
+      candidate = matches[0];
+    }
+    if (!/^\\+?[1-9]\\d{7,14}$/.test(candidate)) {
+      throw new Error("invalid_phone_numbers");
+    }
+    entries.push(candidate);
+  }
+  return [...new Set(entries)];
 }
 
 async function providerApi(env, path, options = {}) {
@@ -1092,16 +1154,9 @@ async function submitStagedProviderTask(env, uploadId) {
     if (!bytes.byteLength || bytes.byteLength > 20 * 1024 * 1024) throw new Error("provider_file_size_invalid");
     const content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     const extension = String(upload.file_name || "").toLowerCase().split(".").pop();
-    const parsedEntries = content.split(/\r?\n/).map(line => {
-      const value = extension === "csv" ? line.split(",")[0] : line;
-      return value.trim().replace(/^["']|["']$/g, "");
-    }).filter(Boolean);
-    const entries = [...new Set(parsedEntries)];
-    if (entries[0] && ["phone","phone_number","number"].includes(entries[0].toLowerCase())) {
-      entries.shift();
-    }
+    if (!["csv", "txt"].includes(extension)) throw new Error("unsupported_file_type");
+    const entries = parseProviderPhoneEntries(content, extension);
     if (entries.length < 2000 || entries.length > 10000) throw new Error("provider_quantity_out_of_range");
-    if (entries.some(x => !/^\+?[1-9]\d{7,14}$/.test(x))) throw new Error("invalid_phone_numbers");
 
     const form = new FormData();
     const normalizedFile = entries.join("\n") + "\n";
@@ -1129,11 +1184,15 @@ async function submitStagedProviderTask(env, uploadId) {
         reviewed_at=CURRENT_TIMESTAMP WHERE id=?
     `).bind(providerTaskId, uploadId).run();
     return { id: localId, provider_task_id: providerTaskId, status: "submitted", quantity: entries.length };
-  } catch (error) {
-    await env.DB.prepare(`
+    const definiteProviderRejection =
+      [400, 401, 402, 403, 404, 413].includes(Number(error.providerStatus));
+    const finalStatus = providerSubmissionStarted && !definiteProviderRejection
+      ? "submission_unknown"
+      : "failed";
+    await env.DB.prepare(\`
       UPDATE provider_tasks SET status=?, last_error=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
-    `).bind(
-      providerSubmissionStarted ? "submission_unknown" : "failed",
+    \`).bind(
+      finalStatus,
       String(error.message || "submission_failed").slice(0, 200), localId
     ).run();
     throw error;
@@ -1171,14 +1230,28 @@ async function processProviderTask(env, task) {
     return "processing";
   }
 
-  const resultUrl = safeProviderResultUrl(provider.result_url);
-  if (!resultUrl) throw new Error("provider_result_url_invalid");
-  const resultResponse = await fetch(resultUrl);
+  const resultUrl = safeProviderResultUrl(provider.result_url, env);
+  if (!resultUrl) throw new Error("provider_result_url_not_allowlisted");
+  const resultResponse = await fetch(resultUrl, { redirect: "manual" });
+  if (resultResponse.status >= 300 && resultResponse.status < 400) {
+    throw new Error("provider_result_redirect_blocked");
+  }
   if (!resultResponse.ok) throw new Error("provider_result_download_failed");
   const resultBytes = await resultResponse.arrayBuffer();
   if (!resultBytes.byteLength || resultBytes.byteLength > 20 * 1024 * 1024) throw new Error("provider_result_size_invalid");
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error("telegram_storage_configuration_missing");
 
+  // Claim delivery before calling Telegram. If the network outcome is uncertain,
+  // leave the task in delivery_sending for manual review rather than auto-sending
+  // a duplicate result file on the next cron run.
+  const deliveryClaim = await env.DB.prepare(\`
+    UPDATE provider_tasks SET status='delivery_sending', result_url=?,
+      updated_at=CURRENT_TIMESTAMP
+    WHERE id=? AND status IN ('submitted','processing','delivery_pending')
+  \`).bind(resultUrl, task.id).run();
+  if (!deliveryClaim.meta?.changes) throw new Error("provider_delivery_already_claimed");
+
+  const deliveryForm = new FormData();
   const deliveryForm = new FormData();
   deliveryForm.append("chat_id", String(task.telegram_id));
   deliveryForm.append("document", new Blob([resultBytes], { type: "application/zip" }), "verification-result-" + task.id + ".zip");
