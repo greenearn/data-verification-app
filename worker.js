@@ -2894,7 +2894,16 @@ if (
   reviewed_by,
   CASE WHEN EXISTS (
     SELECT 1 FROM provider_tasks pt WHERE pt.upload_id = upload_staging.id
-  ) THEN 1 ELSE 0 END AS provider_task_exists
+  ) THEN 1 ELSE 0 END AS provider_task_exists,
+  (SELECT o.id FROM orders o WHERE
+    o.result_reference = 'upload:' || upload_staging.id OR
+    o.result_reference LIKE 'upload:' || upload_staging.id || '|%' LIMIT 1) AS paid_order_id,
+  (SELECT o.customer_charge_cents FROM orders o WHERE
+    o.result_reference = 'upload:' || upload_staging.id OR
+    o.result_reference LIKE 'upload:' || upload_staging.id || '|%' LIMIT 1) AS paid_order_charge_cents,
+  (SELECT o.status FROM orders o WHERE
+    o.result_reference = 'upload:' || upload_staging.id OR
+    o.result_reference LIKE 'upload:' || upload_staging.id || '|%' LIMIT 1) AS paid_order_status
 FROM upload_staging
       ORDER BY id DESC
       LIMIT ?
