@@ -3763,6 +3763,164 @@ if (
     }
 
     // ------------------------------------------------
+    // CUSTOMER: PAID PHONE-CHECK ORDER (MANUAL ADMIN FULFILMENT)
+    if (request.method === "POST" && url.pathname === "/api/phone-check/order") {
+      try {
+        const user = await getSessionUser(request, env);
+        const body = await readBody(request);
+        const uploadId = Number(body.upload_id);
+        const key = String(body.idempotency_key || "");
+        if (!Number.isSafeInteger(uploadId) || uploadId < 1 || !/^[A-Za-z0-9_-]{12,100}$/.test(key)) {
+          return json({ ok: false, error: "invalid_order_request" }, 400, origin);
+        }
+        const upload = await env.DB.prepare(`
+          SELECT id,user_id,telegram_file_id,file_name,resource_code,status
+          FROM upload_staging WHERE id=? AND user_id=? LIMIT 1
+        `).bind(uploadId,user.id).first();
+        if (!upload || upload.resource_code!=="phoneCheck" || !["uploaded","reviewed"].includes(upload.status)) {
+          return json({ ok:false,error:"upload_not_orderable" },409,origin);
+        }
+        const prior = await env.DB.prepare(`
+          SELECT id,status FROM orders WHERE user_id=? AND
+            (result_reference=? OR result_reference LIKE ?) LIMIT 1
+        `).bind(user.id,"upload:"+uploadId,"upload:"+uploadId+"|%").first();
+        if(prior) return json({ok:false,error:"upload_already_ordered",order_id:prior.id,status:prior.status},409,origin);
+
+        const pricing = await env.DB.prepare(`
+          SELECT provider_cost_cents,markup_type,markup_value,final_price_cents,
+                 pricing_unit_quantity,minimum_order_quantity,currency,enabled
+          FROM resource_pricing WHERE resource_code='phoneCheck' LIMIT 1
+        `).first();
+        if(!pricing || Number(pricing.enabled)!==1 || pricing.currency!=="USDT") {
+          return json({ok:false,error:"service_unavailable"},403,origin);
+        }
+        if(!env.TELEGRAM_BOT_TOKEN) throw new Error("telegram_storage_configuration_missing");
+        const fileInfoResponse=await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${encodeURIComponent(upload.telegram_file_id)}`);
+        const fileInfo=await fileInfoResponse.json();
+        const filePath=fileInfo?.result?.file_path;
+        if(!fileInfoResponse.ok || !fileInfo.ok || !filePath || filePath.includes("..")) throw new Error("uploaded_file_unavailable");
+        const fileResponse=await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`);
+        if(!fileResponse.ok) throw new Error("uploaded_file_unavailable");
+        const bytes=await fileResponse.arrayBuffer();
+        if(!bytes.byteLength || bytes.byteLength>20*1024*1024) throw new Error("invalid_uploaded_file_size");
+        const content=new TextDecoder("utf-8",{fatal:true}).decode(bytes);
+        const extension=String(upload.file_name||"").toLowerCase().split(".").pop();
+        if(!["txt","csv"].includes(extension)) return json({ok:false,error:"unsupported_file_type"},400,origin);
+        const entries=parseProviderPhoneEntries(content,extension);
+        if(entries.length<2000 || entries.length>10000) return json({
+          ok:false,error:"invalid_phone_number_count",minimum:2000,maximum:10000,unique_valid_numbers:entries.length
+        },400,origin);
+        const quote=calculatePrice(pricing,entries.length);
+        const results=await env.DB.batch([
+          env.DB.prepare(`
+            INSERT INTO orders (
+              user_id,resource_code,idempotency_key,customer_charge_cents,
+              estimated_provider_cost_cents,status,result_reference,quantity,
+              unit_price_cents,pricing_unit_quantity,currency,markup_type,
+              markup_value,minimum_order_quantity,provider_currency
+            )
+            SELECT ?,'phoneCheck',?,?,?,'pending',?,?,?,?,'USDT',?,?,?,'USD'
+            WHERE EXISTS(SELECT 1 FROM users WHERE id=? AND wallet_balance_cents>=?)
+          `).bind(user.id,key,quote.totalCents,quote.estimatedCostCents,"upload:"+uploadId,
+            entries.length,quote.unitPriceCents,quote.unitQuantity,pricing.markup_type,
+            Number(pricing.markup_value),quote.minimum,user.id,quote.totalCents),
+          env.DB.prepare(`
+            UPDATE users SET wallet_balance_cents=wallet_balance_cents-
+              (SELECT customer_charge_cents FROM orders WHERE idempotency_key=?)
+            WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE idempotency_key=?)
+          `).bind(key,user.id,key),
+          env.DB.prepare(`
+            INSERT INTO wallet_ledger(user_id,amount_cents,transaction_type,reference_id,description)
+            SELECT user_id,-customer_charge_cents,'order_charge','order:'||id,
+              'Phone Number Validation order charge'
+            FROM orders WHERE idempotency_key=?
+              AND NOT EXISTS(SELECT 1 FROM wallet_ledger
+                WHERE reference_id='order:'||orders.id AND transaction_type='order_charge')
+          `).bind(key)
+        ]);
+        if(!results[0]?.meta?.changes) {
+          const dup=await env.DB.prepare("SELECT id FROM orders WHERE idempotency_key=? LIMIT 1").bind(key).first();
+          if(dup)return json({ok:false,error:"idempotency_key_already_used",order_id:dup.id},409,origin);
+          return json({ok:false,error:"insufficient_wallet_balance"},402,origin);
+        }
+        const order=await env.DB.prepare("SELECT id,customer_charge_cents,quantity,status FROM orders WHERE idempotency_key=? LIMIT 1").bind(key).first();
+        return json({ok:true,order,wallet_debited:true,message:"Order received. Our admin team will review and process it."},201,origin);
+      } catch(error) {
+        const status=error.message==="unauthorized"?401:
+          error.message==="invalid_json"?400:
+          ["invalid_pricing_configuration","unsupported_pricing_type","invalid_order_amount"].includes(error.message)?500:502;
+        return json({ok:false,error:status===502?"order_creation_failed":error.message},status,origin);
+      }
+    }
+
+    // ADMIN: PAID CUSTOMER ORDER QUEUE
+    if(request.method==="GET" && url.pathname==="/api/admin/orders") {
+      try {
+        await requireAdmin(request,env);
+        const result=await env.DB.prepare(`
+          SELECT o.id,o.user_id,u.telegram_id,u.username,u.first_name,o.resource_code,
+            o.quantity,o.customer_charge_cents,o.currency,o.status,o.result_reference,
+            o.provider_task_id,o.created_at,
+            EXISTS(SELECT 1 FROM wallet_ledger l WHERE l.reference_id='order_refund:'||o.id
+              AND l.transaction_type='order_refund') AS refunded
+          FROM orders o JOIN users u ON u.id=o.user_id ORDER BY o.id DESC LIMIT 100
+        `).all();
+        return json({ok:true,orders:result.results||[]},200,origin);
+      } catch(error) {
+        const status=error.message==="unauthorized"?401:error.message==="admin_access_required"?403:500;
+        return json({ok:false,error:error.message||"admin_orders_failed"},status,origin);
+      }
+    }
+
+    // ADMIN: ONE-TIME MANUAL REFUND FOR FAILED ORDERS
+    if(request.method==="POST" && url.pathname==="/api/admin/orders/refund") {
+      try {
+        const admin=await requireAdmin(request,env);
+        const body=await readBody(request);
+        const orderId=Number(body.order_id);
+        const reason=String(body.reason||"").trim();
+        if(!Number.isSafeInteger(orderId)||orderId<1||reason.length<8||reason.length>500) {
+          return json({ok:false,error:"valid_order_id_and_refund_reason_required"},400,origin);
+        }
+        const order=await env.DB.prepare(
+          "SELECT id,user_id,status,customer_charge_cents FROM orders WHERE id=? LIMIT 1"
+        ).bind(orderId).first();
+        if(!order)return json({ok:false,error:"order_not_found"},404,origin);
+        if(order.status!=="failed")return json({ok:false,error:"only_failed_orders_can_be_refunded"},409,origin);
+        const ref="order_refund:"+orderId;
+        const already=await env.DB.prepare(
+          "SELECT id FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund' LIMIT 1"
+        ).bind(ref).first();
+        if(already)return json({ok:false,error:"order_already_refunded"},409,origin);
+        await env.DB.batch([
+          env.DB.prepare(`
+            INSERT INTO wallet_ledger(user_id,amount_cents,transaction_type,reference_id,description)
+            SELECT user_id,customer_charge_cents,'order_refund',?,?
+            FROM orders WHERE id=? AND status='failed'
+              AND NOT EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')
+          `).bind(ref,"Manual refund: "+reason,orderId,ref),
+          env.DB.prepare(`
+            UPDATE users SET wallet_balance_cents=wallet_balance_cents+
+              (SELECT amount_cents FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')
+            WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND status='failed'
+              AND result_reference NOT LIKE '%|refunded')
+              AND EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')
+          `).bind(ref,order.user_id,orderId,ref),
+          env.DB.prepare(`
+            UPDATE orders SET result_reference=COALESCE(result_reference,'')||'|refunded'
+            WHERE id=? AND status='failed' AND result_reference NOT LIKE '%|refunded'
+          `).bind(orderId)
+        ]);
+        await writeAdminAudit(env,admin.telegram_id,String(order.user_id),
+          "customer_order_manual_refund",{order_id:orderId,amount_cents:order.customer_charge_cents,reason});
+        return json({ok:true,order_id:orderId,refunded_cents:order.customer_charge_cents},200,origin);
+      } catch(error) {
+        const status=error.message==="unauthorized"?401:
+          error.message==="admin_access_required"?403:error.message==="invalid_json"?400:500;
+        return json({ok:false,error:error.message||"manual_refund_failed"},status,origin);
+      }
+    }
+
     // SAFE ORDER REJECTION
     // No order creation. No wallet deduction.
     // ------------------------------------------------
