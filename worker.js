@@ -4773,12 +4773,15 @@ if (url.pathname === "/api/admin/security/lock" && request.method === "POST") {
   catch(e){return json({ok:false,error:"lock_failed"},401,origin);}
 }
 if (url.pathname === "/api/support/contacts" && request.method === "GET") {
+  await ensureAdminAccessSchema(env);
   await getSessionUser(request,env);const c=await env.DB.prepare("SELECT display_name,telegram_username,whatsapp_number,availability FROM support_contacts WHERE id=1").first();return json({ok:true,contacts:c||{display_name:"Customer Support",telegram_username:"",whatsapp_number:"",availability:"Available"}},200,origin);
 }
 if (url.pathname === "/api/support/chat" && request.method === "GET") {
+  await ensureAdminAccessSchema(env);
   const u=await getSessionUser(request,env);let c=await env.DB.prepare("SELECT id,status FROM support_conversations WHERE user_id=? ORDER BY id DESC LIMIT 1").bind(u.id).first();if(!c){const r=await env.DB.prepare("INSERT INTO support_conversations (user_id) VALUES (?)").bind(u.id).run();c={id:r.meta.last_row_id,status:"open"};}const m=await env.DB.prepare("SELECT id,sender_type,message,created_at FROM support_messages WHERE conversation_id=? ORDER BY id ASC LIMIT 200").bind(c.id).all();await env.DB.prepare("UPDATE support_messages SET read_at=CURRENT_TIMESTAMP WHERE conversation_id=? AND sender_type='admin' AND read_at IS NULL").bind(c.id).run();return json({ok:true,conversation:c,messages:m.results||[]},200,origin);
 }
 if (url.pathname === "/api/support/chat" && request.method === "POST") {
+  await ensureAdminAccessSchema(env);
   const u=await getSessionUser(request,env),b=await readBody(request),msg=String(b.message||"").trim();if(!msg||msg.length>2000)return json({ok:false,error:"message_must_be_1_to_2000_characters"},400,origin);let c=await env.DB.prepare("SELECT id,status FROM support_conversations WHERE user_id=? ORDER BY id DESC LIMIT 1").bind(u.id).first();if(!c||c.status==="closed"){const r=await env.DB.prepare("INSERT INTO support_conversations (user_id) VALUES (?)").bind(u.id).run();c={id:r.meta.last_row_id};}await env.DB.prepare("INSERT INTO support_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'customer',?,?)").bind(c.id,u.id,msg).run();await env.DB.prepare("UPDATE support_conversations SET last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(c.id).run();return json({ok:true},201,origin);
 }
 if (url.pathname === "/api/admin/support/settings" && request.method === "GET") {
