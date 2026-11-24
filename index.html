@@ -682,6 +682,120 @@ ${d.admin_note?`<div class="muted">Admin note: ${esc(d.admin_note)}</div>`:""}
   await loadWalletDeposits();
 }
 
+
+function renderAdminGate(configured){
+  app.innerHTML='<main class="wrap"><section class="admin-gate"><div class="admin-gate-icon">◆</div><p class="admin-label">PRIVATE ADMIN ACCESS</p><h1>'+(configured?'Unlock Admin Dashboard':'Create Admin Password')+'</h1><p>'+(configured?'Enter your administrator password to continue. The dashboard locks after 15 minutes of inactivity.':'Set a private password for this administrator account. Use at least 10 characters.')+'</p><label class="field" for="admin-gate-password">Administrator password</label><input id="admin-gate-password" type="password" minlength="10" maxlength="128" autocomplete="'+(configured?'current-password':'new-password')+'" placeholder="Enter password"><button class="btn" id="admin-gate-submit" type="button">'+(configured?'Unlock dashboard':'Create password')+'</button><p id="admin-gate-message" class="muted"></p><button class="back-button" id="admin-gate-back" type="button">← Back to customer dashboard</button></section></main>';
+  const input=document.getElementById("admin-gate-password"),button=document.getElementById("admin-gate-submit"),msg=document.getElementById("admin-gate-message");
+  button.onclick=async()=>{
+    const password=input.value;
+    if(!password){msg.textContent="Enter your password.";return;}
+    button.disabled=true;msg.textContent="Verifying securely…";
+    try{
+      if(!configured){await request("/api/admin/security/setup","POST",{password});configured=true;}
+      const result=await request("/api/admin/security/unlock","POST",{password});
+      adminUnlockToken=result.unlock_token;sessionStorage.setItem("dv_admin_unlock",adminUnlockToken);
+      input.value="";startAdminIdleLock();await renderAdminWorkspace();
+    }catch(error){msg.textContent=error.message;button.disabled=false;}
+  };
+  input.addEventListener("keydown",e=>{if(e.key==="Enter")button.click();});
+  document.getElementById("admin-gate-back").onclick=()=>{adminMode=false;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderDashboard();};
+}
+
+function startAdminIdleLock(){
+  if(adminIdleTimer)clearTimeout(adminIdleTimer);
+  const reset=()=>{if(!adminUnlockToken)return;if(adminIdleTimer)clearTimeout(adminIdleTimer);adminIdleTimer=setTimeout(()=>lockAdminDashboard(),15*60*1000);};
+  ["pointerdown","keydown","touchstart","mousemove"].forEach(event=>document.addEventListener(event,reset,{passive:true}));
+  reset();
+}
+async function lockAdminDashboard(){
+  if(!adminUnlockToken)return;
+  const old=adminUnlockToken;
+  adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");
+  if(adminIdleTimer)clearTimeout(adminIdleTimer);
+  try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":old}});}catch(e){}
+  renderAdminGate(true);
+}
+async function renderAdminWorkspace(){
+  try{
+    const data=await request("/api/admin/catalogue");
+    categories=data.categories||[];adminServices=data.services||[];globalMarkupPercentage=Number(data.global_markup_percentage??10);
+    app.innerHTML='<main class="wrap admin-workspace"><header><div><div class="admin-label">CONTROL CENTRE</div><div class="admin-shell-title">Administrator Dashboard</div><div class="admin-shell-subtitle">Secure operations · '+esc(adminRole||"Admin")+'</div></div><div class="admin-shell-actions"><button class="back-button" id="admin-back">← Customer portal</button><button class="back-button" id="admin-lock">Lock dashboard</button></div></header>'+adminMarkup()+'</main>';
+    document.getElementById("admin-back").onclick=()=>{if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}adminMode=false;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderDashboard();};
+    document.getElementById("admin-lock").onclick=lockAdminDashboard;
+    wireAdmin();wireSupportAdmin();startAdminIdleLock();
+  }catch(error){if(error.message==="admin_unlock_required"){adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderAdminGate(true);}else showError("Admin dashboard could not load: "+error.message);}
+}
+
+function formatSupportTime(value){try{return new Date(value).toLocaleString();}catch(e){return "";}}
+function renderSupportMessages(target,messages){
+  if(!target)return;
+  target.innerHTML=(messages||[]).map(m=>'<div class="support-bubble '+(m.sender_type==="admin"?"":"mine")+'">'+esc(m.message)+'<small>'+esc(m.sender_type==="admin"?"Support team":"You")+' · '+esc(formatSupportTime(m.created_at))+'</small></div>').join("")||'<p class="muted">No messages yet. Send a message to start the conversation.</p>';
+  target.scrollTop=target.scrollHeight;
+}
+async function wireSupportCustomer(){
+  const contactBox=document.getElementById("support-contact-grid"),thread=document.getElementById("customer-support-messages");
+  if(!contactBox||!thread)return;
+  async function refresh(){
+    try{
+      const [c,chat]=await Promise.all([request("/api/support/contacts"),request("/api/support/chat")]);
+      supportContacts=c.contacts||{};
+      const tgName=String(supportContacts.telegram_username||"").replace(/^@/,"");
+      const wa=String(supportContacts.whatsapp_number||"").replace(/[^0-9]/g,"");
+      contactBox.innerHTML='<div class="support-contact"><span class="support-contact-icon">✦</span><div><strong>'+esc(supportContacts.display_name||"Customer Support")+'</strong><p>'+esc(supportContacts.availability||"Available")+'</p></div></div>'+
+        (tgName?'<a class="support-contact" target="_blank" rel="noopener" href="https://t.me/'+encodeURIComponent(tgName)+'"><span class="support-contact-icon">➤</span><div><strong>Telegram Support</strong><p>@'+esc(tgName)+'</p></div></a>':'')+
+        (wa?'<a class="support-contact" target="_blank" rel="noopener" href="https://wa.me/'+wa+'"><span class="support-contact-icon">◉</span><div><strong>WhatsApp Support</strong><p>'+esc(supportContacts.whatsapp_number)+'</p></div></a>':'');
+      supportConversationId=chat.conversation?.id;renderSupportMessages(thread,chat.messages);
+    }catch(error){thread.innerHTML='<p class="error">'+esc(error.message)+'</p>';}
+  }
+  await refresh();
+  const send=document.getElementById("customer-support-send"),input=document.getElementById("customer-support-input"),status=document.getElementById("customer-support-status");
+  send.onclick=async()=>{const message=input.value.trim();if(!message)return;send.disabled=true;try{await request("/api/support/chat","POST",{message});input.value="";await refresh();status.textContent="Message sent. Replies will appear here."; }catch(e){status.textContent=e.message;}finally{send.disabled=false;}};
+  if(supportPollTimer)clearInterval(supportPollTimer);
+  supportPollTimer=setInterval(refresh,7000);
+}
+
+async function wireSupportAdmin(){
+  const settingsMessage=document.getElementById("support-settings-message");
+  try{
+    const result=await request("/api/admin/support/settings");
+    const x=result.settings||{};
+    document.getElementById("support-display-name").value=x.display_name||"Customer Support";
+    document.getElementById("support-telegram").value=x.telegram_username||"";
+    document.getElementById("support-whatsapp").value=x.whatsapp_number||"";
+    document.getElementById("support-availability").value=x.availability||"Available";
+  }catch(e){if(settingsMessage)settingsMessage.textContent=e.message;}
+  document.getElementById("support-settings-save").onclick=async()=>{
+    const button=document.getElementById("support-settings-save");button.disabled=true;
+    try{await request("/api/admin/support/settings","POST",{display_name:document.getElementById("support-display-name").value,telegram_username:document.getElementById("support-telegram").value,whatsapp_number:document.getElementById("support-whatsapp").value,availability:document.getElementById("support-availability").value});settingsMessage.textContent="Support contacts saved."; }
+    catch(e){settingsMessage.textContent=e.message;}finally{button.disabled=false;}
+  };
+  let selected=null;
+  async function loadInbox(){
+    try{
+      const data=await request("/api/admin/support/chats");
+      document.getElementById("support-inbox-list").innerHTML=(data.chats||[]).map(c=>'<div class="support-thread-item '+(selected===c.id?'active':'')+'" data-chat-id="'+Number(c.id)+'"><strong>'+esc(c.first_name||"Customer")+' · #'+Number(c.id)+'</strong><p>'+esc(c.last_message||"No messages")+'</p><small>'+esc(c.unread_count?c.unread_count+" unread":formatSupportTime(c.last_message_at))+'</small></div>').join("")||'<p class="muted">No customer conversations yet.</p>';
+      document.querySelectorAll("[data-chat-id]").forEach(el=>el.onclick=()=>{selected=Number(el.dataset.chatId);loadThread();loadInbox();});
+    }catch(e){document.getElementById("support-inbox-list").textContent=e.message;}
+  }
+  async function loadThread(){
+    if(!selected)return;
+    const data=await request("/api/admin/support/chats/messages?conversation_id="+selected);
+    document.getElementById("support-admin-thread-title").textContent=(data.conversation.first_name||"Customer")+" · Telegram ID "+data.conversation.telegram_id;
+    renderSupportMessages(document.getElementById("support-admin-messages"),data.messages);
+    document.getElementById("support-admin-send").disabled=false;
+  }
+  document.getElementById("support-admin-send").onclick=async()=>{
+    const input=document.getElementById("support-admin-reply"),message=input.value.trim();if(!selected||!message)return;
+    const button=document.getElementById("support-admin-send");button.disabled=true;
+    try{await request("/api/admin/support/chats/reply","POST",{conversation_id:selected,message});input.value="";await loadThread();await loadInbox();}
+    catch(e){document.getElementById("support-admin-thread-title").textContent=e.message;}finally{button.disabled=false;}
+  };
+  document.getElementById("support-inbox-refresh").onclick=loadInbox;
+  await loadInbox();
+  if(supportPollTimer)clearInterval(supportPollTimer);
+  supportPollTimer=setInterval(()=>{loadInbox();if(selected)loadThread().catch(()=>{});},7000);
+}
+
 function renderDashboard(){
   const name=user.first_name||"Customer";
 
