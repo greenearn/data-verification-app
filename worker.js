@@ -5374,6 +5374,24 @@ if (
   }, 200, origin);
 }
 // --------------------------------------------------
+// CUSTOMER DOWNLOAD OF AN ADMIN-PROVIDED NUMBER FILE
+if (request.method === "GET" && url.pathname === "/api/toolbox/number-file-requests/download") {
+  try {
+    const user=await getSessionUser(request,env);
+    const id=Number(url.searchParams.get("id"));
+    if(!Number.isInteger(id)||id<1)return json({ok:false,error:"invalid_request_id"},400,origin);
+    const row=await env.DB.prepare("SELECT admin_file_id,admin_file_name,status FROM number_file_requests WHERE id=? AND user_id=? LIMIT 1").bind(id,user.id).first();
+    if(!row||row.status!=="completed"||!row.admin_file_id)return json({ok:false,error:"file_not_available"},404,origin);
+    if(!env.TELEGRAM_BOT_TOKEN)return json({ok:false,error:"telegram_storage_not_configured"},503,origin);
+    const infoResponse=await fetch("https://api.telegram.org/bot"+env.TELEGRAM_BOT_TOKEN+"/getFile?file_id="+encodeURIComponent(row.admin_file_id));
+    const info=await infoResponse.json();const filePath=info?.result?.file_path;
+    if(!infoResponse.ok||!info.ok||!filePath||filePath.includes(".."))return json({ok:false,error:"telegram_file_unavailable"},502,origin);
+    const fileResponse=await fetch("https://api.telegram.org/file/bot"+env.TELEGRAM_BOT_TOKEN+"/"+filePath);
+    if(!fileResponse.ok)return json({ok:false,error:"file_download_failed"},502,origin);
+    const safeName=String(row.admin_file_name||("request-"+id+".txt")).replace(/[\\r\\n"\\\\]/g,"_").slice(0,180);
+    return new Response(fileResponse.body,{status:200,headers:{"Content-Type":"application/octet-stream","Content-Disposition":"attachment; filename=\""+safeName+"\"","Cache-Control":"private, no-store","Access-Control-Allow-Origin":origin||DEFAULT_ALLOWED_ORIGIN,"Access-Control-Expose-Headers":"Content-Disposition","Vary":"Origin"}});
+  } catch(error) { const status=error.message==="unauthorized"?401:500; return json({ok:false,error:error.message||"file_download_failed"},status,origin); }
+}
 // ADMIN REJECT NUMBER FILE REQUEST
 // --------------------------------------------------
 
