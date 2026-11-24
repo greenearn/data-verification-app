@@ -383,7 +383,8 @@ const ADMIN_PERMISSION_LABELS = {
   provider_balance: "Provider balance",
   storage_test: "Telegram storage test",
   support_manage: "Customer support inbox and contact settings",
-  users_manage: "Customer account management, wallet adjustments and Telegram messaging"
+  users_manage: "Customer account management, wallet adjustments and Telegram messaging",
+  notifications_view: "View and manage admin activity notifications"
 };
 
 const ADMIN_ROUTE_PERMISSIONS = {
@@ -418,6 +419,9 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "GET /api/admin/support/settings": "support_manage",
   "POST /api/admin/support/settings": "support_manage",
   "GET /api/admin/users": "users_manage",
+  "GET /api/admin/notifications": "notifications_view",
+  "POST /api/admin/notifications/read": "notifications_view",
+  "POST /api/admin/notifications/read-all": "notifications_view",
   "POST /api/admin/users/balance": "users_manage",
   "POST /api/admin/users/message": "users_manage",
   "GET /api/admin/broadcasts": "users_manage",
@@ -1795,6 +1799,12 @@ async function createAdminNotifications(
 
   await env.DB.batch(statements);
 }
+async function ensureNumberFileRequestServiceColumns(env) {
+  for (const [column,type] of [["service_code","TEXT"],["service_name","TEXT"],["consent_confirmed","INTEGER NOT NULL DEFAULT 0"]]) {
+    try { await env.DB.prepare("ALTER TABLE number_file_requests ADD COLUMN "+column+" "+type).run(); }
+    catch(error) { if(!String(error.message||"").toLowerCase().includes("duplicate column")) throw error; }
+  }
+}
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
@@ -2979,6 +2989,9 @@ if (
 
   throw consentError;
 }
+try { await createAdminNotifications(env,"New customer file upload",
+  (user.first_name||"Customer")+(user.username?" · @"+user.username:"")+" uploaded "+fileName+" for service "+service.resource_code+". Upload #"+inserted.meta.last_row_id,
+  "customer_upload",inserted.meta.last_row_id); } catch(notificationError) { console.error("Upload admin notification failed:",notificationError.message); }
 return json({
           ok: true,
           message: "file_uploaded_successfully",
@@ -4014,6 +4027,9 @@ if(request.method==="POST"&&url.pathname==="/api/services/order"){
       return json({ok:false,error:"insufficient_wallet_balance"},402,origin);
     }
     const order=await env.DB.prepare("SELECT id,customer_charge_cents,quantity,status FROM orders WHERE idempotency_key=? LIMIT 1").bind(key).first();
+    try { await createAdminNotifications(env,"New customer order",
+      (user.first_name||"Customer")+(user.username?" · @"+user.username:"")+" placed order #"+order.id+" for "+code+" · "+Number(order.quantity)+" entries · "+(Number(order.customer_charge_cents)/100).toFixed(2)+" USDT.",
+      "customer_order",order.id); } catch(notificationError) { console.error("Order admin notification failed:",notificationError.message); }
     return json({ok:true,order,wallet_debited:true,message:"Order received and queued for provider processing."},201,origin);
   }catch(error){
     if(String(error.message||"").includes("UNIQUE constraint failed"))return json({ok:false,error:"upload_already_ordered"},409,origin);
@@ -4578,6 +4594,7 @@ if (
     ) {
       try {
         const user = await getSessionUser(request, env);
+        await ensureNumberFileRequestServiceColumns(env);
         const body = await readBody(request);
 
         const countries = {
@@ -4606,8 +4623,12 @@ if (
         const countryCode = String(body.country_code || "").toUpperCase();
         const quantity = Number(body.quantity);
         const numberType = String(body.number_type || "mobile").toLowerCase();
+        const serviceCode=String(body.resource_code||"").trim().slice(0,100);
+        const requestedService=serviceCode?await env.DB.prepare("SELECT resource_code,name FROM service_catalogue WHERE resource_code=? AND is_listed=1 LIMIT 1").bind(serviceCode).first():null;
+        const serviceName=String(requestedService?.name||"").trim().slice(0,160);
 
         if (
+          body.consent_confirmed!==true || !requestedService || !serviceCode || !serviceName ||
           !countries[countryCode] ||
           !Number.isInteger(quantity) ||
           quantity < 1 ||
@@ -4638,23 +4659,12 @@ if (
 
         const inserted = await env.DB.prepare(`
           INSERT INTO number_file_requests (
-            user_id,
-            telegram_id,
-            username,
-            country_code,
-            country_name,
-            quantity,
-            number_type
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+            user_id,telegram_id,username,country_code,country_name,quantity,number_type,
+            service_code,service_name,consent_confirmed
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         `).bind(
-          user.id,
-          String(user.telegram_id),
-          user.username || null,
-          countryCode,
-          countries[countryCode],
-          quantity,
-          numberType
+          user.id,String(user.telegram_id),user.username||null,countryCode,
+          countries[countryCode],quantity,numberType,serviceCode,serviceName
         ).run();
 // Save individual customer consent records.
 
@@ -4668,6 +4678,7 @@ if (
             "User: " + (user.first_name || "Unknown") + "\n" +
             "Username: @" + (user.username || "Not set") + "\n" +
             "Telegram ID: " + user.telegram_id + "\n" +
+            "Service: " + serviceName + " (" + serviceCode + ")\n" +
             "Country: " + countries[countryCode] + " (+" + countryCode + ")\n" +
             "Quantity: " + quantity + "\n" +
             "Type: " + numberType + "\n\n" +
@@ -4692,7 +4703,7 @@ if (
           await createAdminNotifications(
             env,
             "New file request",
-            `Request #${requestId}: ${countries[countryCode]}, quantity ${quantity}.`,
+            `Request #${requestId}: ${serviceName}, ${countries[countryCode]}, quantity ${quantity}.`,
             "request_submitted",
             requestId
           );
@@ -4726,6 +4737,7 @@ if (
     ) {
       try {
         await requireAdmin(request, env);
+        await ensureNumberFileRequestServiceColumns(env);
 
         const result = await env.DB.prepare(`
           SELECT
@@ -4736,6 +4748,8 @@ if (
             country_name,
             quantity,
             number_type,
+            service_code,
+            service_name,
             status,
             admin_file_name,
             admin_note,
@@ -4843,7 +4857,13 @@ claimedRequestId = requestId;
             body: JSON.stringify({
               chat_id: String(numberRequest.telegram_id),
               document: stored.file_id,
-              caption: "Your requested file is ready. Request #" + requestId
+              caption: "Your requested file is ready. Request #" + requestId +
+                "\n\nPlease use it in the Mini App:" +
+                "\n1. Open Data Verification." +
+                "\n2. Go to Prepare Your Input List." +
+                "\n3. Select the service shown in your request." +
+                "\n4. Upload this file." +
+                "\n5. Click Review Input and follow the instructions."
             })
           }
         );
@@ -4994,7 +5014,7 @@ if (url.pathname === "/api/support/chat" && request.method === "GET") {
 }
 if (url.pathname === "/api/support/chat" && request.method === "POST") {
   await ensureAdminAccessSchema(env);
-  const u=await getSessionUser(request,env),b=await readBody(request),msg=String(b.message||"").trim();if(!msg||msg.length>2000)return json({ok:false,error:"message_must_be_1_to_2000_characters"},400,origin);let c=await env.DB.prepare("SELECT id,status FROM support_conversations WHERE user_id=? ORDER BY id DESC LIMIT 1").bind(u.id).first();if(!c||c.status==="closed"){const r=await env.DB.prepare("INSERT INTO support_conversations (user_id) VALUES (?)").bind(u.id).run();c={id:r.meta.last_row_id};}await env.DB.prepare("INSERT INTO support_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'customer',?,?)").bind(c.id,u.id,msg).run();await env.DB.prepare("UPDATE support_conversations SET last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(c.id).run();return json({ok:true},201,origin);
+  const u=await getSessionUser(request,env),b=await readBody(request),msg=String(b.message||"").trim();if(!msg||msg.length>2000)return json({ok:false,error:"message_must_be_1_to_2000_characters"},400,origin);let c=await env.DB.prepare("SELECT id,status FROM support_conversations WHERE user_id=? ORDER BY id DESC LIMIT 1").bind(u.id).first();if(!c||c.status==="closed"){const r=await env.DB.prepare("INSERT INTO support_conversations (user_id) VALUES (?)").bind(u.id).run();c={id:r.meta.last_row_id};}await env.DB.prepare("INSERT INTO support_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'customer',?,?)").bind(c.id,u.id,msg).run();await env.DB.prepare("UPDATE support_conversations SET last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(c.id).run();try{await createAdminNotifications(env,"New customer support message",(u.first_name||"Customer")+(u.username?" · @"+u.username:"")+" sent a message: "+msg.slice(0,220),"support_message",c.id);}catch(notificationError){console.error("Support admin notification failed:",notificationError.message);}return json({ok:true},201,origin);
 }
 if (url.pathname === "/api/admin/support/settings" && request.method === "GET") {
   try{await requireAdmin(request,env);const c=await env.DB.prepare("SELECT display_name,telegram_username,whatsapp_number,availability FROM support_contacts WHERE id=1").first();return json({ok:true,settings:c||{display_name:"Customer Support",telegram_username:"",whatsapp_number:"",availability:"Available"}},200,origin);}catch(e){return json({ok:false,error:e.message},e.message==="admin_unlock_required"?423:e.message==="unauthorized"?401:403,origin);}
@@ -5228,6 +5248,24 @@ if(request.method==="GET" && url.pathname==="/api/admin/users"){
   }
 }
 
+// ADMIN ACTIVITY NOTIFICATIONS
+if (url.pathname === "/api/admin/notifications" && request.method === "GET") {
+  try { const admin=await requireAdmin(request,env);
+    const rows=await env.DB.prepare("SELECT id,title,message,notification_type,related_request_id,created_at,read_at FROM user_notifications WHERE user_id=? ORDER BY id DESC LIMIT 100").bind(admin.id).all();
+    const unread=await env.DB.prepare("SELECT COUNT(*) AS total FROM user_notifications WHERE user_id=? AND read_at IS NULL").bind(admin.id).first();
+    return json({ok:true,notifications:rows.results||[],unread_count:Number(unread?.total||0)},200,origin);
+  } catch(error) { const status=error.message==="unauthorized"?401:(error.message==="admin_unlock_required"||error.message==="admin_access_required")?403:500; return json({ok:false,error:error.message||"admin_notifications_failed"},status,origin); }
+}
+if (url.pathname === "/api/admin/notifications/read" && request.method === "POST") {
+  try { const admin=await requireAdmin(request,env); const body=await request.json(); const id=Number(body.notification_id);
+    if(!Number.isInteger(id)||id<1)return json({ok:false,error:"invalid_notification_id"},400,origin);
+    await env.DB.prepare("UPDATE user_notifications SET read_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?").bind(id,admin.id).run(); return json({ok:true},200,origin);
+  } catch(error) { const status=error.message==="unauthorized"?401:(error.message==="admin_unlock_required"||error.message==="admin_access_required")?403:500; return json({ok:false,error:error.message||"admin_notification_update_failed"},status,origin); }
+}
+if (url.pathname === "/api/admin/notifications/read-all" && request.method === "POST") {
+  try { const admin=await requireAdmin(request,env); await env.DB.prepare("UPDATE user_notifications SET read_at=CURRENT_TIMESTAMP WHERE user_id=? AND read_at IS NULL").bind(admin.id).run(); return json({ok:true},200,origin);
+  } catch(error) { const status=error.message==="unauthorized"?401:(error.message==="admin_unlock_required"||error.message==="admin_access_required")?403:500; return json({ok:false,error:error.message||"admin_notification_update_failed"},status,origin); }
+}
 // NOTIFICATIONS API
 // --------------------------------------------------
 
@@ -5288,6 +5326,7 @@ if (
   request.method === "GET"
 ) {
   const user = await getSessionUser(request, env);
+  await ensureNumberFileRequestServiceColumns(env);
 
   const status = url.searchParams.get("status") || "all";
   const allowedStatuses = ["all", "pending", "completed", "rejected"];
@@ -5303,6 +5342,8 @@ if (
       country_name,
       quantity,
       number_type,
+      service_code,
+      service_name,
       status,
       admin_file_name,
       admin_note,
@@ -5331,6 +5372,24 @@ if (
   }, 200, origin);
 }
 // --------------------------------------------------
+// CUSTOMER DOWNLOAD OF AN ADMIN-PROVIDED NUMBER FILE
+if (request.method === "GET" && url.pathname === "/api/toolbox/number-file-requests/download") {
+  try {
+    const user=await getSessionUser(request,env);
+    const id=Number(url.searchParams.get("id"));
+    if(!Number.isInteger(id)||id<1)return json({ok:false,error:"invalid_request_id"},400,origin);
+    const row=await env.DB.prepare("SELECT admin_file_id,admin_file_name,status FROM number_file_requests WHERE id=? AND user_id=? LIMIT 1").bind(id,user.id).first();
+    if(!row||row.status!=="completed"||!row.admin_file_id)return json({ok:false,error:"file_not_available"},404,origin);
+    if(!env.TELEGRAM_BOT_TOKEN)return json({ok:false,error:"telegram_storage_not_configured"},503,origin);
+    const infoResponse=await fetch("https://api.telegram.org/bot"+env.TELEGRAM_BOT_TOKEN+"/getFile?file_id="+encodeURIComponent(row.admin_file_id));
+    const info=await infoResponse.json();const filePath=info?.result?.file_path;
+    if(!infoResponse.ok||!info.ok||!filePath||filePath.includes(".."))return json({ok:false,error:"telegram_file_unavailable"},502,origin);
+    const fileResponse=await fetch("https://api.telegram.org/file/bot"+env.TELEGRAM_BOT_TOKEN+"/"+filePath);
+    if(!fileResponse.ok)return json({ok:false,error:"file_download_failed"},502,origin);
+    const safeName=String(row.admin_file_name||("request-"+id+".txt")).replace(/[\\r\\n"\\\\]/g,"_").slice(0,180);
+    return new Response(fileResponse.body,{status:200,headers:{"Content-Type":"application/octet-stream","Content-Disposition":"attachment; filename=\""+safeName+"\"","Cache-Control":"private, no-store","Access-Control-Allow-Origin":origin||DEFAULT_ALLOWED_ORIGIN,"Access-Control-Expose-Headers":"Content-Disposition","Vary":"Origin"}});
+  } catch(error) { const status=error.message==="unauthorized"?401:500; return json({ok:false,error:error.message||"file_download_failed"},status,origin); }
+}
 // ADMIN REJECT NUMBER FILE REQUEST
 // --------------------------------------------------
 

@@ -145,6 +145,7 @@ input,select,textarea{border-radius:14px;padding:13px}
 .back-button{border:1px solid #e1e7f2;background:#fff;color:#34405a;border-radius:12px;padding:9px 13px;font-weight:700}
 @media(max-width:650px){.support-contact-grid,.support-admin-layout{grid-template-columns:1fr}.support-compose{grid-template-columns:1fr}.admin-workspace{padding:10px;border-radius:18px}.wrap{padding:14px 12px 45px}}
 
+.admin-shell-actions{display:flex;align-items:center;gap:8px;position:relative}.admin-bell-wrap{position:relative}.admin-bell{position:relative;width:38px;height:38px;border:1px solid #ffffff35;border-radius:12px;background:#ffffff14;color:#fff;font-size:19px;cursor:pointer}.admin-bell-count{position:absolute;top:-6px;right:-6px;min-width:17px;height:17px;padding:0 4px;border-radius:99px;background:#ff5268;color:#fff;font-size:10px;display:grid;place-items:center}.admin-bell-count:empty{display:none}.admin-notification-panel{display:none;position:absolute;z-index:1000;top:46px;right:0;width:min(360px,calc(100vw - 32px));max-height:65vh;overflow:auto;padding:12px;background:#fff;color:#1d2740;border:1px solid #e5eaf5;border-radius:16px;box-shadow:0 16px 42px #07111d44}.admin-notification-panel.open{display:block}.admin-notification-entry{padding:10px;border-bottom:1px solid #e8edf5;overflow-wrap:anywhere}.admin-notification-entry.unread{background:#f0f5ff}.admin-notification-entry p{color:#59677b}@media(max-width:560px){.admin-workspace>header{align-items:flex-start;gap:10px}.admin-shell-actions{flex-wrap:wrap;justify-content:flex-end}.admin-notification-panel{position:fixed;top:72px;right:12px;width:calc(100vw - 24px)}}
 /* Responsive notification popover */
 .notification-area{position:static;flex:0 1 auto;min-width:0}
 .notification-panel{
@@ -628,17 +629,27 @@ function wireNotifications(){
           <strong>Request #${esc(item.id)}</strong>
           <strong>${esc((item.status||"pending").toUpperCase())}</strong>
         </div>
+        <div>Service: ${esc(item.service_name||"Not specified")}</div>
         <div>Country: ${esc(item.country_code||"—")}</div>
         <div>Type: ${esc(item.number_type||"—")}</div>
         <div>Quantity: ${esc(item.quantity??"—")}</div>
         <small>Submitted: ${esc(formatDate(item.created_at))}</small>
         ${item.admin_file_name?`<div>File: ${esc(item.admin_file_name)}</div>`:""}
+        ${item.status==="completed"&&item.admin_file_name?`<button class="btn secondary download-request-file" data-request-id="${Number(item.id)}" type="button">Download file</button>`:""}
         ${item.admin_note?`<div>Admin note: ${esc(item.admin_note)}</div>`:""}
         ${item.completed_at?`<small>Completed: ${esc(formatDate(item.completed_at))}</small>`:""}
         ${item.rejected_at?`<small>Rejected: ${esc(formatDate(item.rejected_at))}</small>`:""}
       </div>
     `).join("");
-
+    list.querySelectorAll(".download-request-file").forEach(button=>button.onclick=async()=>{
+      const id=Number(button.dataset.requestId);button.disabled=true;button.textContent="Downloading…";
+      try{
+        const response=await fetch(API+"/api/toolbox/number-file-requests/download?id="+id,{headers:{"Authorization":"Bearer "+token}});
+        if(!response.ok){let detail="Download failed ("+response.status+")";try{const data=await response.json();detail=data.error||detail;}catch(e){}throw new Error(detail);}
+        const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="number-file-request-"+id;document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+        button.textContent="Downloaded";
+      }catch(error){alert(error.message);button.disabled=false;button.textContent="Download file";}
+    });
   }catch(error){
     message.textContent="Could not load file requests: "+error.message;
   }
@@ -778,7 +789,7 @@ async function lockAdminDashboard(){
   if(!adminUnlockToken)return;
   const old=adminUnlockToken;
   adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");
-  if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}
+  if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(window.adminNotificationTimer){clearInterval(window.adminNotificationTimer);window.adminNotificationTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}
   try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":old}});}catch(e){}
   renderAdminGate(true);
 }
@@ -789,13 +800,38 @@ async function renderAdminWorkspace(){
       const data=await request("/api/admin/catalogue");
       categories=data.categories||[];adminServices=data.services||[];globalMarkupPercentage=Number(data.global_markup_percentage??10);
     }else{categories=[];adminServices=[];}
-    app.innerHTML='<main class="wrap admin-workspace"><header><div><div class="admin-label">CONTROL CENTRE</div><div class="admin-shell-title">Administrator Dashboard</div><div class="admin-shell-subtitle">Secure operations · '+esc(adminRole||"Admin")+'</div></div><div class="admin-shell-actions"><button class="back-button" id="admin-back">← Customer portal</button><button class="back-button" id="admin-lock">Lock dashboard</button></div></header>'+adminMarkup()+'</main>';
+    app.innerHTML='<main class="wrap admin-workspace"><header><div><div class="admin-label">CONTROL CENTRE</div><div class="admin-shell-title">Administrator Dashboard</div><div class="admin-shell-subtitle">Secure operations · '+esc(adminRole||"Admin")+'</div></div><div class="admin-shell-actions"><div class="admin-bell-wrap"><button class="admin-bell" id="admin-notification-toggle" type="button" aria-label="Admin notifications" aria-expanded="false">🔔<span id="admin-notification-count" class="admin-bell-count">0</span></button><div class="admin-notification-panel" id="admin-notification-panel"><div class="item-top"><strong>Activity notifications</strong><button class="btn secondary" id="admin-notification-refresh" type="button">Refresh</button></div><button class="btn secondary" id="admin-notification-mark-all" type="button">Mark all read</button><div id="admin-notification-list"><p class="muted">Loading notifications…</p></div></div></div><button class="back-button" id="admin-back">← Customer portal</button><button class="back-button" id="admin-lock">Lock dashboard</button></div></header>'+adminMarkup()+'</main>';
     document.getElementById("admin-back").onclick=async()=>{const oldToken=adminUnlockToken;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}if(oldToken){try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":oldToken}});}catch(e){}}adminMode=true;renderDashboard();};
     document.getElementById("admin-lock").onclick=lockAdminDashboard;
     const lockNow=document.getElementById("admin-lock-now");if(lockNow)lockNow.onclick=lockAdminDashboard;
     applyAdminUiPermissions();
-    wireAdmin();wireSupportAdmin();startAdminIdleLock();
+    wireAdmin();wireSupportAdmin();wireAdminNotifications();startAdminIdleLock();
   }catch(error){if(error.message==="admin_unlock_required"){adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderAdminGate(true);}else showError("Admin dashboard could not load: "+error.message);}
+}
+
+async function wireAdminNotifications(){
+  const toggle=document.getElementById("admin-notification-toggle");
+  const panel=document.getElementById("admin-notification-panel");
+  const list=document.getElementById("admin-notification-list");
+  const count=document.getElementById("admin-notification-count");
+  const refresh=document.getElementById("admin-notification-refresh");
+  const markAll=document.getElementById("admin-notification-mark-all");
+  if(!toggle||!panel||!list||!count||!refresh||!markAll)return;
+  async function load(){
+    try{
+      const data=await request("/api/admin/notifications");
+      const rows=data.notifications||[];
+      const unread=Number(data.unread_count||0);count.textContent=unread>99?"99+":(unread?String(unread):"");
+      list.innerHTML=rows.length?rows.map(n=>'<div class="admin-notification-entry '+(n.read_at?"":"unread")+'" data-id="'+Number(n.id)+'"><strong>'+esc(n.title||"User activity")+'</strong><p>'+esc(n.message||"")+'</p><small>'+esc(formatDate(n.created_at))+'</small>'+(n.read_at?"":'<div><small>Unread · click to mark read</small></div>')+'</div>').join(""):'<p class="muted">No admin notifications yet.</p>';
+    }catch(error){list.innerHTML='<p class="error">'+esc(error.message)+'</p>';}
+  }
+  toggle.onclick=()=>{const open=panel.classList.toggle("open");toggle.setAttribute("aria-expanded",String(open));if(open)load();};
+  refresh.onclick=load;
+  list.onclick=async event=>{const row=event.target.closest("[data-id]");if(!row||!row.classList.contains("unread"))return;try{await request("/api/admin/notifications/read","POST",{notification_id:Number(row.dataset.id)});await load();}catch(error){alert("Could not mark notification read: "+error.message);}};
+  markAll.onclick=async()=>{try{await request("/api/admin/notifications/read-all","POST",{});await load();}catch(error){alert("Could not mark notifications read: "+error.message);}};
+  await load();
+  if(window.adminNotificationTimer)clearInterval(window.adminNotificationTimer);
+  window.adminNotificationTimer=setInterval(load,15000);
 }
 
 function formatSupportTime(value){try{return new Date(value).toLocaleString();}catch(e){return "";}}
@@ -1038,7 +1074,8 @@ function renderDashboard(){
 
 
 <section id="toolbox" class="panel">
-  <h2>Worldwide Test Number Generator</h2>
+  <h2>Number Generator</h2>
+  <p id="number-generator-service">Choose a service from the Service Catalogue first.</p>
   <p>Generate official fictional test numbers where published, or clearly labelled synthetic test IDs for other countries. Synthetic IDs are not dialable phone numbers and cannot be used as real numbers in phone-validation services.</p>
 
   <label class="field" for="generator-country">Country</label>
@@ -1073,10 +1110,10 @@ function renderDashboard(){
   </select>
 
   <label class="field" for="generator-quantity">Quantity</label>
-  <input id="generator-quantity" type="number" min="1" max="80000" value="100" inputmode="numeric">
+  <input id="generator-quantity" type="number" min="1" max="10000" value="100" inputmode="numeric">
 
   <div class="actions">
-    <button class="btn" id="generate-numbers" type="button">Generate numbers</button>
+    <button class="btn" id="generate-numbers" type="button">Request Number File</button>
   </div>
 
   <div id="generator-message" class="note">Choose a supported country, number type and quantity.</div>
@@ -1092,7 +1129,8 @@ function renderDashboard(){
 
 
     <div class="panel">
-  <h3>Need a phone-number file?</h3>
+  <h3>Request a Number File for Your Service</h3>
+  <p id="number-request-service">Select a service from the catalogue first.</p>
   <p>Upload your own authorised contact list in the Prepare your input list section to filter it.</p>
   <p>Or request an eligible number dataset from our admin team for manual review.</p>
 
@@ -1130,6 +1168,7 @@ function renderDashboard(){
   <label class="field" for="number-request-quantity">Quantity requested</label>
   <input id="number-request-quantity" type="number" min="1" max="10000" value="100">
 
+  <label class="field"><input type="checkbox" id="number-request-consent"> I confirm I am authorized to receive and process this dataset for the selected service.</label>
   <button class="btn" id="submit-number-request" type="button">
     Request file
   </button>
@@ -1448,19 +1487,15 @@ document.getElementById("submit-number-request").onclick = async function () {
   message.textContent = "Sending your request to the admin team...";
 
   try {
-    const result = await request(
-      "/api/toolbox/number-file-request",
-      "POST",
-      {
-        country_code: countryCode,
-        number_type: numberType,
-        quantity: quantity
-      }
-    );
-
-    message.textContent =
-      "Request #" + result.request_id +
-      " submitted successfully. The admin team has been notified.";
+    if(!selectedCode)throw new Error("Please select a service from the Service Catalogue first.");
+    const consent=document.getElementById("number-request-consent");
+    if(!consent || !consent.checked)throw new Error("Please confirm that you are authorized to receive and process this dataset.");
+    const selectedService=services.find(item=>item.resource_code===selectedCode);
+    const result = await request("/api/toolbox/number-file-request","POST",{
+      country_code:countryCode,number_type:numberType,quantity:quantity,
+      resource_code:selectedCode,service_name:selectedService?.name||selectedCode,consent_confirmed:true
+    });
+    message.textContent="Your file is being prepared. Please check your Telegram bot chat. Request #"+result.request_id+".";
     await loadRequestHistory();
     await loadNotifications();
   } catch (error) {
@@ -1469,6 +1504,14 @@ document.getElementById("submit-number-request").onclick = async function () {
     button.disabled = false;
   }
 };
+
+  // The generator submits the selected service request to the admin queue.
+  document.getElementById("generate-numbers").onclick=function(){
+    document.getElementById("number-request-country").value=generatorCountry.value;
+    document.getElementById("number-request-type").value=generatorType.value;
+    document.getElementById("number-request-quantity").value=generatorQuantity.value;
+    document.getElementById("submit-number-request").click();
+  };
 
   // END WORLDWIDE TEST NUMBER GENERATOR
 
@@ -1808,6 +1851,12 @@ function renderServices(){
       select.value=selectedCode;
       renderServices();
       updateEstimate();
+      const chosen=services.find(item=>item.resource_code===selectedCode);
+      const serviceLabel=document.getElementById("number-generator-service");
+      if(serviceLabel)serviceLabel.textContent=chosen?"Selected service: "+chosen.name:"Choose a service from the Service Catalogue first.";
+      const requestService=document.getElementById("number-request-service");
+      if(requestService)requestService.textContent=chosen?"Requesting a file for: "+chosen.name:"Select a service above first.";
+      document.getElementById("toolbox")?.scrollIntoView({behavior:"smooth",block:"start"});
     };
   });
 }
@@ -3124,6 +3173,7 @@ async function loadNumberRequests() {
               <span class="pill">${esc(r.status || "pending")}</span>
             </div>
 
+            <div class="muted">Service: ${esc(r.service_name || r.service_code || "Not specified")}</div>
             <div class="muted">Country: ${esc(r.country_name || r.country_code)}</div>
             <div class="muted">Quantity: ${Number(r.quantity)}</div>
             <div class="muted">Type: ${esc(r.number_type)}</div>
