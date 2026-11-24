@@ -4756,6 +4756,18 @@ if (url.pathname === "/api/admin/security/unlock" && request.method === "POST") 
   try { const u=await getSessionUser(request,env),a=await getAdminAccess(u,env); if(!a||Number(a.is_active)!==1)return json({ok:false,error:"admin_access_required"},403,origin); const b=await readBody(request),r=await env.DB.prepare("SELECT salt,password_hash,failed_attempts,locked_until FROM admin_passwords WHERE telegram_id=?").bind(String(u.telegram_id)).first(); if(!r)return json({ok:false,error:"admin_password_setup_required"},409,origin); if(r.locked_until&&Date.parse(r.locked_until)>Date.now())return json({ok:false,error:"admin_login_temporarily_locked"},429,origin); const hash=await deriveAdminPassword(String(b.password||""),r.salt); if(!safeEqual(hash,r.password_hash)){const n=Number(r.failed_attempts||0)+1,lock=n>=5?new Date(Date.now()+900000).toISOString():null; await env.DB.prepare("UPDATE admin_passwords SET failed_attempts=?,locked_until=? WHERE telegram_id=?").bind(n>=5?0:n,lock,String(u.telegram_id)).run(); return json({ok:false,error:lock?"admin_login_temporarily_locked":"incorrect_admin_password"},lock?429:403,origin);} await env.DB.prepare("UPDATE admin_passwords SET failed_attempts=0,locked_until=NULL WHERE telegram_id=?").bind(String(u.telegram_id)).run(); const raw=hex(crypto.getRandomValues(new Uint8Array(32))),now=new Date(),expires=new Date(now.getTime()+43200000).toISOString(); await env.DB.prepare("INSERT INTO admin_unlock_sessions (token_hash,telegram_id,expires_at,last_activity) VALUES (?,?,?,?)").bind(await sha256(raw),String(u.telegram_id),expires,now.toISOString()).run(); return json({ok:true,unlock_token:raw,expires_at:expires,idle_timeout_minutes:15},200,origin); }
   catch(e){return json({ok:false,error:e.message||"unlock_failed"},e.message==="unauthorized"?401:500,origin);}
 }
+
+if (url.pathname === "/api/admin/security/heartbeat" && request.method === "POST") {
+  try {
+    const u=await getSessionUser(request,env),a=await getAdminAccess(u,env),raw=request.headers.get("X-Admin-Unlock")||"";
+    if(!a||Number(a.is_active)!==1||!^[a-f0-9]{64}$/i.test(raw))return json({ok:false,error:"admin_unlock_required"},423,origin);
+    const hash=await sha256(raw),row=await env.DB.prepare("SELECT expires_at,last_activity FROM admin_unlock_sessions WHERE token_hash=? AND telegram_id=?").bind(hash,String(u.telegram_id)).first();
+    const now=Date.now();if(!row||Date.parse(row.expires_at)<=now||now-Date.parse(row.last_activity)>900000)return json({ok:false,error:"admin_unlock_required"},423,origin);
+    await env.DB.prepare("UPDATE admin_unlock_sessions SET last_activity=? WHERE token_hash=?").bind(new Date(now).toISOString(),hash).run();
+    return json({ok:true},200,origin);
+  } catch(e){return json({ok:false,error:e.message||"heartbeat_failed"},401,origin);}
+}
+
 if (url.pathname === "/api/admin/security/lock" && request.method === "POST") {
   try {const u=await getSessionUser(request,env),raw=request.headers.get("X-Admin-Unlock")||"";if(/^[a-f0-9]{64}$/i.test(raw))await env.DB.prepare("DELETE FROM admin_unlock_sessions WHERE token_hash=? AND telegram_id=?").bind(await sha256(raw),String(u.telegram_id)).run();return json({ok:true},200,origin);}
   catch(e){return json({ok:false,error:"lock_failed"},401,origin);}
