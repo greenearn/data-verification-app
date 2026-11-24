@@ -4811,6 +4811,14 @@ if (
         } catch (adminNotificationError) {
           console.error("Admin file request notification failed:", adminNotificationError.message);
         }
+        try {
+          await notifyAdmins(env,
+            "New number-file request #"+requestId+"\nService: "+serviceName+
+            "\nCountry: "+countries[countryCode]+"\nQuantity: "+quantity+
+            "\nType: "+numberType+"\nOpen the admin dashboard to review.");
+        } catch (telegramAdminError) {
+          console.error("Admin Telegram file request alert failed:",telegramAdminError.message);
+        }
 
         return json({
           ok: true,
