@@ -2674,6 +2674,47 @@ if (
     // CUSTOMER SESSION
     // ------------------------------------------------
 
+    // CUSTOMER REFERRALS + ADMIN COMMISSION TIERS
+    if(request.method==="GET"&&url.pathname==="/api/referrals"){
+      try{
+        const user=await getSessionUser(request,env);await ensureReferralSchema(env);
+        const code=await ensureUserReferralCode(env,user.id);
+        const stats=await env.DB.prepare("SELECT COUNT(DISTINCT referred_user_id) AS referred_count,COALESCE(SUM(commission_cents),0) AS earned_cents FROM referral_commissions WHERE referrer_user_id=?").bind(user.id).first();
+        const tiers=await env.DB.prepare("SELECT min_deposit_cents,percentage_basis_points FROM referral_tiers WHERE is_active=1 ORDER BY min_deposit_cents ASC").all();
+        return json({ok:true,referral_code:code,referral_link:"https://t.me/dataverificationnbot?startapp=ref_"+code,referred_count:Number(stats?.referred_count||0),earned_cents:Number(stats?.earned_cents||0),tiers:tiers.results||[]},200,origin);
+      }catch(error){return json({ok:false,error:error.message==="unauthorized"?"unauthorized":"referrals_unavailable"},error.message==="unauthorized"?401:500,origin);}
+    }
+    if(request.method==="GET"&&url.pathname==="/api/admin/referral-tiers"){
+      try{
+        await requireAdmin(request,env);await ensureReferralSchema(env);
+        const tiers=await env.DB.prepare("SELECT id,min_deposit_cents,percentage_basis_points,is_active FROM referral_tiers ORDER BY min_deposit_cents ASC").all();
+        return json({ok:true,tiers:tiers.results||[]},200,origin);
+      }catch(error){const status=error.message==="unauthorized"?401:error.message==="admin_unlock_required"?423:403;return json({ok:false,error:error.message||"referral_tiers_failed"},status,origin);}
+    }
+    if(request.method==="POST"&&url.pathname==="/api/admin/referral-tiers"){
+      try{
+        const admin=await requireAdmin(request,env);await ensureReferralSchema(env);
+        const body=await readBody(request),action=String(body.action||"save"),id=Number(body.id||0);
+        if(action==="delete"){
+          if(!Number.isSafeInteger(id)||id<1)return json({ok:false,error:"invalid_tier_id"},400,origin);
+          await env.DB.prepare("DELETE FROM referral_tiers WHERE id=?").bind(id).run();
+          await writeAdminAudit(env,admin.telegram_id,"","referral_tier_deleted",{id});
+          return json({ok:true},200,origin);
+        }
+        const minimum=Number(body.min_deposit_cents),rate=Number(body.percentage_basis_points);
+        const active=body.is_active===false||Number(body.is_active)===0?0:1;
+        if(!Number.isSafeInteger(minimum)||minimum<1||minimum>100000000||!Number.isSafeInteger(rate)||rate<0||rate>10000)return json({ok:false,error:"invalid_referral_tier"},400,origin);
+        if(id>0)await env.DB.prepare("UPDATE referral_tiers SET min_deposit_cents=?,percentage_basis_points=?,is_active=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(minimum,rate,active,id).run();
+        else await env.DB.prepare("INSERT INTO referral_tiers(min_deposit_cents,percentage_basis_points,is_active) VALUES(?,?,?)").bind(minimum,rate,active).run();
+        await writeAdminAudit(env,admin.telegram_id,"","referral_tier_saved",{id,min_deposit_cents:minimum,percentage_basis_points:rate,is_active:active});
+        return json({ok:true},200,origin);
+      }catch(error){
+        if(String(error.message||"").toLowerCase().includes("unique"))return json({ok:false,error:"tier_threshold_already_exists"},409,origin);
+        const status=error.message==="unauthorized"?401:error.message==="admin_unlock_required"?423:403;
+        return json({ok:false,error:error.message||"referral_tier_save_failed"},status,origin);
+      }
+    }
+
     if (request.method === "GET" && url.pathname === "/api/me") {
       try {
         const user = await getSessionUser(request, env);
