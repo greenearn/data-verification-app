@@ -2665,6 +2665,7 @@ function wireAdminManagement(){
   loadAdmins();
 }
 
+let adminActivityTimer=null;
 function wireAdminActivityAndUsers(){
   const activityMessage=document.getElementById("admin-activity-message");
   const activityList=document.getElementById("admin-activity-list");
@@ -2710,6 +2711,8 @@ function wireAdminActivityAndUsers(){
   if(usersRefresh)usersRefresh.onclick=loadUsers;
   loadActivity();
   loadUsers();
+  if(adminActivityTimer)clearInterval(adminActivityTimer);
+  adminActivityTimer=setInterval(loadActivity,30000);
 }
 
 function wireAdmin(){
