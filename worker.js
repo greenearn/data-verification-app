@@ -93,7 +93,7 @@ function json(data, status = 200, origin = "") {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": origin || DEFAULT_ALLOWED_ORIGIN,
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Unlock",
       "Vary": "Origin",
       "Cache-Control": "no-store"
     }
@@ -366,7 +366,8 @@ const ADMIN_PERMISSION_LABELS = {
   uploads_manage: "Customer upload review",
   number_requests: "Manual number-file requests",
   provider_balance: "Provider balance",
-  storage_test: "Telegram storage test"
+  storage_test: "Telegram storage test",
+  support_manage: "Customer support inbox and contact settings"
 };
 
 const ADMIN_ROUTE_PERMISSIONS = {
@@ -394,7 +395,12 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "POST /api/admin/storage-file-test": "storage_test",
   "GET /api/admin/number-file-requests": "number_requests",
   "POST /api/admin/number-file-requests/upload": "number_requests",
-  "POST /api/admin/number-file-requests/reject": "number_requests"
+  "POST /api/admin/number-file-requests/reject": "number_requests",
+  "GET /api/admin/support/chats": "support_manage",
+  "GET /api/admin/support/chats/messages": "support_manage",
+  "POST /api/admin/support/chats/reply": "support_manage",
+  "GET /api/admin/support/settings": "support_manage",
+  "POST /api/admin/support/settings": "support_manage"
 };
 
 async function ensureAdminAccessSchema(env) {
@@ -412,7 +418,14 @@ async function ensureAdminAccessSchema(env) {
     )
   `).run();
 
-  await env.DB.prepare(`
+
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS admin_passwords (telegram_id TEXT PRIMARY KEY,salt TEXT NOT NULL,password_hash TEXT NOT NULL,failed_attempts INTEGER NOT NULL DEFAULT 0,locked_until TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS admin_unlock_sessions (token_hash TEXT PRIMARY KEY,telegram_id TEXT NOT NULL,expires_at TEXT NOT NULL,last_activity TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS support_contacts (id INTEGER PRIMARY KEY CHECK(id=1),display_name TEXT NOT NULL DEFAULT 'Customer Support',telegram_username TEXT NOT NULL DEFAULT '',whatsapp_number TEXT NOT NULL DEFAULT '',availability TEXT NOT NULL DEFAULT 'Available',updated_by TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS support_conversations (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'open',last_message_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS support_messages (id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER NOT NULL,sender_type TEXT NOT NULL CHECK(sender_type IN ('customer','admin')),sender_user_id INTEGER NOT NULL,message TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,read_at TEXT)").run();
+
+  await env.DB.prepare(\`
     CREATE TABLE IF NOT EXISTS admin_audit_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       actor_telegram_id TEXT NOT NULL,
@@ -469,6 +482,13 @@ async function isAdmin(user, env) {
     ["main_admin", "full_admin", "sub_admin"].includes(admin.role);
 }
 
+
+async function deriveAdminPassword(password, saltHex) {
+  const salt = Uint8Array.from(saltHex.match(/.{2}/g).map(x => parseInt(x,16)));
+  const key = await crypto.subtle.importKey("raw",new TextEncoder().encode(password),"PBKDF2",false,["deriveBits"]);
+  return hex(await crypto.subtle.deriveBits({name:"PBKDF2",salt,iterations:310000,hash:"SHA-256"},key,256));
+}
+
 async function requireAdmin(request, env) {
   const user = await getSessionUser(request, env);
   const admin = await getAdminAccess(user, env);
@@ -480,6 +500,17 @@ async function requireAdmin(request, env) {
   ) {
     throw new Error("admin_access_required");
   }
+
+  const unlockToken = request.headers.get("X-Admin-Unlock") || "";
+  if (!/^[a-f0-9]{64}$/i.test(unlockToken)) throw new Error("admin_unlock_required");
+  const unlockHash = await sha256(unlockToken);
+  const unlock = await env.DB.prepare("SELECT expires_at,last_activity FROM admin_unlock_sessions WHERE token_hash=? AND telegram_id=? LIMIT 1").bind(unlockHash,String(user.telegram_id)).first();
+  const now = Date.now();
+  if (!unlock || Date.parse(unlock.expires_at)<=now || now-Date.parse(unlock.last_activity)>900000) {
+    if (unlock) await env.DB.prepare("DELETE FROM admin_unlock_sessions WHERE token_hash=?").bind(unlockHash).run();
+    throw new Error("admin_unlock_required");
+  }
+  await env.DB.prepare("UPDATE admin_unlock_sessions SET last_activity=? WHERE token_hash=?").bind(new Date(now).toISOString(),unlockHash).run();
 
   const routeKey = request.method.toUpperCase() + " " +
     new URL(request.url).pathname;
