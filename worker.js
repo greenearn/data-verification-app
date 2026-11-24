@@ -3961,6 +3961,9 @@ if (
         } catch {}
         return json({ok:true,order_id:orderId,refunded_cents:order.customer_charge_cents},200,origin);
       } catch(error) {
+        if (String(error.message||"").includes("UNIQUE constraint failed")) {
+          return json({ok:false,error:"order_already_refunded"},409,origin);
+        }
         const status=error.message==="unauthorized"?401:
           error.message==="admin_access_required"?403:error.message==="invalid_json"?400:500;
         return json({ok:false,error:error.message||"manual_refund_failed"},status,origin);
