@@ -58,8 +58,8 @@ const CHECKNUMBER_CATALOGUE = [
   {category:"Instagram",category_order:10,resource_code:"instagram_email",name:"Instagram Email Checker",description:"Check Instagram registration by email",input_type:"email",task_type:"instagram_email",provider_cost_cents:30,display_order:2},
   {category:"MAX",category_order:11,resource_code:"max_checker",name:"MAX Number Checker",description:"MAX number checker; confirm task code in provider dashboard",input_type:"phone",task_type:"max",provider_cost_cents:1000,display_order:1},
   {category:"MAX",category_order:11,resource_code:"max_profile",name:"MAX Number Profile",description:"MAX profile checker; confirm task code in provider dashboard",input_type:"phone",task_type:"max_full",provider_cost_cents:2000,display_order:2},
-  {category:"Netflix",category_order:12,resource_code:"netflix_checker",name:"Netflix Number Checker",description:"Netflix number checker; confirm task code in provider dashboard",input_type:"phone",task_type:"netflix",provider_cost_cents:700,display_order:1},
-  {category:"Netflix",category_order:12,resource_code:"netflix_email",name:"Netflix Email Checker",description:"Netflix email checker; confirm task code in provider dashboard",input_type:"email",task_type:"netflix_email",provider_cost_cents:700,display_order:2},
+  {category:"Netflix",category_order:12,resource_code:"netflix_checker",name:"Netflix Number Checker",description:"Check Netflix registration by phone number",input_type:"phone",task_type:"netflix",provider_cost_cents:700,minimum_order_quantity:1000,display_order:1},
+  {category:"Netflix",category_order:12,resource_code:"netflix_email",name:"Netflix Email Checker",description:"Check Netflix registration by email",input_type:"email",task_type:"netflix_email",provider_cost_cents:700,minimum_order_quantity:1000,display_order:2},
   {category:"PayPal",category_order:13,resource_code:"paypal_email",name:"PayPal Email Checker",description:"PayPal email checker; confirm task code in provider dashboard",input_type:"email",task_type:"paypal_email",provider_cost_cents:1000,display_order:1},
   {category:"PayPal",category_order:13,resource_code:"paypal_phone",name:"PayPal Number Checker",description:"PayPal number checker; confirm task code in provider dashboard",input_type:"phone",task_type:"paypal_number",provider_cost_cents:1500,display_order:2},
   {category:"Line",category_order:14,resource_code:"line_checker",name:"Line Number Checker",description:"Check Line registration status",input_type:"phone",task_type:"line",provider_cost_cents:150,display_order:1},
@@ -641,8 +641,9 @@ async function importCheckNumberCatalogue(env) {
       INSERT OR IGNORE INTO resource_pricing
         (resource_code,provider_cost_cents,markup_type,markup_value,final_price_cents,
          enabled,pricing_unit_quantity,minimum_order_quantity,currency,updated_at)
-      VALUES (?,?,'percentage',?,NULL,0,10000,500,'USDT',CURRENT_TIMESTAMP)
-    `).bind(service.resource_code,service.provider_cost_cents,defaultMarkup));
+      VALUES (?,?,'percentage',?,NULL,0,10000,?,'USDT',CURRENT_TIMESTAMP)
+    `).bind(service.resource_code,service.provider_cost_cents,defaultMarkup,
+      Number(service.minimum_order_quantity||500)));
   }
   // Keep the legacy phoneCheck resource code and its existing pricing,
   // but group its customer-facing label with the new Number Checker products.
