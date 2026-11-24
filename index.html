@@ -134,6 +134,11 @@ let uploadedFileId=null;
 let adminMode=false;
 let adminRole=null;
 let adminPermissions=[];
+let adminUnlockToken=sessionStorage.getItem('dv_admin_unlock')||'';
+let adminIdleTimer=null;
+let supportPollTimer=null;
+let supportConversationId=null;
+let supportContacts={};
 let notificationPollTimer = null;
 let notificationIds = new Set();
 let notificationsInitialized = false;
@@ -164,7 +169,8 @@ async function request(path,method="GET",body=null){
     method,
     headers:{
       "Authorization":"Bearer "+token,
-      "Accept":"application/json"
+      "Accept":"application/json",
+      ...(adminUnlockToken?{"X-Admin-Unlock":adminUnlockToken}:{})
     }
   };
 
@@ -181,6 +187,7 @@ async function request(path,method="GET",body=null){
   const data=await response.json();
 
   if(!response.ok||!data.ok){
+    if(data.error==="admin_unlock_required"&&adminMode){adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderAdminGate(true);}
     let message = data.error || "Request failed (" + response.status + ")";
     if (data.error === "invalid_phone_number_count") {
       message = "Phone file count is outside the allowed range. " +
@@ -251,22 +258,11 @@ async function login(){
     adminRole=user.admin_role||null;
     adminPermissions=Array.isArray(user.admin_permissions)?user.admin_permissions:[];
     await loadCustomerServices();
-
-    if(adminMode && (
-      adminRole==="main_admin" ||
-      adminRole==="full_admin" ||
-      adminPermissions.includes("catalogue_manage")
-    )){
-      try{
-        const admin=await request("/api/admin/catalogue");
-        categories=admin.categories||[];
-        adminServices=admin.services||adminServices;
-        globalMarkupPercentage=Number(admin.global_markup_percentage??10);
-      }catch(error){
-        console.warn("Admin catalogue unavailable:",error.message);
-      }
+    if(adminMode){
+      try{const security=await request("/api/admin/security/status");renderAdminGate(!!security.configured);}
+      catch(error){showError("Could not verify administrator access: "+error.message);}
+      return;
     }
-
     renderDashboard();
 
   }catch(error){
