@@ -3866,6 +3866,7 @@ if (
     if(request.method==="GET" && url.pathname==="/api/admin/orders") {
       try {
         await requireAdmin(request,env);
+        await ensureProviderTasksSchema(env);
         const result=await env.DB.prepare(`
           SELECT o.id,o.user_id,u.telegram_id,u.username,u.first_name,o.resource_code,
             o.quantity,o.customer_charge_cents,o.currency,o.status,o.result_reference,
