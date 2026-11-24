@@ -2376,13 +2376,38 @@ function wireAdmin(){
         const refundButton=order.status==="failed"&&!Number(order.refunded)
           ?'<button class="btn danger manual-order-refund" data-order-id="'+Number(order.id)+'" type="button">Issue manual refund</button>'
           :Number(order.refunded)?'<span class="pill">REFUNDED</span>':"";
+        const submitButton=order.status==="pending"&&!Number(order.provider_task_exists)
+          ?'<button class="btn admin-submit-order" data-order-id="'+Number(order.id)+'" data-upload-id="'+Number(order.upload_id)+'" type="button">Submit paid order to CheckNumber</button>'
+          :"";
+        const uncertain=order.provider_task_status==="submission_unknown"
+          ?'<p class="error">Provider submission outcome is uncertain. Check the provider dashboard before taking action.</p>':"";
         return '<div class="item"><div class="item-top"><strong>Order #'+esc(order.id)+'</strong><span class="pill">'+esc(Number(order.refunded)?"refunded":order.status)+'</span></div>'+
           '<div class="muted">'+esc(customer)+'</div>'+
           '<div class="muted">Service: '+esc(order.resource_code)+' · Quantity: '+esc(order.quantity)+'</div>'+
           '<div class="muted">Customer charge: '+esc(money(order.customer_charge_cents,order.currency||"USDT"))+'</div>'+
           '<div class="muted">Upload: '+esc(String(order.result_reference||"").replace("|refunded",""))+' · Provider: '+esc(order.provider_task_id||"not submitted")+'</div>'+
-          '<small>'+esc(formatDate(order.created_at))+'</small>'+refundButton+'</div>';
+          '<small>'+esc(formatDate(order.created_at))+'</small>'+uncertain+submitButton+refundButton+'</div>';
       }).join("")||'<p class="muted">No customer orders yet.</p>';
+      adminOrdersList.querySelectorAll(".admin-submit-order").forEach(button=>{
+        button.onclick=async()=>{
+          const uploadId=Number(button.dataset.uploadId);
+          if(!uploadId||!confirm("Submit this paid customer order to CheckNumber? This uses your provider balance."))return;
+          button.disabled=true;
+          button.textContent="Submitting…";
+          try{
+            const result=await request("/api/admin/provider-tasks/submit","POST",{upload_id:uploadId});
+            alert("Paid order submitted. Provider task #"+result.task.id+".");
+            await loadAdminOrders();
+            await loadProviderTasks();
+            await loadAdminUploads();
+          }catch(error){
+            alert("Submission result: "+error.message+". If uncertain, check the provider dashboard before retrying.");
+            await loadAdminOrders();
+            button.disabled=false;
+            button.textContent="Submit paid order to CheckNumber";
+          }
+        };
+      });
       adminOrdersList.querySelectorAll(".manual-order-refund").forEach(button=>{
         button.onclick=async()=>{
           const orderId=Number(button.dataset.orderId);
