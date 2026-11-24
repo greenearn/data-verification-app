@@ -635,12 +635,21 @@ function wireNotifications(){
         <div>Quantity: ${esc(item.quantity??"—")}</div>
         <small>Submitted: ${esc(formatDate(item.created_at))}</small>
         ${item.admin_file_name?`<div>File: ${esc(item.admin_file_name)}</div>`:""}
+        ${item.status==="completed"&&item.admin_file_name?`<button class="btn secondary download-request-file" data-request-id="${Number(item.id)}" type="button">Download file</button>`:""}
         ${item.admin_note?`<div>Admin note: ${esc(item.admin_note)}</div>`:""}
         ${item.completed_at?`<small>Completed: ${esc(formatDate(item.completed_at))}</small>`:""}
         ${item.rejected_at?`<small>Rejected: ${esc(formatDate(item.rejected_at))}</small>`:""}
       </div>
     `).join("");
-
+    list.querySelectorAll(".download-request-file").forEach(button=>button.onclick=async()=>{
+      const id=Number(button.dataset.requestId);button.disabled=true;button.textContent="Downloading…";
+      try{
+        const response=await fetch(API+"/api/toolbox/number-file-requests/download?id="+id,{headers:{"Authorization":"Bearer "+token}});
+        if(!response.ok){let detail="Download failed ("+response.status+")";try{const data=await response.json();detail=data.error||detail;}catch(e){}throw new Error(detail);}
+        const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="number-file-request-"+id;document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+        button.textContent="Downloaded";
+      }catch(error){alert(error.message);button.disabled=false;button.textContent="Download file";}
+    });
   }catch(error){
     message.textContent="Could not load file requests: "+error.message;
   }
