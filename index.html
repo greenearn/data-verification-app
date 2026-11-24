@@ -1585,7 +1585,7 @@ function renderServices(){
 
     items.forEach(s=>{
       const selected=s.resource_code===selectedCode;
-      const status=String(s.task_type||"")==="VERIFY_IN_DASHBOARD"?"API code needs verification":
+      const status=["VERIFY_IN_DASHBOARD","tg_username"].includes(String(s.task_type||""))?"API code needs verification":
         !s.configured?"Pricing not configured":
         !s.enabled?"Not active":
         !s.can_order?"Ordering unavailable":"Available";
