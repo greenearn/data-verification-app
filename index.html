@@ -793,6 +793,7 @@ async function renderAdminWorkspace(){
     document.getElementById("admin-back").onclick=async()=>{const oldToken=adminUnlockToken;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}if(oldToken){try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":oldToken}});}catch(e){}}adminMode=true;renderDashboard();};
     document.getElementById("admin-lock").onclick=lockAdminDashboard;
     const lockNow=document.getElementById("admin-lock-now");if(lockNow)lockNow.onclick=lockAdminDashboard;
+    applyAdminUiPermissions();
     wireAdmin();wireSupportAdmin();startAdminIdleLock();
   }catch(error){if(error.message==="admin_unlock_required"){adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderAdminGate(true);}else showError("Admin dashboard could not load: "+error.message);}
 }
