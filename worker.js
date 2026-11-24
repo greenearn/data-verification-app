@@ -1235,7 +1235,7 @@ async function submitStagedProviderTask(env, uploadId) {
   if(!upload)throw new Error("upload_not_found");
   if(!["uploaded","reviewed"].includes(upload.status))throw new Error("upload_not_ready");
   const taskType=String(upload.task_type||"");
-  if(!taskType||taskType==="VERIFY_IN_DASHBOARD"||!validTaskType(taskType))
+  if(!taskType||["VERIFY_IN_DASHBOARD","tg_username"].includes(taskType)||!validTaskType(taskType))
     throw new Error("service_task_code_not_verified");
   const existing=await env.DB.prepare("SELECT id FROM provider_tasks WHERE upload_id=? LIMIT 1").bind(uploadId).first();
   if(existing)throw new Error("provider_task_already_created");
@@ -2467,7 +2467,7 @@ if (
             display_order: Number(row.display_order),
             configured,
             enabled: configured && Number(row.enabled) === 1,
-            can_order: String(row.task_type||"") !== "VERIFY_IN_DASHBOARD" &&
+            can_order: !["VERIFY_IN_DASHBOARD","tg_username"].includes(String(row.task_type||"")) &&
               configured && Number(row.enabled) === 1 && row.currency === "USDT",
             minimum_order_quantity:
               configured ? Number(row.minimum_order_quantity) : null,
@@ -2579,7 +2579,7 @@ if (
           JOIN service_categories sc ON sc.category = c.category COLLATE NOCASE
           JOIN resource_pricing p ON p.resource_code = c.resource_code
           WHERE c.resource_code = ? AND c.is_listed = 1 AND sc.is_listed = 1
-            AND p.enabled = 1 AND c.task_type <> 'VERIFY_IN_DASHBOARD'
+            AND p.enabled = 1 AND c.task_type NOT IN ('VERIFY_IN_DASHBOARD','tg_username')
           LIMIT 1
         `).bind(resourceCode).first();
 
@@ -3687,7 +3687,7 @@ if(request.method==="POST"&&url.pathname==="/api/services/quote"){
       FROM service_catalogue c JOIN resource_pricing p ON p.resource_code=c.resource_code
       WHERE c.resource_code=? AND c.is_listed=1 LIMIT 1
     `).bind(code).first();
-    if(!pricing||pricing.task_type==="VERIFY_IN_DASHBOARD"||Number(pricing.enabled)!==1||pricing.currency!=="USDT")
+    if(!pricing||["VERIFY_IN_DASHBOARD","tg_username"].includes(String(pricing.task_type))||Number(pricing.enabled)!==1||pricing.currency!=="USDT")
       return json({ok:false,error:"service_unavailable"},403,origin);
     const quote=calculatePrice(pricing,quantity);
     return json({ok:true,service:code,customer:user.first_name||"Customer",quantity,
@@ -3717,7 +3717,7 @@ if(request.method==="POST"&&url.pathname==="/api/services/order"){
       WHERE s.id=? AND s.user_id=? AND s.resource_code=? AND c.is_listed=1 AND sc.is_listed=1 LIMIT 1
     `).bind(uploadId,user.id,code).first();
     if(!upload||!["uploaded","reviewed"].includes(upload.status)||!upload.expires_at||
-       new Date(upload.expires_at).getTime()<=Date.now()||upload.task_type==="VERIFY_IN_DASHBOARD")
+       new Date(upload.expires_at).getTime()<=Date.now()||["VERIFY_IN_DASHBOARD","tg_username"].includes(String(upload.task_type)))
       return json({ok:false,error:"upload_not_orderable"},409,origin);
     const prior=await env.DB.prepare("SELECT id,status FROM orders WHERE user_id=? AND result_reference=? LIMIT 1")
       .bind(user.id,"upload:"+uploadId).first();
