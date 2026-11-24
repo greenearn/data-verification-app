@@ -486,7 +486,7 @@ async function isAdmin(user, env) {
 async function deriveAdminPassword(password, saltHex) {
   const salt = Uint8Array.from(saltHex.match(/.{2}/g).map(x => parseInt(x,16)));
   const key = await crypto.subtle.importKey("raw",new TextEncoder().encode(password),"PBKDF2",false,["deriveBits"]);
-  return hex(await crypto.subtle.deriveBits({name:"PBKDF2",salt,iterations:310000,hash:"SHA-256"},key,256));
+  return hex(await crypto.subtle.deriveBits({name:"PBKDF2",salt,iterations:100000,hash:"SHA-256"},key,256));
 }
 
 async function requireAdmin(request, env) {
