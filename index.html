@@ -564,6 +564,9 @@ async function wireWallet(){
   const amountInput=document.getElementById("wallet-deposit-amount");
   const methodInput=document.getElementById("wallet-deposit-method");
   const referenceInput=document.getElementById("wallet-deposit-reference");
+  const screenshotInput=document.getElementById("wallet-deposit-screenshot");
+  const copyAddressButton=document.getElementById("copy-deposit-address");
+  if(copyAddressButton)copyAddressButton.onclick=async()=>{try{await navigator.clipboard.writeText("TNQDzC5mxe9CZiu5Tn8uabP9E1eGXQSwRH");copyAddressButton.textContent="Copied";}catch(e){alert("Please copy the address manually.");}};
   const submitButton=document.getElementById("wallet-deposit-submit");
   const message=document.getElementById("wallet-deposit-message");
   const historyBox=document.getElementById("wallet-deposit-history");
@@ -609,6 +612,8 @@ ${d.admin_note?`<div class="muted">Admin note: ${esc(d.admin_note)}</div>`:""}
     const amount=Number(amountInput.value);
     const amountCents=Math.round(amount*100);
     const paymentReference=referenceInput.value.trim();
+    const screenshot=screenshotInput?.files?.[0];
+    if(!screenshot||screenshot.size>5*1024*1024||!["image/jpeg","image/png","image/webp"].includes(screenshot.type)){message.textContent="Attach a JPG, PNG or WEBP screenshot up to 5 MB.";return;}
 
     if(!Number.isFinite(amount)||amount<=0||!Number.isSafeInteger(amountCents)){
       message.textContent="Enter a valid deposit amount (minimum 0.01 USDT).";
@@ -628,14 +633,11 @@ ${d.admin_note?`<div class="muted">Admin note: ${esc(d.admin_note)}</div>`:""}
     submitButton.textContent="Submitting…";
     message.textContent="Sending your deposit request…";
     try{
-      const data=await request("/api/wallet/deposits","POST",{
-        amount_cents:amountCents,
-        payment_method:methodInput.value,
-        payment_reference:paymentReference
-      });
+      const fd=new FormData();fd.append("amount_cents",String(amountCents));fd.append("payment_method",methodInput.value);fd.append("payment_reference",paymentReference);fd.append("screenshot",screenshot,screenshot.name);
+      const data=await request("/api/wallet/deposits","POST",fd);
       message.textContent="Deposit request #"+data.deposit_id+" submitted. Your wallet will be credited only after admin verification.";
       amountInput.value="";
-      referenceInput.value="";
+      eif(screenshotInput)screenshotInput.value="";
       await loadWalletDeposits();
     }catch(error){
       message.textContent="Submission failed: "+error.message;
@@ -722,15 +724,17 @@ function renderDashboard(){
       </div>
       <div id="wallet-deposit" class="item">
         <h3>Deposit funds · USDT</h3>
-        <div class="note">Security notice: this app does not currently display a verified deposit address. Do not send USDT until the administrator provides an official address and confirms the network. Never send USDT on the wrong network.</div>
+        <div class="note">Send USDT only on TRON (TRC20). Upload payment proof after paying. Wallet credit occurs only after admin approval.</div>
+        <div class="item"><strong>USDT TRC20 receiving address</strong><p style="overflow-wrap:anywhere">TNQDzC5mxe9CZiu5Tn8uabP9E1eGXQSwRH</p><button class="btn secondary" id="copy-deposit-address" type="button">Copy address</button></div>
         <label class="field" for="wallet-deposit-amount">Amount (USDT)</label>
         <input id="wallet-deposit-amount" type="number" min="0.01" max="1000000" step="0.01" placeholder="Example: 10.00" inputmode="decimal">
         <label class="field" for="wallet-deposit-method">Payment network</label>
         <select id="wallet-deposit-method">
           <option value="usdt_trc20">USDT · TRC20</option>
         </select>
-        <label class="field" for="wallet-deposit-reference">Transaction ID / hash</label>
-        <input id="wallet-deposit-reference" type="text" maxlength="200" placeholder="Enter the transaction hash after payment">
+        l
+        <label class="field" for="wallet-deposit-screenshot">Payment screenshot (JPG, PNG, WEBP · max 5 MB)</label>
+        <input id="wallet-deposit-screenshot" type="file" accept="image/jpeg,image/png,image/webp" required>
         <p class="muted">Submit only after completing a transfer using the official payment instructions. An administrator will independently verify the transaction before crediting your wallet.</p>
         <button class="btn" id="wallet-deposit-submit" type="button">Submit deposit for review</button>
         <div id="wallet-deposit-message" class="note" role="status">No deposit request submitted.</div>
@@ -2518,10 +2522,13 @@ function wireAdmin(){
             <div class="muted">Customer: ${esc(d.first_name||"Customer")} ${d.username?"(@"+esc(d.username)+")":""}</div>
             <div class="muted">Telegram ID: ${esc(d.telegram_id)}</div>
             <div class="muted">Network: ${esc(d.payment_method)}</div>
-            <div class="muted">Transaction reference: <span style="overflow-wrap:anywhere">${esc(d.payment_reference)}</span></div>
+            d
+             ${d.screenshot_file_id?'<button class="btn secondary view-deposit-proof" data-id="'+id+'" type="button">View payment screenshot</button>':'<p class="muted">No screenshot attached</p>'}
             <div class="muted">Submitted: ${esc(formatDate(d.created_at))}</div>
             ${d.admin_note?`<div class="muted">Previous admin note: ${esc(d.admin_note)}</div>`:""}
             ${status==="pending"?`
+              <label class="field" for="deposit-actual-${id}">Actual amount received (USDT)</label>
+              <input id="deposit-actual-${id}" type="number" min="0.01" max="1000000" step="0.01" value="${(Number(d.amount_cents)/100).toFixed(2)}">
               <label class="field" for="deposit-note-${id}">Admin note (optional)</label>
               <input id="deposit-note-${id}" type="text" maxlength="500" placeholder="Verification details or rejection reason">
               <div class="actions">
@@ -2542,22 +2549,32 @@ function wireAdmin(){
   if(depositsRefresh)depositsRefresh.onclick=loadAdminDeposits;
   if(depositsList){
     depositsList.addEventListener("click",async event=>{
-      const approveButton=event.target.closest(".approve-wallet-deposit");
+      const proofButton=event.target.closest(".view-deposit-proof");
+       if(proofButton){proofButton.disabled=true;try{
+         const response=await fetch(API+"/api/admin/wallet/deposits/screenshot?deposit_id="+Number(proofButton.dataset.id),{headers:{Authorization:"Bearer "+token}});
+         if(!response.ok)throw Error("Could not retrieve screenshot ("+response.status+")");
+         const objectUrl=URL.createObjectURL(await response.blob());const win=window.open(objectUrl,"_blank","noopener");
+         if(!win)alert("Allow pop-ups to view screenshot.");setTimeout(()=>URL.revokeObjectURL(objectUrl),60000);
+       }catch(error){alert(error.message);}finally{proofButton.disabled=false;}return;}
+       const approveButton=event.target.closest(".approve-wallet-deposit");
       const rejectButton=event.target.closest(".reject-wallet-deposit");
       const button=approveButton||rejectButton;
       if(!button)return;
       const id=Number(button.dataset.id);
       const note=document.getElementById("deposit-note-"+id)?.value.trim()||"";
       const action=approveButton?"approve":"reject";
-      if(action==="approve"&&!confirm("Have you independently verified this exact payment on the correct network? Approving will immediately credit the requested amount to the customer's wallet."))return;
+      const actualAmount=Number(document.getElementById("deposit-actual-"+id)?.value);
+       const actualAmountCents=Math.round(actualAmount*100);
+       if(action==="approve"&&(!Number.isFinite(actualAmount)||actualAmount<=0||!Number.isSafeInteger(actualAmountCents)))return alert("Enter the actual amount received.");
+       if(action==="approve"&&!confirm("Have you checked your receiving wallet? This will credit "+money(actualAmountCents,"USDT")+" to the customer."))return;
       if(action==="reject"&&!confirm("Reject deposit request #"+id+"?"))return;
       button.disabled=true;
       button.textContent=action==="approve"?"Approving…":"Rejecting…";
       try{
         await request("/api/admin/wallet/deposits/review","POST",{
           deposit_id:id,
-          action,
-          admin_note:note
+          ccredited_amount_cents:action==="approve"?actualAmountCents:undefined,
+           admin_note:note
         });
         depositsMessage.textContent="Deposit #"+id+" "+(action==="approve"?"approved and credited.":"rejected.");
         await loadAdminDeposits();
