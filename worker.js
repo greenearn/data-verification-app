@@ -1289,7 +1289,13 @@ async function processProviderTask(env, task) {
   }
 
   const resultUrl = safeProviderResultUrl(provider.result_url, env);
-  if (!resultUrl) throw new Error("provider_result_url_not_allowlisted");
+  if (!resultUrl) {
+    let resultHost = "missing_or_invalid";
+    try {
+      resultHost = new URL(String(provider.result_url || "")).hostname.toLowerCase() || resultHost;
+    } catch {}
+    throw new Error("provider_result_url_not_allowlisted:" + resultHost);
+  }
   const resultResponse = await fetchProviderResult(resultUrl, env);
   const resultBytes = await resultResponse.arrayBuffer();
   if (!resultBytes.byteLength || resultBytes.byteLength > 20 * 1024 * 1024) throw new Error("provider_result_size_invalid");
