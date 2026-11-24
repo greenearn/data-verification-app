@@ -3421,7 +3421,9 @@ if (request.method === "POST" && url.pathname === "/api/admin/provider-tasks/sub
       error.message === "service_not_enabled_for_provider_submission" ? 403 : 502;
     return json({
       ok: false,
-      error: error.message === "provider_request_failed" ? "provider_submission_outcome_uncertain" : error.message || "provider_submission_failed",
+      error: error.message === "provider_request_failed"
+        ? (error.providerRejected ? "provider_request_rejected" : "provider_submission_outcome_uncertain")
+        : error.message || "provider_submission_failed",
       provider_status: error.providerStatus || null
     }, status, origin);
   }
