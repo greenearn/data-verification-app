@@ -628,6 +628,7 @@ function wireNotifications(){
           <strong>Request #${esc(item.id)}</strong>
           <strong>${esc((item.status||"pending").toUpperCase())}</strong>
         </div>
+        <div>Service: ${esc(item.service_name||"Not specified")}</div>
         <div>Country: ${esc(item.country_code||"—")}</div>
         <div>Type: ${esc(item.number_type||"—")}</div>
         <div>Quantity: ${esc(item.quantity??"—")}</div>
@@ -1038,7 +1039,8 @@ function renderDashboard(){
 
 
 <section id="toolbox" class="panel">
-  <h2>Worldwide Test Number Generator</h2>
+  <h2>Number Generator</h2>
+  <p id="number-generator-service">Choose a service from the Service Catalogue first.</p>
   <p>Generate official fictional test numbers where published, or clearly labelled synthetic test IDs for other countries. Synthetic IDs are not dialable phone numbers and cannot be used as real numbers in phone-validation services.</p>
 
   <label class="field" for="generator-country">Country</label>
@@ -1092,7 +1094,8 @@ function renderDashboard(){
 
 
     <div class="panel">
-  <h3>Need a phone-number file?</h3>
+  <h3>Request a Number File for Your Service</h3>
+  <p id="number-request-service">Select a service from the catalogue first.</p>
   <p>Upload your own authorised contact list in the Prepare your input list section to filter it.</p>
   <p>Or request an eligible number dataset from our admin team for manual review.</p>
 
@@ -1130,6 +1133,7 @@ function renderDashboard(){
   <label class="field" for="number-request-quantity">Quantity requested</label>
   <input id="number-request-quantity" type="number" min="1" max="10000" value="100">
 
+  <label class="field"><input type="checkbox" id="number-request-consent"> I confirm I am authorized to receive and process this dataset for the selected service.</label>
   <button class="btn" id="submit-number-request" type="button">
     Request file
   </button>
@@ -1448,19 +1452,15 @@ document.getElementById("submit-number-request").onclick = async function () {
   message.textContent = "Sending your request to the admin team...";
 
   try {
-    const result = await request(
-      "/api/toolbox/number-file-request",
-      "POST",
-      {
-        country_code: countryCode,
-        number_type: numberType,
-        quantity: quantity
-      }
-    );
-
-    message.textContent =
-      "Request #" + result.request_id +
-      " submitted successfully. The admin team has been notified.";
+    if(!selectedCode)throw new Error("Please select a service from the Service Catalogue first.");
+    const consent=document.getElementById("number-request-consent");
+    if(!consent || !consent.checked)throw new Error("Please confirm that you are authorized to receive and process this dataset.");
+    const selectedService=services.find(item=>item.resource_code===selectedCode);
+    const result = await request("/api/toolbox/number-file-request","POST",{
+      country_code:countryCode,number_type:numberType,quantity:quantity,
+      resource_code:selectedCode,service_name:selectedService?.name||selectedCode,consent_confirmed:true
+    });
+    message.textContent="Your file is being prepared. Please check your Telegram bot chat. Request #"+result.request_id+".";
     await loadRequestHistory();
     await loadNotifications();
   } catch (error) {
@@ -1808,6 +1808,12 @@ function renderServices(){
       select.value=selectedCode;
       renderServices();
       updateEstimate();
+      const chosen=services.find(item=>item.resource_code===selectedCode);
+      const serviceLabel=document.getElementById("number-generator-service");
+      if(serviceLabel)serviceLabel.textContent=chosen?"Selected service: "+chosen.name:"Choose a service from the Service Catalogue first.";
+      const requestService=document.getElementById("number-request-service");
+      if(requestService)requestService.textContent=chosen?"Requesting a file for: "+chosen.name:"Select a service above first.";
+      document.getElementById("toolbox")?.scrollIntoView({behavior:"smooth",block:"start"});
     };
   });
 }
