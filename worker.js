@@ -1182,7 +1182,38 @@ async function submitStagedProviderTask(env, uploadId) {
     const extension = String(upload.file_name || "").toLowerCase().split(".").pop();
     if (!["csv", "txt"].includes(extension)) throw new Error("unsupported_file_type");
     const entries = parseProviderPhoneEntries(content, extension);
-    if (entries.length < 2000 || entries.length > 10000) throw new Error("provider_quantity_out_of_range");
+
+    // One-time, explicitly approved phoneCheck test guard:
+    // exactly 2,000 unique numbers and a maximum estimated provider cost of $0.30.
+    // This is an application-side estimate guard, not a provider-side price guarantee.
+    const testQuantityLimit = 2000;
+    const maxProviderCostCents = 30;
+    if (entries.length !== testQuantityLimit) {
+      throw new Error("provider_test_requires_exactly_2000_unique_numbers");
+    }
+
+    const pricing = await env.DB.prepare(`
+      SELECT provider_cost_cents, pricing_unit_quantity
+      FROM resource_pricing
+      WHERE resource_code = 'phoneCheck'
+      LIMIT 1
+    `).first();
+    const configuredProviderCost = Number(pricing?.provider_cost_cents);
+    const configuredUnitQuantity = Number(pricing?.pricing_unit_quantity);
+    if (
+      !Number.isSafeInteger(configuredProviderCost) ||
+      configuredProviderCost < 0 ||
+      !Number.isSafeInteger(configuredUnitQuantity) ||
+      configuredUnitQuantity <= 0
+    ) {
+      throw new Error("provider_cost_estimate_unavailable");
+    }
+    const estimatedProviderCostCents = Math.ceil(
+      configuredProviderCost * entries.length / configuredUnitQuantity
+    );
+    if (estimatedProviderCostCents > maxProviderCostCents) {
+      throw new Error("provider_cost_exceeds_approved_30_cent_limit");
+    }
 
     const form = new FormData();
     const normalizedFile = entries.join("\n") + "\n";
