@@ -14,5 +14,11 @@ database_id = "ee708fbc-1638-4169-8044-2930c37945ec"
 binding = "DB"
 database_id = "0891dea4-f0e8-4831-ace4-51399ad7a347"
 
-# Keep variables configured in the Cloudflare dashboard during Wrangler deployments.
+# Durable, non-secret defaults for the production Worker.
+# Keep these values in version control so deployments can restore them.
+[vars]
+CN_BASE_URL = "https://api.checknumber.ai"
+TELEGRAM_STORAGE_CHAT_ID = "-1003768905030"
+
+# Preserve dashboard-only variables during Wrangler deployments.
 keep_vars = true
