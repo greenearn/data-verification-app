@@ -1670,6 +1670,11 @@ function updateEstimate(){
     return;
   }
 
+  if (!service.can_order) {
+    box.textContent = "Price is configured, but this product is not active for customer orders yet. An administrator must verify provider account access and enable it.";
+    return;
+  }
+
   const amount = Number(quantity.value || 0);
   const minimum = Number(service.minimum_order_quantity || 0);
 
