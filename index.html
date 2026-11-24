@@ -1653,6 +1653,12 @@ function adminMarkup(){
     </div>
 
     <div class="item-top"><h3>Categories</h3><span class="pill">D1 database</span></div>
+    <div class="panel">
+      <h3>Import safe CheckNumber catalogue</h3>
+      <p class="muted">Adds the available catalogue categories and service records. Services remain hidden and customer ordering stays disabled until you configure and publish them.</p>
+      <button class="btn secondary" id="import-catalogue" type="button">Import safe CheckNumber catalogue</button>
+      <p class="muted" id="catalogue-import-message">No catalogue import has been run.</p>
+    </div>
     <div id="admin-categories"></div>
 
     <div class="panel">
@@ -2676,6 +2682,26 @@ async function loadNumberRequests() {
   };
 
   document.getElementById("reload-admin").onclick=()=>adminAction(reloadAdmin);
+
+  const importCatalogueButton=document.getElementById("import-catalogue");
+  if(importCatalogueButton){
+    importCatalogueButton.onclick=()=>adminAction(async()=>{
+      if(!confirm("Import the safe CheckNumber catalogue? Existing services and pricing will be preserved. Customer ordering will remain disabled."))return;
+      importCatalogueButton.disabled=true;
+      const message=document.getElementById("catalogue-import-message");
+      message.textContent="Importing catalogue…";
+      try{
+        const result=await request("/api/admin/catalogue/import","POST");
+        message.textContent="Import complete: "+Number(result.imported_categories||0)+" categories and "+Number(result.catalogue_entries_processed||0)+" catalogue entries processed. Services remain hidden; ordering remains disabled.";
+        await reloadAdmin();
+      }catch(error){
+        message.textContent="Import failed: "+(error.message||"Unknown error");
+        throw error;
+      }finally{
+        importCatalogueButton.disabled=false;
+      }
+    });
+  }
 
   
   // Load admin upload history and manage review status
