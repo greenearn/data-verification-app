@@ -1312,7 +1312,7 @@ document.getElementById("submit-number-request").onclick = async function () {
     }
 const consentBox = document.getElementById("phone-consent");
 
-if (selectedCode === "phoneCheck" && !consentBox.checked) {
+if (!consentBox.checked) {
   resultBox.textContent =
     "Please confirm that you have permission to submit these phone numbers.";
   return;
@@ -1320,10 +1320,8 @@ if (selectedCode === "phoneCheck" && !consentBox.checked) {
     const form=new FormData();
     form.append("file",file);
     form.append("resource_code",selectedCode);
-if (selectedCode === "phoneCheck") {
-  form.append("consent_confirmed", "yes");
-  form.append("consent_version", "phone-validation-v1");
-}
+form.append("consent_confirmed", "yes");
+form.append("consent_version", selectedCode === "phoneCheck" ? "phone-validation-v1" : "authorized-list-v1");
     resultBox.textContent="Uploading file. Please wait...";
 
     try{
@@ -1331,13 +1329,13 @@ if (selectedCode === "phoneCheck") {
       uploadedFileId=Number(result.upload_id);
       const orderButton=document.getElementById("place-order-button");
       if(orderButton){
-        const orderable=services.some(service=>service.resource_code==="phoneCheck"&&service.can_order);
-        orderButton.classList.toggle("hidden",selectedCode!=="phoneCheck"||!orderable);
+        const selectedService=services.find(service=>service.resource_code===selectedCode);
+        orderButton.classList.toggle("hidden",!selectedService||!selectedService.can_order);
         orderButton.disabled=false;
       }
       resultBox.textContent=
         "File uploaded successfully. Upload ID: "+result.upload_id+
-        (selectedCode==="phoneCheck"?" · Your file is ready for a paid order.":"");
+        (services.some(service=>service.resource_code===selectedCode&&service.can_order)?" · Your file is ready for checkout.":"");
 
     }catch(error){
       uploadedFileId=null;
@@ -1348,23 +1346,25 @@ if (selectedCode === "phoneCheck") {
   document.getElementById("place-order-button").onclick=async()=>{
     const button=document.getElementById("place-order-button");
     const resultBox=document.getElementById("upload-file-result");
-    if(!uploadedFileId||selectedCode!=="phoneCheck"){
-      resultBox.textContent="Upload a Phone Number Validation file first.";
+    const selectedService=services.find(service=>service.resource_code===selectedCode);
+    if(!uploadedFileId||!selectedService||!selectedService.can_order){
+      resultBox.textContent="Upload a file for an enabled service first.";
       return;
     }
-    if(!confirm("Place this Phone Number Validation order? The final price will be calculated from your uploaded file and deducted from your USDT wallet."))return;
+    if(!confirm("Place this "+selectedService.name+" order? The final price will be calculated from your uploaded file and deducted from your USDT wallet."))return;
     button.disabled=true;
     button.textContent="Placing order…";
     try{
-      const result=await request("/api/phone-check/order","POST",{
+      const result=await request("/api/services/order","POST",{
         upload_id:uploadedFileId,
+        resource_code:selectedCode,
         idempotency_key:crypto.randomUUID().replace(/-/g,"")
       });
       uploadedFileId=null;
       button.classList.add("hidden");
       resultBox.textContent="Order #"+result.order.id+" received. Charged "+
         money(result.order.customer_charge_cents,"USDT")+
-        ". Our admin team will process it and send the result to your Telegram chat.";
+        ". Your order will be submitted to the provider and the result delivered to your Telegram chat.";
       await refreshWalletBalance();
       await loadOrders();
     }catch(error){
@@ -1864,11 +1864,12 @@ function adminMarkup(){
           <select id="svc-input">
             <option value="phone">Phone</option>
             <option value="email">Email</option>
+            <option value="username">Username</option>
           </select>
         </div>
         <div>
-          <label class="field">Provider task code</label>
-          <input id="svc-task" maxlength="80" placeholder="Provider task code">
+          <label class="field">Provider API task code (editable)</label>
+          <input id="svc-task" maxlength="80" placeholder="e.g. ws, tg, viber">
         </div>
       </div>
 
@@ -1878,6 +1879,15 @@ function adminMarkup(){
       <button class="btn" id="save-service">Save service details</button>
       <button class="btn secondary" id="new-service">Clear / New service</button>
       <div id="service-message" class="muted"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Global platform profit margin</h3>
+      <p class="muted">Apply one percentage markup to every product's provider cost. Existing per-product final-price overrides are cleared when you apply a global margin.</p>
+      <label class="field" for="global-markup">Global markup percentage</label>
+      <input id="global-markup" type="number" min="0" max="10000" step="1" value="10" placeholder="10">
+      <button class="btn" id="apply-global-markup" type="button">Apply to all products</button>
+      <p id="global-markup-message" class="muted"></p>
     </div>
 
     <div class="panel">
@@ -2937,6 +2947,19 @@ async function loadNumberRequests() {
 
       document.getElementById("admin-service-select").value=body.resource_code;
       loadServiceEditor(body.resource_code);
+    });
+  };
+
+  document.getElementById("apply-global-markup").onclick=async()=>{
+    const percentage=Number(document.getElementById("global-markup").value);
+    if(!Number.isSafeInteger(percentage)||percentage<0||percentage>10000)
+      return alert("Enter a whole percentage from 0 to 10000.");
+    if(!confirm("Apply "+percentage+"% markup to every product? This clears individual final-price overrides. You can edit individual product pricing afterwards."))return;
+    await adminAction(async()=>{
+      const result=await request("/api/admin/pricing/global","POST",{markup_percentage:percentage});
+      document.getElementById("global-markup-message").textContent=
+        "Global markup applied to "+result.updated_products+" products.";
+      await reloadAdmin();
     });
   };
 
