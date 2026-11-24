@@ -1847,11 +1847,24 @@ document.getElementById("importCatalogue").onclick=async()=>{
 
 if (
   request.method === "POST" &&
-  r    await ensureWalletDepositSchema(env);
-    if(!(request.headers.get("Content-Type")||"").toLowerCase().includes("multipart/form-data"))return json({ok:false,error:"payment_screenshot_required"},400,origin);
-    const form=await request.formData(),file=form.get("screenshot");
-    if(!(file instanceof File)||!file.size||file.size>5*1024*1024||!["image/jpeg","image/png","image/webp"].includes(String(file.type||"").toLowerCase()))return json({ok:false,error:"invalid_screenshot"},400,origin);
-    const body={amount_cents:Number(form.get("amount_cents")),payment_method:String(form.get("payment_method")||""),payment_reference:String(form.get("payment_reference")||"")};
+  url.pathname === "/api/wallet/deposits"
+) {
+  try {
+    const user = await getSessionUser(request, env);
+    await ensureWalletDepositSchema(env);
+    if (!(request.headers.get("Content-Type") || "").toLowerCase().includes("multipart/form-data")) {
+      return json({ok:false,error:"payment_screenshot_required"},400,origin);
+    }
+    const form = await request.formData();
+    const file = form.get("screenshot");
+    if (!(file instanceof File) || !file.size || file.size > 5*1024*1024 || !["image/jpeg","image/png","image/webp"].includes(String(file.type||"").toLowerCase())) {
+      return json({ok:false,error:"invalid_screenshot",message:"Attach JPG, PNG or WEBP up to 5 MB."},400,origin);
+    }
+    const body = {
+      amount_cents:Number(form.get("amount_cents")),
+      payment_method:String(form.get("payment_method")||""),
+      payment_reference:String(form.get("payment_reference")||"")
+    };
 
     const amountCents = Number(body.amount_cents);
     const paymentMethod = String(
