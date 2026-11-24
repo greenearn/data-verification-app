@@ -516,6 +516,23 @@ async function loadNotifications(isPoll=false){
   }
 }
 
+async function loadReferralData(){
+  const summary=document.getElementById("referral-summary"),link=document.getElementById("referral-link"),count=document.getElementById("referral-count"),earned=document.getElementById("referral-earned"),tiers=document.getElementById("referral-tiers");
+  if(!summary||!link||!count||!earned||!tiers)return;
+  try{
+    const data=await request("/api/referrals");
+    link.value=data.referral_link||"";
+    count.textContent=String(data.referred_count||0);
+    earned.textContent=money(Number(data.earned_cents||0),"USDT");
+    summary.textContent="Share your link. Your commission is added to your wallet after a referred customer's deposit is approved.";
+    tiers.innerHTML=(data.tiers||[]).length?(data.tiers||[]).map(t=>'<div class="item">'+money(Number(t.min_deposit_cents),"USDT")+' deposit or more · '+(Number(t.percentage_basis_points)/100).toFixed(2)+'% commission</div>').join(""):'<p class="muted">No active commission tiers.</p>';
+  }catch(error){summary.textContent="Could not load referral details: "+error.message;}
+}
+function wireReferral(){
+  const copy=document.getElementById("referral-copy"),link=document.getElementById("referral-link");
+  if(copy&&link)copy.onclick=async()=>{if(!link.value)return;try{await navigator.clipboard.writeText(link.value);copy.textContent="Copied!";}catch(error){link.select();document.execCommand("copy");copy.textContent="Copied!";}setTimeout(()=>copy.textContent="Copy referral link",1800);};
+  loadReferralData();
+}
 function wireNotifications(){
   const toggle=document.getElementById("notification-toggle");
   const panel=document.getElementById("notification-panel");
@@ -962,6 +979,7 @@ function renderDashboard(){
   <a href="#orders">Orders</a>
   <a href="#support">Support</a>
   <a href="#account">Account</a>
+  <a href="#refer-earn">Refer &amp; Earn</a>
   ${adminMode?'<a href="#admin" id="open-admin-dashboard">Admin dashboard</a>':""}
 </nav>
 
@@ -1027,6 +1045,22 @@ function renderDashboard(){
         <h3>Wallet transactions</h3>
         <p class="muted">The complete transaction ledger will be connected separately. This list currently shows deposit requests and their review status only.</p>
       </div>
+    </section>
+
+    <section id="refer-earn" class="panel">
+      <div class="item-top"><h2>Refer &amp; Earn</h2><span class="pill">USDT rewards</span></div>
+      <p>Invite friends to Data Verification. Earn a commission when their deposit is approved.</p>
+      <div id="referral-summary" class="muted">Loading your referral link…</div>
+      <label class="field" for="referral-link">Your personal referral link</label>
+      <input id="referral-link" type="text" readonly>
+      <button class="btn" id="referral-copy" type="button">Copy referral link</button>
+      <div class="grid" style="margin-top:12px">
+        <div class="item"><strong id="referral-count">0</strong><small>Referred customers</small></div>
+        <div class="item"><strong id="referral-earned">0.00 USDT</strong><small>Total commissions earned</small></div>
+      </div>
+      <h3>Current commission tiers</h3>
+      <div id="referral-tiers" class="muted">Loading tiers…</div>
+      <p class="muted">Commission is calculated separately for each approved deposit and credited to your wallet. Only deposits from customers who joined through your link qualify.</p>
     </section>
 
     <section id="services">
@@ -1262,6 +1296,7 @@ function renderDashboard(){
   wireSupportCustomer();
 
   wireNotifications();
+  wireReferral();
   wireRequestHistory();
   wireWallet();
   if(window.walletBalanceTimer){
@@ -2073,6 +2108,19 @@ function adminMarkup(){
       <p>New registrations, customer requests and wallet events are shown here for administrators.</p>
       <div id="admin-activity-message" class="muted">Loading platform activity…</div>
       <div id="admin-activity-list"></div>
+    </div>
+
+    <div class="panel" id="admin-referral-panel">
+      <div class="item-top"><h3>Refer &amp; Earn Commission Tiers</h3><button class="btn secondary" id="admin-referral-refresh" type="button">Refresh</button></div>
+      <p>Set the minimum amount of each individual approved deposit and the referral commission percentage. The highest matching active tier applies.</p>
+      <input id="admin-referral-tier-id" type="hidden">
+      <label class="field" for="admin-referral-minimum">Minimum deposit (USDT)</label>
+      <input id="admin-referral-minimum" type="number" min="0.01" step="0.01" placeholder="100">
+      <label class="field" for="admin-referral-rate">Commission percentage (%)</label>
+      <input id="admin-referral-rate" type="number" min="0" max="100" step="0.01" placeholder="5">
+      <button class="btn" id="admin-referral-save" type="button">Add commission tier</button>
+      <div id="admin-referral-message" class="muted">Loading commission tiers…</div>
+      <div id="admin-referral-tiers"></div>
     </div>
 
     <div class="panel" id="admin-users-panel">
