@@ -720,6 +720,7 @@ ${d.admin_note?`<div class="muted">Admin note: ${esc(d.admin_note)}</div>`:""}
 
 
 function renderAdminGate(configured){
+  adminPasswordConfigured=!!configured;
   app.innerHTML='<main class="wrap"><section class="admin-gate"><div class="admin-gate-icon">◆</div><p class="admin-label">PRIVATE ADMIN ACCESS</p><h1>'+(configured?'Unlock Admin Dashboard':'Create Admin Password')+'</h1><p>'+(configured?'Enter your administrator password to continue. The dashboard locks after 15 minutes of inactivity.':'Set a private password for this administrator account. Use at least 10 characters.')+'</p><label class="field" for="admin-gate-password">Administrator password</label><input id="admin-gate-password" type="password" minlength="10" maxlength="128" autocomplete="'+(configured?'current-password':'new-password')+'" placeholder="Enter password"><button class="btn" id="admin-gate-submit" type="button">'+(configured?'Unlock dashboard':'Create password')+'</button><p id="admin-gate-message" class="muted"></p><button class="back-button" id="admin-gate-back" type="button">← Back to customer dashboard</button></section></main>';
   const input=document.getElementById("admin-gate-password"),button=document.getElementById("admin-gate-submit"),msg=document.getElementById("admin-gate-message");
   button.onclick=async()=>{
@@ -727,7 +728,7 @@ function renderAdminGate(configured){
     if(!password){msg.textContent="Enter your password.";return;}
     button.disabled=true;msg.textContent="Verifying securely…";
     try{
-      if(!configured){await request("/api/admin/security/setup","POST",{password});configured=true;}
+      if(!configured){await request("/api/admin/security/setup","POST",{password});configured=true;adminPasswordConfigured=true;}
       const result=await request("/api/admin/security/unlock","POST",{password});
       adminUnlockToken=result.unlock_token;sessionStorage.setItem("dv_admin_unlock",adminUnlockToken);
       input.value="";startAdminIdleLock();await renderAdminWorkspace();
@@ -1175,7 +1176,7 @@ function renderDashboard(){
   </main>`;
 
   const adminOpen=document.getElementById("open-admin-dashboard");
-  if(adminOpen)adminOpen.onclick=e=>{e.preventDefault();renderAdminGate(true);};
+  if(adminOpen)adminOpen.onclick=e=>{e.preventDefault();renderAdminGate(adminPasswordConfigured);};
   const backButton=document.getElementById("customer-back");
   if(backButton)backButton.onclick=()=>{if(location.hash){history.back();}else{window.scrollTo({top:0,behavior:"smooth"});}};
   renderServices();
