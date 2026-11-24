@@ -1811,6 +1811,9 @@ function adminMarkup(){
       <p class="muted">Send a test message to the configured private Telegram storage channel.</p>
       <button class="btn secondary" id="admin-storage-test" type="button">Test storage connection</button>
       <p id="admin-storage-test-result" class="muted"></p>
+      <p class="muted">Upload a tiny synthetic TXT file, then download it again to verify document storage. No customer data or CheckNumber task is used.</p>
+      <button class="btn secondary" id="admin-storage-file-test" type="button">Test file upload and retrieval</button>
+      <p id="admin-storage-file-test-result" class="muted"></p>
     </div>
 
     <div class="panel">
@@ -2289,6 +2292,23 @@ function wireAdmin(){
     };
   }
 
+  const storageFileTestButton=document.getElementById("admin-storage-file-test");
+  const storageFileTestMessage=document.getElementById("admin-storage-file-test-result");
+  if(storageFileTestButton){
+    storageFileTestButton.onclick=async()=>{
+      if(!confirm("Upload and retrieve a small synthetic test TXT file in the private Telegram storage channel? No customer data or CheckNumber task will be used."))return;
+      storageFileTestButton.disabled=true;
+      storageFileTestMessage.textContent="Uploading and verifying test file…";
+      try{
+        const data=await request("/api/admin/storage-file-test","POST",{});
+        storageFileTestMessage.textContent="File upload and retrieval successful. "+data.file_name+" · "+data.file_size+" bytes.";
+      }catch(error){
+        storageFileTestMessage.textContent="File storage test failed: "+error.message;
+      }finally{
+        storageFileTestButton.disabled=false;
+      }
+    };
+  }
   // WALLET DEPOSIT REVIEW
   const depositsMessage=document.getElementById("admin-deposits-message");
   const depositsList=document.getElementById("admin-deposits-list");
