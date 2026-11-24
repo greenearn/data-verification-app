@@ -334,6 +334,7 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "GET /api/admin/catalogue": "catalogue_manage",
   "POST /api/admin/catalogue/import": "catalogue_manage",
   "POST /api/admin/checknumber/validate-upload": "checknumber_validate",
+  "POST /api/uploads": "checknumber_validate",
   "GET /api/admin/uploads": "uploads_manage",
   "POST /api/admin/uploads/status": "uploads_manage",
   "POST /api/admin/categories": "catalogue_manage",
@@ -2417,8 +2418,8 @@ if (
           }, 400, origin);
         }
 
-        // Confirm that the selected service is listed and enabled.
-        const service = await env.DB.prepare(`
+        // Normal customer uploads require a listed service and enabled pricing.
+        let service = await env.DB.prepare(`
           SELECT c.resource_code
           FROM service_catalogue c
           JOIN service_categories sc
@@ -2431,6 +2432,21 @@ if (
             AND p.enabled = 1
           LIMIT 1
         `).bind(resourceCode).first();
+
+        // Main/full admins (or explicitly permitted sub-admins) may stage
+        // phoneCheck files while the service remains hidden and pricing off.
+        // This is storage/validation preparation only; it never submits a
+        // provider task or enables customer ordering.
+        if (!service && resourceCode === "phoneCheck") {
+          await requireAdmin(request, env);
+          service = await env.DB.prepare(`
+            SELECT resource_code
+            FROM service_catalogue
+            WHERE resource_code = 'phoneCheck'
+              AND task_type = 'phoneCheck'
+            LIMIT 1
+          `).first();
+        }
 
         if (!service) {
           return json({
