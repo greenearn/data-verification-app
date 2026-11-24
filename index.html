@@ -2942,6 +2942,7 @@ async function loadNumberRequests() {
 
             <div class="muted">Upload ID: ${Number(upload.id)}</div>
             <div class="muted">Customer ID: ${Number(upload.user_id)}</div>
+            ${upload.paid_order_id?'<div class="muted">Paid order #'+Number(upload.paid_order_id)+' · '+esc(money(upload.paid_order_charge_cents,"USDT"))+' · '+esc(upload.paid_order_status||"pending")+'</div>':'<div class="muted">No customer payment linked to this upload.</div>'}
             <div class="muted">Service: ${esc(upload.resource_code||"Not specified")}</div>
             <div class="muted">File type: ${esc(upload.mime_type||"Unknown")}</div>
             <div class="muted">File size: ${size} KB</div>
