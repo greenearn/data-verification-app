@@ -1425,6 +1425,15 @@ async function pollProviderTasks(env, onlyId = null) {
 
 // --------------------------------------------------
 // WORKER REQUEST HANDLER
+let walletDepositSchemaReady=false;
+async function ensureWalletDepositSchema(env){
+ if(walletDepositSchemaReady)return;
+ for(const [c,t] of [["screenshot_file_id","TEXT"],["screenshot_file_name","TEXT"]]){
+  try{await env.DB.prepare(`ALTER TABLE wallet_deposit_requests ADD COLUMN ${c} ${t}`).run();}
+  catch(e){if(!String(e.message||"").toLowerCase().includes("duplicate column"))throw e;}
+ }
+ walletDepositSchemaReady=true;
+}
 // --------------------------------------------------
 
 async function telegramStoreDocument(env, file) {
@@ -1842,7 +1851,20 @@ if (
 ) {
   try {
     const user = await getSessionUser(request, env);
-    const body = await readBody(request);
+    await ensureWalletDepositSchema(env);
+    if (!(request.headers.get("Content-Type") || "").toLowerCase().includes("multipart/form-data")) {
+      return json({ok:false,error:"payment_screenshot_required"},400,origin);
+    }
+    const form = await request.formData();
+    const file = form.get("screenshot");
+    if (!(file instanceof File) || !file.size || file.size > 5*1024*1024 || !["image/jpeg","image/png","image/webp"].includes(String(file.type||"").toLowerCase())) {
+      return json({ok:false,error:"invalid_screenshot",message:"Attach JPG, PNG or WEBP up to 5 MB."},400,origin);
+    }
+    const body = {
+      amount_cents:Number(form.get("amount_cents")),
+      payment_method:String(form.get("payment_method")||""),
+      payment_reference:String(form.get("payment_reference")||"")
+    };
 
     const amountCents = Number(body.amount_cents);
     const paymentMethod = String(
@@ -1886,22 +1908,11 @@ if (
       }, 400, origin);
     }
 
-    const result = await env.DB.prepare(`
-      INSERT INTO wallet_deposit_requests (
-        user_id,
-        amount_cents,
-        currency,
-        payment_method,
-        payment_reference,
-        status
-      )
-      VALUES (?, ?, 'USDT', ?, ?, 'pending')
-    `).bind(
-      user.id,
-      amountCents,
-      paymentMethod,
-      paymentReference
-    ).run();
+    const stored=await telegramStoreDocument(env,new File([file],file.name||"deposit-proof",{type:file.type}));
+    const result=await env.DB.prepare(`
+      INSERT INTO wallet_deposit_requests (user_id,amount_cents,currency,payment_method,payment_reference,status,screenshot_file_id,screenshot_file_name)
+      VALUES (?,?,'USDT',?,?,'pending',?,?)
+    `).bind(user.id,amountCents,paymentMethod,paymentReference,stored.file_id,stored.file_name).run();
 
     return json({
       ok: true,
@@ -1959,6 +1970,7 @@ if (
 ) {
   try {
     await requireAdmin(request, env);
+    await ensureWalletDepositSchema(env);
 
     const result = await env.DB.prepare(`
       SELECT
@@ -1971,6 +1983,8 @@ if (
         d.currency,
         d.payment_method,
         d.payment_reference,
+        d.screenshot_file_id,
+        d.screenshot_file_name,
         d.status,
         d.admin_note,
         d.created_at
@@ -2012,6 +2026,18 @@ if (
 }
 
 // --------------------------------------------------
+// Admin-only screenshot retrieval.
+if(request.method==="GET"&&url.pathname==="/api/admin/wallet/deposits/screenshot"){
+ try{await requireAdmin(request,env);await ensureWalletDepositSchema(env);
+ const id=Number(url.searchParams.get("deposit_id"));const row=await env.DB.prepare("SELECT screenshot_file_id FROM wallet_deposit_requests WHERE id=?").bind(id).first();
+ if(!row?.screenshot_file_id)return json({ok:false,error:"screenshot_not_found"},404,origin);
+ const meta=await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${encodeURIComponent(row.screenshot_file_id)}`).then(r=>r.json());
+ if(!meta.ok||!meta.result?.file_path)throw Error("telegram_file_lookup_failed");
+ const f=await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${meta.result.file_path}`);if(!f.ok)throw Error("telegram_file_download_failed");
+ return new Response(f.body,{headers:{"Content-Type":f.headers.get("Content-Type")||"application/octet-stream","Cache-Control":"private, no-store","Access-Control-Allow-Origin":origin||DEFAULT_ALLOWED_ORIGIN,"Vary":"Origin"}});
+ }catch(e){if(e.message==="unauthorized")return json({ok:false,error:"unauthorized"},401,origin);if(e.message==="admin_access_required")return json({ok:false,error:"admin_access_required"},403,origin);console.error(e);return json({ok:false,error:"screenshot_fetch_failed"},500,origin);}
+}
+
 // ADMIN: APPROVE OR REJECT WALLET DEPOSIT
 // --------------------------------------------------
 
@@ -2025,6 +2051,7 @@ if (
     const body = await readBody(request);
 
     const depositId = Number(body.deposit_id);
+    const creditedAmountCents=Number(body.credited_amount_cents);
     const action = String(body.action || "").trim().toLowerCase();
     const adminNote = String(body.admin_note || "").trim();
 
@@ -2044,6 +2071,8 @@ if (
         error: "invalid_action"
       }, 400, origin);
     }
+
+    if(action==="approve"&&(!Number.isSafeInteger(creditedAmountCents)||creditedAmountCents<=0||creditedAmountCents>100000000))return json({ok:false,error:"invalid_actual_received_amount"},400,origin);
 
     if (adminNote.length > 500) {
       return json({
@@ -2080,6 +2109,7 @@ if (
           UPDATE wallet_deposit_requests
           SET
             status = 'approved',
+            amount_cents = ?,
             admin_note = ?,
             reviewed_by = (
               SELECT id
@@ -2090,6 +2120,7 @@ if (
           WHERE id = ?
             AND status = 'pending'
         `).bind(
+          creditedAmountCents,
           adminNote || null,
           admin.telegram_id,
           actionToken,
