@@ -341,6 +341,9 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "POST /api/admin/services/visibility": "catalogue_manage",
   "POST /api/admin/pricing": "catalogue_manage",
   "GET /api/admin/provider-balance": "provider_balance",
+  "GET /api/admin/provider-tasks": "checknumber_validate",
+  "POST /api/admin/provider-tasks/submit": "checknumber_validate",
+  "POST /api/admin/provider-tasks/poll": "checknumber_validate",
   "POST /api/admin/storage-test": "storage_test",
   "GET /api/admin/number-file-requests": "number_requests",
   "POST /api/admin/number-file-requests/upload": "number_requests",
@@ -984,6 +987,236 @@ async function saveServicePricing(body, env) {
     message: "pricing_saved",
     note: "Pricing configuration does not enable customer ordering."
   };
+}
+
+
+// --------------------------------------------------
+// CHECKNUMBER PROVIDER TASK LIFECYCLE
+// Admin-triggered only. Customer ordering/wallet charging remain disabled.
+// --------------------------------------------------
+
+async function ensureProviderTasksSchema(env) {
+  await env.DB.prepare(\`
+    CREATE TABLE IF NOT EXISTS provider_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      upload_id INTEGER NOT NULL UNIQUE,
+      user_id INTEGER NOT NULL,
+      telegram_id TEXT NOT NULL,
+      resource_code TEXT NOT NULL,
+      task_type TEXT NOT NULL,
+      provider_task_id TEXT UNIQUE,
+      status TEXT NOT NULL DEFAULT 'submitting',
+      provider_status TEXT,
+      total INTEGER,
+      success INTEGER,
+      failure INTEGER,
+      result_url TEXT,
+      last_error TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      completed_at TEXT
+    )
+  \`).run();
+}
+
+function safeProviderResultUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    if (url.protocol !== "https:" || url.username || url.password) return null;
+    const host = url.hostname.toLowerCase();
+    if (host === "localhost" || host.endsWith(".localhost") ||
+        host.endsWith(".local") || /^127\./.test(host) ||
+        /^10\./.test(host) || /^192\.168\./.test(host) ||
+        /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host)) return null;
+    return url.toString();
+  } catch { return null; }
+}
+
+async function providerApi(env, path, options = {}) {
+  if (!env.CN_API_KEY || !env.CN_BASE_URL) throw new Error("provider_configuration_missing");
+  const base = String(env.CN_BASE_URL).replace(/\/+$/, "");
+  const response = await fetch(base + path, {
+    ...options,
+    headers: { ...(options.headers || {}), "X-API-Key": env.CN_API_KEY }
+  });
+  const raw = await response.text();
+  let data;
+  try { data = JSON.parse(raw); } catch { data = {}; }
+  if (!response.ok) {
+    const error = new Error("provider_request_failed");
+    error.providerStatus = response.status;
+    throw error;
+  }
+  return data;
+}
+
+async function submitStagedProviderTask(env, uploadId) {
+  await ensureProviderTasksSchema(env);
+  const upload = await env.DB.prepare(\`
+    SELECT s.id, s.user_id, s.telegram_file_id, s.file_name,
+           s.file_size, s.resource_code, s.status, u.telegram_id
+    FROM upload_staging s JOIN users u ON u.id = s.user_id
+    WHERE s.id = ? LIMIT 1
+  \`).bind(uploadId).first();
+  if (!upload) throw new Error("upload_not_found");
+  if (!["uploaded", "reviewed"].includes(upload.status)) throw new Error("upload_not_ready");
+  // The first live adapter is phoneCheck only: its upload flow already records
+  // explicit consent for each submitted phone number.
+  if (upload.resource_code !== "phoneCheck") throw new Error("service_not_enabled_for_provider_submission");
+
+  const existing = await env.DB.prepare(
+    "SELECT id FROM provider_tasks WHERE upload_id = ? LIMIT 1"
+  ).bind(uploadId).first();
+  if (existing) throw new Error("provider_task_already_created");
+
+  const claim = await env.DB.prepare(\`
+    INSERT INTO provider_tasks (upload_id,user_id,telegram_id,resource_code,task_type,status)
+    VALUES (?,?,?,'phoneCheck','phoneCheck','submitting')
+  \`).bind(upload.id, upload.user_id, String(upload.telegram_id)).run();
+  const localId = Number(claim.meta.last_row_id);
+
+  try {
+    if (!env.TELEGRAM_BOT_TOKEN) throw new Error("telegram_storage_configuration_missing");
+    const infoResponse = await fetch(
+      \`https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=\${encodeURIComponent(upload.telegram_file_id)}\`
+    );
+    const info = await infoResponse.json();
+    const filePath = info?.result?.file_path;
+    if (!infoResponse.ok || !info.ok || !filePath || filePath.includes("..")) {
+      throw new Error("telegram_source_file_unavailable");
+    }
+    const source = await fetch(\`https://api.telegram.org/file/bot\${env.TELEGRAM_BOT_TOKEN}/\${filePath}\`);
+    if (!source.ok) throw new Error("telegram_source_download_failed");
+    const bytes = await source.arrayBuffer();
+    if (!bytes.byteLength || bytes.byteLength > 20 * 1024 * 1024) throw new Error("provider_file_size_invalid");
+    const content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    const entries = content.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+    if (!entries.length || entries.length > 1000000) throw new Error("provider_quantity_out_of_range");
+    if (entries.some(x => !/^\+?[1-9]\d{7,14}$/.test(x))) throw new Error("invalid_phone_numbers");
+
+    const form = new FormData();
+    form.append("file", new Blob([bytes], { type: "text/plain" }), upload.file_name || "numbers.txt");
+    form.append("task_type", "phoneCheck");
+
+    // Never auto-retry task creation: a timeout may happen after provider acceptance.
+    const providerResult = await providerApi(env, "/v1/tasks", { method: "POST", body: form });
+    const providerTaskId = String(providerResult.task_id || "");
+    if (!providerTaskId || providerTaskId.length > 200) throw new Error("provider_task_id_missing");
+
+    await env.DB.prepare(\`
+      UPDATE provider_tasks SET provider_task_id=?, status='submitted',
+        provider_status=?, total=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='submitting'
+    \`).bind(
+      providerTaskId, String(providerResult.status || "pending"),
+      Number.isSafeInteger(Number(providerResult.total)) ? Number(providerResult.total) : entries.length,
+      localId
+    ).run();
+    await env.DB.prepare(\`
+      UPDATE upload_staging SET status='reviewed',
+        admin_note='Submitted to CheckNumber provider task ' || ?,
+        reviewed_at=CURRENT_TIMESTAMP WHERE id=?
+    \`).bind(providerTaskId, uploadId).run();
+    return { id: localId, provider_task_id: providerTaskId, status: "submitted", quantity: entries.length };
+  } catch (error) {
+    await env.DB.prepare(\`
+      UPDATE provider_tasks SET status=?, last_error=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
+    \`).bind(
+      error.message === "provider_request_failed" ? "submission_unknown" : "failed",
+      String(error.message || "submission_failed").slice(0, 200), localId
+    ).run();
+    throw error;
+  }
+}
+
+async function sendProviderTaskNotice(env, telegramId, message) {
+  if (!env.TELEGRAM_BOT_TOKEN || !telegramId) return;
+  await fetch(\`https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}/sendMessage\`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: String(telegramId), text: message })
+  });
+}
+
+async function processProviderTask(env, task) {
+  const statusForm = new FormData();
+  statusForm.append("task_id", task.provider_task_id);
+  const provider = await providerApi(env, "/v1/gettasks", { method: "POST", body: statusForm });
+  const status = String(provider.status || "").toLowerCase();
+
+  if (status === "failed") {
+    await env.DB.prepare(\`
+      UPDATE provider_tasks SET status='failed', provider_status=?, total=?, success=?, failure=?,
+        last_error='provider_task_failed', updated_at=CURRENT_TIMESTAMP WHERE id=?
+    \`).bind(status, Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
+    await sendProviderTaskNotice(env, task.telegram_id, "Your verification task #" + task.id + " failed at the provider. Please contact support before resubmitting.");
+    return "failed";
+  }
+
+  if (status !== "exported") {
+    await env.DB.prepare(\`
+      UPDATE provider_tasks SET status='processing', provider_status=?, total=?, success=?, failure=?,
+        updated_at=CURRENT_TIMESTAMP WHERE id=?
+    \`).bind(status || "unknown", Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
+    return "processing";
+  }
+
+  const resultUrl = safeProviderResultUrl(provider.result_url);
+  if (!resultUrl) throw new Error("provider_result_url_invalid");
+  const resultResponse = await fetch(resultUrl);
+  if (!resultResponse.ok) throw new Error("provider_result_download_failed");
+  const resultBytes = await resultResponse.arrayBuffer();
+  if (!resultBytes.byteLength || resultBytes.byteLength > 20 * 1024 * 1024) throw new Error("provider_result_size_invalid");
+  if (!env.TELEGRAM_BOT_TOKEN) throw new Error("telegram_storage_configuration_missing");
+
+  const deliveryForm = new FormData();
+  deliveryForm.append("chat_id", String(task.telegram_id));
+  deliveryForm.append("document", new Blob([resultBytes], { type: "application/zip" }), "verification-result-" + task.id + ".zip");
+  deliveryForm.append("caption", "Your CheckNumber verification result is ready. Task #" + task.id);
+  const deliveryResponse = await fetch(
+    \`https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}/sendDocument\`,
+    { method: "POST", body: deliveryForm }
+  );
+  const delivery = await deliveryResponse.json();
+  if (!deliveryResponse.ok || !delivery.ok) {
+    await env.DB.prepare(\`
+      UPDATE provider_tasks SET status='delivery_pending', provider_status='exported',
+        result_url=?, total=?, success=?, failure=?, last_error='telegram_delivery_failed',
+        updated_at=CURRENT_TIMESTAMP WHERE id=?
+    \`).bind(resultUrl, Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
+    throw new Error("telegram_result_delivery_failed");
+  }
+
+  await env.DB.prepare(\`
+    UPDATE provider_tasks SET status='completed', provider_status='exported',
+      result_url=NULL, total=?, success=?, failure=?, last_error=NULL,
+      completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?
+  \`).bind(Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
+  await sendProviderTaskNotice(env, task.telegram_id, "Your verification result for task #" + task.id + " has been delivered in this Telegram chat.");
+  return "completed";
+}
+
+async function pollProviderTasks(env, onlyId = null) {
+  await ensureProviderTasksSchema(env);
+  const result = onlyId
+    ? await env.DB.prepare(\`
+        SELECT * FROM provider_tasks WHERE id=?
+          AND status IN ('submitted','processing','delivery_pending') LIMIT 1
+      \`).bind(onlyId).all()
+    : await env.DB.prepare(\`
+        SELECT * FROM provider_tasks WHERE status IN ('submitted','processing','delivery_pending')
+        ORDER BY updated_at ASC LIMIT 10
+      \`).all();
+  const outcomes = [];
+  for (const task of (result.results || [])) {
+    try {
+      outcomes.push({ id: task.id, status: await processProviderTask(env, task) });
+    } catch (error) {
+      await env.DB.prepare(
+        "UPDATE provider_tasks SET last_error=?, updated_at=CURRENT_TIMESTAMP WHERE id=?"
+      ).bind(String(error.message || "poll_failed").slice(0, 200), task.id).run();
+      outcomes.push({ id: task.id, status: "retry_pending", error: error.message });
+    }
+  }
+  return outcomes;
 }
 
 // --------------------------------------------------
@@ -3021,7 +3254,70 @@ const form = await request.formData();
     }
 
         // ------------------------------------------------
-    // PHONE CHECK: PRICE QUOTE ONLY
+    // --------------------------------------------------
+// ADMIN: PROVIDER TASK MANAGEMENT
+// --------------------------------------------------
+
+if (request.method === "GET" && url.pathname === "/api/admin/provider-tasks") {
+  try {
+    await requireAdmin(request, env);
+    await ensureProviderTasksSchema(env);
+    const result = await env.DB.prepare(\`
+      SELECT id, upload_id, user_id, resource_code, task_type, provider_task_id,
+        status, provider_status, total, success, failure, last_error,
+        created_at, updated_at, completed_at
+      FROM provider_tasks ORDER BY id DESC LIMIT 50
+    \`).all();
+    return json({ ok: true, tasks: result.results || [] }, 200, origin);
+  } catch (error) {
+    const status = error.message === "unauthorized" ? 401 :
+      error.message === "admin_access_required" ? 403 : 500;
+    return json({ ok: false, error: error.message || "provider_tasks_failed" }, status, origin);
+  }
+}
+
+if (request.method === "POST" && url.pathname === "/api/admin/provider-tasks/submit") {
+  try {
+    await requireAdmin(request, env);
+    const body = await readBody(request);
+    const uploadId = Number(body.upload_id);
+    if (!Number.isSafeInteger(uploadId) || uploadId < 1) {
+      return json({ ok: false, error: "invalid_upload_id" }, 400, origin);
+    }
+    const task = await submitStagedProviderTask(env, uploadId);
+    return json({ ok: true, task, customer_charging: false }, 201, origin);
+  } catch (error) {
+    const status = error.message === "unauthorized" ? 401 :
+      error.message === "admin_access_required" ? 403 :
+      error.message === "upload_not_found" ? 404 :
+      ["upload_not_ready","provider_task_already_created"].includes(error.message) ? 409 :
+      ["invalid_json","invalid_upload_id","invalid_phone_numbers","provider_quantity_out_of_range"].includes(error.message) ? 400 :
+      error.message === "service_not_enabled_for_provider_submission" ? 403 : 502;
+    return json({
+      ok: false,
+      error: error.message === "provider_request_failed" ? "provider_submission_outcome_uncertain" : error.message || "provider_submission_failed",
+      provider_status: error.providerStatus || null
+    }, status, origin);
+  }
+}
+
+if (request.method === "POST" && url.pathname === "/api/admin/provider-tasks/poll") {
+  try {
+    await requireAdmin(request, env);
+    const body = await readBody(request);
+    const taskId = Number(body.task_id);
+    if (!Number.isSafeInteger(taskId) || taskId < 1) {
+      return json({ ok: false, error: "invalid_task_id" }, 400, origin);
+    }
+    return json({ ok: true, outcomes: await pollProviderTasks(env, taskId) }, 200, origin);
+  } catch (error) {
+    const status = error.message === "unauthorized" ? 401 :
+      error.message === "admin_access_required" ? 403 : 502;
+    return json({ ok: false, error: error.message || "provider_poll_failed" }, status, origin);
+  }
+}
+
+// PHONE CHECK: PRICE QUOTE ONLY
     // Minimum quantity is read from saved pricing.
     // No order is created and no wallet is deducted.
     // ------------------------------------------------
@@ -4206,5 +4502,8 @@ if (
       ok: false,
       error: "not_found"
     }, 404, origin);
+  },
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(pollProviderTasks(env));
   }
 };
