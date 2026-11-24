@@ -345,6 +345,7 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "POST /api/admin/provider-tasks/submit": "checknumber_validate",
   "POST /api/admin/provider-tasks/poll": "checknumber_validate",
   "POST /api/admin/storage-test": "storage_test",
+  "POST /api/admin/storage-file-test": "storage_test",
   "GET /api/admin/number-file-requests": "number_requests",
   "POST /api/admin/number-file-requests/upload": "number_requests",
   "POST /api/admin/number-file-requests/reject": "number_requests"
@@ -3586,6 +3587,30 @@ if (
       }
     }
 
+    // ------------------------------------------------
+    // ADMIN: TEST TELEGRAM DOCUMENT STORAGE (NO PROVIDER)
+    // ------------------------------------------------
+    if (request.method === "POST" && url.pathname === "/api/admin/storage-file-test") {
+      try {
+        await requireAdmin(request, env);
+        const testContent = "DATA VERIFICATION STORAGE TEST\\nSynthetic test file only. No customer data or provider task.\\n";
+        const testFile = new File([testContent], "data-verification-storage-test.txt", { type: "text/plain" });
+        const stored = await telegramStoreDocument(env, testFile);
+        const infoResponse = await fetch("https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/getFile?file_id=" + encodeURIComponent(stored.file_id));
+        const info = await infoResponse.json();
+        const filePath = info && info.result && info.result.file_path;
+        if (!infoResponse.ok || !info.ok || !filePath || filePath.includes("..")) throw new Error((info && info.description) || "telegram_storage_file_lookup_failed");
+        const downloadResponse = await fetch("https://api.telegram.org/file/bot" + env.TELEGRAM_BOT_TOKEN + "/" + filePath);
+        if (!downloadResponse.ok) throw new Error("telegram_storage_file_download_failed");
+        const downloadedContent = await downloadResponse.text();
+        if (downloadedContent !== testContent) throw new Error("telegram_storage_file_verification_failed");
+        return json({ ok: true, message: "telegram_storage_document_verified", file_name: stored.file_name, file_size: stored.file_size, upload_verified: true, download_verified: true }, 200, origin);
+      } catch (error) {
+        const unauthorized = error.message === "unauthorized";
+        const forbidden = error.message === "admin_access_required";
+        return json({ ok: false, error: unauthorized ? "unauthorized" : forbidden ? "admin_access_required" : String(error.message || "telegram_storage_file_test_failed").slice(0, 200) }, unauthorized ? 401 : forbidden ? 403 : 502, origin);
+      }
+    }
     // ------------------------------------------------
     // ADMIN: TEST TELEGRAM STORAGE CONNECTION
     // ------------------------------------------------
