@@ -4024,6 +4024,9 @@ if(request.method==="POST"&&url.pathname==="/api/services/order"){
       return json({ok:false,error:"insufficient_wallet_balance"},402,origin);
     }
     const order=await env.DB.prepare("SELECT id,customer_charge_cents,quantity,status FROM orders WHERE idempotency_key=? LIMIT 1").bind(key).first();
+    try { await createAdminNotifications(env,"New customer order",
+      (user.first_name||"Customer")+(user.username?" · @"+user.username:"")+" placed order #"+order.id+" for "+code+" · "+Number(order.quantity)+" entries · "+(Number(order.customer_charge_cents)/100).toFixed(2)+" USDT.",
+      "customer_order",order.id); } catch(notificationError) { console.error("Order admin notification failed:",notificationError.message); }
     return json({ok:true,order,wallet_debited:true,message:"Order received and queued for provider processing."},201,origin);
   }catch(error){
     if(String(error.message||"").includes("UNIQUE constraint failed"))return json({ok:false,error:"upload_already_ordered"},409,origin);
@@ -5013,7 +5016,7 @@ if (url.pathname === "/api/support/chat" && request.method === "GET") {
 }
 if (url.pathname === "/api/support/chat" && request.method === "POST") {
   await ensureAdminAccessSchema(env);
-  const u=await getSessionUser(request,env),b=await readBody(request),msg=String(b.message||"").trim();if(!msg||msg.length>2000)return json({ok:false,error:"message_must_be_1_to_2000_characters"},400,origin);let c=await env.DB.prepare("SELECT id,status FROM support_conversations WHERE user_id=? ORDER BY id DESC LIMIT 1").bind(u.id).first();if(!c||c.status==="closed"){const r=await env.DB.prepare("INSERT INTO support_conversations (user_id) VALUES (?)").bind(u.id).run();c={id:r.meta.last_row_id};}await env.DB.prepare("INSERT INTO support_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'customer',?,?)").bind(c.id,u.id,msg).run();await env.DB.prepare("UPDATE support_conversations SET last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(c.id).run();return json({ok:true},201,origin);
+  const u=await getSessionUser(request,env),b=await readBody(request),msg=String(b.message||"").trim();if(!msg||msg.length>2000)return json({ok:false,error:"message_must_be_1_to_2000_characters"},400,origin);let c=await env.DB.prepare("SELECT id,status FROM support_conversations WHERE user_id=? ORDER BY id DESC LIMIT 1").bind(u.id).first();if(!c||c.status==="closed"){const r=await env.DB.prepare("INSERT INTO support_conversations (user_id) VALUES (?)").bind(u.id).run();c={id:r.meta.last_row_id};}await env.DB.prepare("INSERT INTO support_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'customer',?,?)").bind(c.id,u.id,msg).run();await env.DB.prepare("UPDATE support_conversations SET last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(c.id).run();try{await createAdminNotifications(env,"New customer support message",(u.first_name||"Customer")+(u.username?" · @"+u.username:"")+" sent a message: "+msg.slice(0,220),"support_message",c.id);}catch(notificationError){console.error("Support admin notification failed:",notificationError.message);}return json({ok:true},201,origin);
 }
 if (url.pathname === "/api/admin/support/settings" && request.method === "GET") {
   try{await requireAdmin(request,env);const c=await env.DB.prepare("SELECT display_name,telegram_username,whatsapp_number,availability FROM support_contacts WHERE id=1").first();return json({ok:true,settings:c||{display_name:"Customer Support",telegram_username:"",whatsapp_number:"",availability:"Available"}},200,origin);}catch(e){return json({ok:false,error:e.message},e.message==="admin_unlock_required"?423:e.message==="unauthorized"?401:403,origin);}
