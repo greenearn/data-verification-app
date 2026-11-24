@@ -1871,7 +1871,7 @@ function adminMarkup(){
 
   <div id="number-requests-list"></div>
 </div>
-    <div class="note">Safety: customer ordering, provider submissions, deposits, withdrawals and wallet deductions remain disabled.</div>
+    <div class="note">Safety: provider tasks can be submitted by authorized admins for consented phoneCheck uploads. Customer orders, customer wallet deductions and automatic billing remain disabled.</div>
     <button class="btn secondary" id="reload-admin">Refresh admin catalogue</button>
     <div id="admin-message" class="muted"></div>
   </section>`;
@@ -2768,7 +2768,7 @@ async function loadNumberRequests() {
             <button class="btn save-upload-status" type="button">
               Save Status
             </button>
-            ${upload.resource_code==="phoneCheck" && ["uploaded","reviewed"].includes(currentStatus) ? '<button class="btn submit-provider-task" type="button">Submit to CheckNumber</button>' : ''}
+            ${upload.resource_code==="phoneCheck" && ["uploaded","reviewed"].includes(currentStatus) && !String(upload.admin_note||"").startsWith("Submitted to CheckNumber") ? '<button class="btn submit-provider-task" type="button">Submit to CheckNumber</button>' : ''}
           </div>
         `;
       }).join("");
