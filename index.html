@@ -766,9 +766,9 @@ async function renderAdminWorkspace(){
 }
 
 function formatSupportTime(value){try{return new Date(value).toLocaleString();}catch(e){return "";}}
-function renderSupportMessages(target,messages){
+function renderSupportMessages(target,messages,viewerIsAdmin=false){
   if(!target)return;
-  target.innerHTML=(messages||[]).map(m=>'<div class="support-bubble '+(m.sender_type==="admin"?"":"mine")+'">'+esc(m.message)+'<small>'+esc(m.sender_type==="admin"?"Support team":"You")+' · '+esc(formatSupportTime(m.created_at))+'</small></div>').join("")||'<p class="muted">No messages yet. Send a message to start the conversation.</p>';
+  target.innerHTML=(messages||[]).map(m=>'<div class="support-bubble '+((viewerIsAdmin?m.sender_type==="admin":m.sender_type!=="admin")?"mine":"")+'">'+esc(m.message)+'<small>'+esc(m.sender_type==="admin"?"Support team":"Customer")+' · '+esc(formatSupportTime(m.created_at))+'</small></div>').join("")||'<p class="muted">No messages yet. Send a message to start the conversation.</p>';
   target.scrollTop=target.scrollHeight;
 }
 async function wireSupportCustomer(){
@@ -820,7 +820,7 @@ async function wireSupportAdmin(){
     if(!selected)return;
     const data=await request("/api/admin/support/chats/messages?conversation_id="+selected);
     document.getElementById("support-admin-thread-title").textContent=(data.conversation.first_name||"Customer")+" · Telegram ID "+data.conversation.telegram_id;
-    renderSupportMessages(document.getElementById("support-admin-messages"),data.messages);
+    renderSupportMessages(document.getElementById("support-admin-messages"),data.messages,true);
     document.getElementById("support-admin-send").disabled=false;
   }
   document.getElementById("support-admin-send").onclick=async()=>{
