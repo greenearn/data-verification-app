@@ -1520,6 +1520,15 @@ const BRAND_LOGOS = {
   tiktok:"tiktok",signal:"signal",microsoft:"microsoft",snapchat:"snapchat",
   binance:"binance",kucoin:""
 };
+function logoDomainForService(s){
+  const c=String(s.resource_code||"");
+  if(c.startsWith("max"))return "max.ru";
+  if(c.startsWith("zalo"))return "zalo.me";
+  if(c.startsWith("kucoin"))return "kucoin.com";
+  if(c.startsWith("rcs"))return "messages.google.com";
+  if(c.includes("carrier"))return "gsma.com";
+  return "";
+}
 function logoForService(s){
   const c=String(s.resource_code||"");
   if(c.startsWith("whatsapp"))return BRAND_LOGOS.whatsapp;
@@ -1593,9 +1602,12 @@ function renderServices(){
         :"Price not configured";
 
       const logoSlug=logoForService(s);
+      const logoDomain=logoDomainForService(s);
       const logoHtml=logoSlug
         ? `<img class="service-logo" src="https://cdn.simpleicons.org/${logoSlug}" alt="" loading="lazy" onerror="this.style.display='none'">`
-        : `<span class="service-logo-fallback">${esc((s.name||"?").slice(0,1).toUpperCase())}</span>`;
+        : logoDomain
+          ? `<img class="service-logo" src="https://www.google.com/s2/favicons?domain=${logoDomain}&sz=64" alt="" loading="lazy" onerror="this.style.display='none'">`
+          : `<span class="service-logo-fallback">${esc((s.name||"?").slice(0,1).toUpperCase())}</span>`;
       const apiConfigured=String(s.task_type||"")!=="VERIFY_IN_DASHBOARD";
       html+=`<article class="service ${selected?"selected":""}" data-code="${esc(s.resource_code)}">
         <div class="service-heading">${logoHtml}<div><strong>${esc(s.name)}</strong><p>${esc(s.description)}</p></div></div>
