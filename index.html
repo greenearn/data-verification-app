@@ -86,7 +86,7 @@ footer{text-align:center;border-top:1px solid var(--line);padding:17px;margin-to
 (function(){
 "use strict";
 
-const API="https://manual-customer-orders-launch-data-verification-api.shrestharaj980888.workers.dev";
+const API=window.location.hostname==="data-verification-app-git-manual-a72ddf-shrestharaj980888-6433.vercel.app"?"https://manual-customer-orders-launch-data-verification-api.shrestharaj980888.workers.dev":"https://data-verification-api.shrestharaj980888.workers.dev";
 const app=document.getElementById("app");
 const tg=window.Telegram&&Telegram.WebApp?Telegram.WebApp:null;
 
