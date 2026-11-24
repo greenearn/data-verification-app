@@ -5,6 +5,17 @@ const SESSION_DAYS = 7;
 const MAX_INIT_DATA_AGE = 3600;
 const MAX_BODY_SIZE = 20000;
 let adminAccessSchemaReady = false;
+let customerOrderSchemaReady = false;
+
+async function ensureCustomerOrderSchema(env) {
+  if (customerOrderSchemaReady) return;
+  await env.DB.prepare(`
+    CREATE UNIQUE INDEX IF NOT EXISTS orders_unique_phonecheck_upload
+    ON orders(result_reference)
+    WHERE resource_code='phoneCheck' AND substr(result_reference,1,7)='upload:'
+  `).run();
+  customerOrderSchemaReady = true;
+}
 // --------------------------------------------------
 // CHECKNUMBER.AI AUTOMATIC CATALOGUE
 // --------------------------------------------------
@@ -3782,11 +3793,14 @@ if (
         if (!Number.isSafeInteger(uploadId) || uploadId < 1 || !/^[A-Za-z0-9_-]{12,100}$/.test(key)) {
           return json({ ok: false, error: "invalid_order_request" }, 400, origin);
         }
+        await ensureCustomerOrderSchema(env);
         const upload = await env.DB.prepare(`
-          SELECT id,user_id,telegram_file_id,file_name,resource_code,status
+          SELECT id,user_id,telegram_file_id,file_name,resource_code,status,expires_at
           FROM upload_staging WHERE id=? AND user_id=? LIMIT 1
         `).bind(uploadId,user.id).first();
-        if (!upload || upload.resource_code!=="phoneCheck" || !["uploaded","reviewed"].includes(upload.status)) {
+        if (!upload || upload.resource_code!=="phoneCheck" ||
+            !["uploaded","reviewed"].includes(upload.status) ||
+            !upload.expires_at || new Date(upload.expires_at).getTime()<=Date.now()) {
           return json({ ok:false,error:"upload_not_orderable" },409,origin);
         }
         const prior = await env.DB.prepare(`
@@ -3855,8 +3869,11 @@ if (
         const order=await env.DB.prepare("SELECT id,customer_charge_cents,quantity,status FROM orders WHERE idempotency_key=? LIMIT 1").bind(key).first();
         return json({ok:true,order,wallet_debited:true,message:"Order received. Our admin team will review and process it."},201,origin);
       } catch(error) {
+        if (String(error.message||"").includes("UNIQUE constraint failed")) {
+          return json({ok:false,error:"upload_already_ordered"},409,origin);
+        }
         const status=error.message==="unauthorized"?401:
-          error.message==="invalid_json"?400:
+          ["invalid_json","unsupported_file_type","invalid_phone_numbers","ambiguous_or_invalid_csv_row"].includes(error.message)?400:
           ["invalid_pricing_configuration","unsupported_pricing_type","invalid_order_amount"].includes(error.message)?500:502;
         return json({ok:false,error:status===502?"order_creation_failed":error.message},status,origin);
       }
