@@ -2026,16 +2026,35 @@ if (
 }
 
 // --------------------------------------------------
-// Admin-only screenshot retrieval.
+// Admin-only screenshot retrieval. Return the actual image MIME type because
+// Telegram may label uploaded documents as application/octet-stream.
 if(request.method==="GET"&&url.pathname==="/api/admin/wallet/deposits/screenshot"){
- try{await requireAdmin(request,env);await ensureWalletDepositSchema(env);
- const id=Number(url.searchParams.get("deposit_id"));const row=await env.DB.prepare("SELECT screenshot_file_id FROM wallet_deposit_requests WHERE id=?").bind(id).first();
- if(!row?.screenshot_file_id)return json({ok:false,error:"screenshot_not_found"},404,origin);
- const meta=await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${encodeURIComponent(row.screenshot_file_id)}`).then(r=>r.json());
- if(!meta.ok||!meta.result?.file_path)throw Error("telegram_file_lookup_failed");
- const f=await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${meta.result.file_path}`);if(!f.ok)throw Error("telegram_file_download_failed");
- return new Response(f.body,{headers:{"Content-Type":f.headers.get("Content-Type")||"application/octet-stream","Cache-Control":"private, no-store","Access-Control-Allow-Origin":origin||DEFAULT_ALLOWED_ORIGIN,"Vary":"Origin"}});
- }catch(e){if(e.message==="unauthorized")return json({ok:false,error:"unauthorized"},401,origin);if(e.message==="admin_access_required")return json({ok:false,error:"admin_access_required"},403,origin);console.error(e);return json({ok:false,error:"screenshot_fetch_failed"},500,origin);}
+ try{
+  await requireAdmin(request,env);
+  await ensureWalletDepositSchema(env);
+  const id=Number(url.searchParams.get("deposit_id"));
+  if(!Number.isSafeInteger(id)||id<=0)return json({ok:false,error:"invalid_deposit_id"},400,origin);
+  const row=await env.DB.prepare("SELECT screenshot_file_id FROM wallet_deposit_requests WHERE id=?").bind(id).first();
+  if(!row?.screenshot_file_id)return json({ok:false,error:"screenshot_not_found"},404,origin);
+  const metaResponse=await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${encodeURIComponent(row.screenshot_file_id)}`);
+  const meta=await metaResponse.json();
+  if(!metaResponse.ok||!meta.ok||!meta.result?.file_path||meta.result.file_path.includes(".."))throw Error("telegram_file_lookup_failed");
+  const fileResponse=await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${meta.result.file_path}`);
+  if(!fileResponse.ok)throw Error("telegram_file_download_failed");
+  const bytes=await fileResponse.arrayBuffer();
+  const view=new Uint8Array(bytes);
+  let contentType="";
+  if(view.length>=3&&view[0]===0xff&&view[1]===0xd8&&view[2]===0xff)contentType="image/jpeg";
+  else if(view.length>=8&&view[0]===0x89&&view[1]===0x50&&view[2]===0x4e&&view[3]===0x47&&view[4]===0x0d&&view[5]===0x0a&&view[6]===0x1a&&view[7]===0x0a)contentType="image/png";
+  else if(view.length>=12&&String.fromCharCode(...view.slice(0,4))==="RIFF"&&String.fromCharCode(...view.slice(8,12))==="WEBP")contentType="image/webp";
+  if(!contentType)throw Error("stored_screenshot_format_not_supported");
+  return new Response(bytes,{headers:{"Content-Type":contentType,"Content-Length":String(view.length),"X-Content-Type-Options":"nosniff","Cache-Control":"private, no-store","Access-Control-Allow-Origin":origin||DEFAULT_ALLOWED_ORIGIN,"Vary":"Origin"}});
+ }catch(e){
+  if(e.message==="unauthorized")return json({ok:false,error:"unauthorized"},401,origin);
+  if(e.message==="admin_access_required")return json({ok:false,error:"admin_access_required"},403,origin);
+  console.error("Deposit screenshot retrieval failed:",e);
+  return json({ok:false,error:"screenshot_fetch_failed"},500,origin);
+ }
 }
 
 // ADMIN: APPROVE OR REJECT WALLET DEPOSIT
