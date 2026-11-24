@@ -3897,11 +3897,11 @@ if (
           SELECT o.id,o.user_id,u.telegram_id,u.username,u.first_name,o.resource_code,
             o.quantity,o.customer_charge_cents,o.currency,o.status,o.result_reference,
             o.provider_task_id,o.created_at,
-            CAST(substr(o.result_reference,7) AS INTEGER) AS upload_id,
+            CAST(substr(o.result_reference,8) AS INTEGER) AS upload_id,
             (SELECT pt.status FROM provider_tasks pt
-              WHERE pt.upload_id=CAST(substr(o.result_reference,7) AS INTEGER) LIMIT 1) AS provider_task_status,
+              WHERE pt.upload_id=CAST(substr(o.result_reference,8) AS INTEGER) LIMIT 1) AS provider_task_status,
             EXISTS(SELECT 1 FROM provider_tasks pt
-              WHERE pt.upload_id=CAST(substr(o.result_reference,7) AS INTEGER)) AS provider_task_exists,
+              WHERE pt.upload_id=CAST(substr(o.result_reference,8) AS INTEGER)) AS provider_task_exists,
             EXISTS(SELECT 1 FROM wallet_ledger l WHERE l.reference_id='order_refund:'||o.id
               AND l.transaction_type='order_refund') AS refunded
           FROM orders o JOIN users u ON u.id=o.user_id ORDER BY o.id DESC LIMIT 100
