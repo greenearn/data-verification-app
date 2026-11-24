@@ -791,7 +791,7 @@ async function renderAdminWorkspace(){
       const data=await request("/api/admin/catalogue");
       categories=data.categories||[];adminServices=data.services||[];globalMarkupPercentage=Number(data.global_markup_percentage??10);
     }else{categories=[];adminServices=[];}
-    app.innerHTML='<main class="wrap admin-workspace"><header><div><div class="admin-label">CONTROL CENTRE</div><div class="admin-shell-title">Administrator Dashboard</div><div class="admin-shell-subtitle">Secure operations · '+esc(adminRole||"Admin")+'</div></div><div class="admin-shell-actions"><div class="admin-bell-wrap"><button class="admin-bell" id="admin-notification-toggle" type="button" aria-label="Admin notifications" aria-expanded="false">♧<span id="admin-notification-count" class="admin-bell-count">0</span></button><div class="admin-notification-panel" id="admin-notification-panel"><div class="item-top"><strong>Activity notifications</strong><button class="btn secondary" id="admin-notification-refresh" type="button">Refresh</button></div><button class="btn secondary" id="admin-notification-mark-all" type="button">Mark all read</button><div id="admin-notification-list"><p class="muted">Loading notifications…</p></div></div></div><button class="back-button" id="admin-back">← Customer portal</button><button class="back-button" id="admin-lock">Lock dashboard</button></div></header>'+adminMarkup()+'</main>';
+    app.innerHTML='<main class="wrap admin-workspace"><header><div><div class="admin-label">CONTROL CENTRE</div><div class="admin-shell-title">Administrator Dashboard</div><div class="admin-shell-subtitle">Secure operations · '+esc(adminRole||"Admin")+'</div></div><div class="admin-shell-actions"><div class="admin-bell-wrap"><button class="admin-bell" id="admin-notification-toggle" type="button" aria-label="Admin notifications" aria-expanded="false">🔔<span id="admin-notification-count" class="admin-bell-count">0</span></button><div class="admin-notification-panel" id="admin-notification-panel"><div class="item-top"><strong>Activity notifications</strong><button class="btn secondary" id="admin-notification-refresh" type="button">Refresh</button></div><button class="btn secondary" id="admin-notification-mark-all" type="button">Mark all read</button><div id="admin-notification-list"><p class="muted">Loading notifications…</p></div></div></div><button class="back-button" id="admin-back">← Customer portal</button><button class="back-button" id="admin-lock">Lock dashboard</button></div></header>'+adminMarkup()+'</main>';
     document.getElementById("admin-back").onclick=async()=>{const oldToken=adminUnlockToken;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}if(oldToken){try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":oldToken}});}catch(e){}}adminMode=true;renderDashboard();};
     document.getElementById("admin-lock").onclick=lockAdminDashboard;
     const lockNow=document.getElementById("admin-lock-now");if(lockNow)lockNow.onclick=lockAdminDashboard;
@@ -1101,10 +1101,10 @@ function renderDashboard(){
   </select>
 
   <label class="field" for="generator-quantity">Quantity</label>
-  <input id="generator-quantity" type="number" min="1" max="80000" value="100" inputmode="numeric">
+  <input id="generator-quantity" type="number" min="1" max="10000" value="100" inputmode="numeric">
 
   <div class="actions">
-    <button class="btn" id="generate-numbers" type="button">Generate numbers</button>
+    <button class="btn" id="generate-numbers" type="button">Request Number File</button>
   </div>
 
   <div id="generator-message" class="note">Choose a supported country, number type and quantity.</div>
@@ -1495,6 +1495,14 @@ document.getElementById("submit-number-request").onclick = async function () {
     button.disabled = false;
   }
 };
+
+  // The generator submits the selected service request to the admin queue.
+  document.getElementById("generate-numbers").onclick=function(){
+    document.getElementById("number-request-country").value=generatorCountry.value;
+    document.getElementById("number-request-type").value=generatorType.value;
+    document.getElementById("number-request-quantity").value=generatorQuantity.value;
+    document.getElementById("submit-number-request").click();
+  };
 
   // END WORLDWIDE TEST NUMBER GENERATOR
 
