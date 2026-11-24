@@ -604,7 +604,22 @@ function calculatePrice(pricing, quantity) {
 // --------------------------------------------------
 
 
+let platformSettingsSchemaReady=false;
+async function ensurePlatformSettingsSchema(env){
+  if(platformSettingsSchemaReady)return;
+  await env.DB.batch([
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS platform_settings(
+      setting_key TEXT PRIMARY KEY,setting_value TEXT NOT NULL,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    env.DB.prepare(`INSERT OR IGNORE INTO platform_settings(setting_key,setting_value) VALUES('global_markup_percentage','10')`)
+  ]);
+  platformSettingsSchemaReady=true;
+}
+
 async function importCheckNumberCatalogue(env) {
+  await ensurePlatformSettingsSchema(env);
+  const globalMarkupRow=await env.DB.prepare("SELECT setting_value FROM platform_settings WHERE setting_key='global_markup_percentage' LIMIT 1").first();
+  const defaultMarkup=Math.max(0,Math.min(10000,Number(globalMarkupRow?.setting_value??10)));
   const categories = new Map();
   for (const service of CHECKNUMBER_CATALOGUE) categories.set(service.category, service.category_order);
   const statements = [];
@@ -625,8 +640,8 @@ async function importCheckNumberCatalogue(env) {
       INSERT OR IGNORE INTO resource_pricing
         (resource_code,provider_cost_cents,markup_type,markup_value,final_price_cents,
          enabled,pricing_unit_quantity,minimum_order_quantity,currency,updated_at)
-      VALUES (?,?,'percentage',10,NULL,0,10000,500,'USDT',CURRENT_TIMESTAMP)
-    `).bind(service.resource_code,service.provider_cost_cents));
+      VALUES (?,?,'percentage',?,NULL,0,10000,500,'USDT',CURRENT_TIMESTAMP)
+    `).bind(service.resource_code,service.provider_cost_cents,defaultMarkup));
   }
   const results=await env.DB.batch(statements);
   return {
@@ -644,6 +659,8 @@ async function importCheckNumberCatalogue(env) {
 // --------------------------------------------------
 
 async function getAdminCatalogue(env) {
+  await ensurePlatformSettingsSchema(env);
+  const globalMarkupRow=await env.DB.prepare("SELECT setting_value FROM platform_settings WHERE setting_key='global_markup_percentage' LIMIT 1").first();
   const categoriesResult = await env.DB.prepare(`
     SELECT
       category,
@@ -683,7 +700,8 @@ async function getAdminCatalogue(env) {
 
   return {
     categories: categoriesResult.results || [],
-    services: servicesResult.results || []
+    services: servicesResult.results || [],
+    global_markup_percentage:Number(globalMarkupRow?.setting_value??10)
   };
 }
 
@@ -3368,6 +3386,30 @@ const form = await request.formData();
     // ------------------------------------------------
     // ADMIN: SAVE SERVICE PRICING
     // ------------------------------------------------
+
+// ADMIN: APPLY GLOBAL MARKUP TO ALL CATALOGUE PRODUCTS
+if(request.method==="POST"&&url.pathname==="/api/admin/pricing/global"){
+  try{
+    await requireAdmin(request,env);
+    await ensurePlatformSettingsSchema(env);
+    const body=await readBody(request);
+    const percentage=Number(body.markup_percentage);
+    if(!Number.isSafeInteger(percentage)||percentage<0||percentage>10000)
+      return json({ok:false,error:"invalid_global_markup"},400,origin);
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE platform_settings SET setting_value=?,updated_at=CURRENT_TIMESTAMP
+        WHERE setting_key='global_markup_percentage'`).bind(String(percentage)),
+      env.DB.prepare(`UPDATE resource_pricing SET markup_type='percentage',markup_value=?,
+        final_price_cents=NULL,updated_at=CURRENT_TIMESTAMP`).bind(percentage)
+    ]);
+    const count=await env.DB.prepare("SELECT COUNT(*) AS total FROM resource_pricing").first();
+    return json({ok:true,markup_percentage:percentage,updated_products:Number(count?.total||0),
+      message:"global_markup_applied"},200,origin);
+  }catch(error){
+    const status=error.message==="unauthorized"?401:error.message==="admin_access_required"?403:400;
+    return json({ok:false,error:error.message||"global_markup_update_failed"},status,origin);
+  }
+}
 
     if (
       request.method === "POST" &&
