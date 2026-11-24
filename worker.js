@@ -1075,6 +1075,7 @@ async function submitStagedProviderTask(env, uploadId) {
   \`).bind(upload.id, upload.user_id, String(upload.telegram_id)).run();
   const localId = Number(claim.meta.last_row_id);
 
+  let providerSubmissionStarted = false;
   try {
     if (!env.TELEGRAM_BOT_TOKEN) throw new Error("telegram_storage_configuration_missing");
     const infoResponse = await fetch(
@@ -1099,6 +1100,7 @@ async function submitStagedProviderTask(env, uploadId) {
     form.append("task_type", "phoneCheck");
 
     // Never auto-retry task creation: a timeout may happen after provider acceptance.
+    providerSubmissionStarted = true;
     const providerResult = await providerApi(env, "/v1/tasks", { method: "POST", body: form });
     const providerTaskId = String(providerResult.task_id || "");
     if (!providerTaskId || providerTaskId.length > 200) throw new Error("provider_task_id_missing");
@@ -1121,7 +1123,7 @@ async function submitStagedProviderTask(env, uploadId) {
     await env.DB.prepare(\`
       UPDATE provider_tasks SET status=?, last_error=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
     \`).bind(
-      error.message === "provider_request_failed" ? "submission_unknown" : "failed",
+      providerSubmissionStarted ? "submission_unknown" : "failed",
       String(error.message || "submission_failed").slice(0, 200), localId
     ).run();
     throw error;
