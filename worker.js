@@ -1,6 +1,6 @@
 
-const ALLOWED_ORIGIN = "https://greenearn.github.io";
-const WORKER_ORIGIN = "https://data-verification-api.shrestharaj980888.workers.dev";
+const ALLOWED_ORIGIN = "https://data-verification-app-git-manual-a72ddf-shrestharaj980888-6433.vercel.app";
+const WORKER_ORIGIN = "https://manual-customer-orders-launch-data-verification-api.shrestharaj980888.workers.dev";
 const SESSION_DAYS = 7;
 const MAX_INIT_DATA_AGE = 3600;
 const MAX_BODY_SIZE = 20000;
