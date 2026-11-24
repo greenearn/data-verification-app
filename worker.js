@@ -1062,31 +1062,35 @@ function parseCsvFields(line) {
 }
 
 function parseProviderPhoneEntries(content, extension) {
-  const lines = String(content || "").replace(/^\\uFEFF/, "").split(/\\r?\\n/);
+  const lines = String(content || "").replace(/^\uFEFF/, "").split(/\r?\n/);
   const csv = extension === "csv";
   let phoneColumn = -1;
   const entries = [];
-  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-    const line = lines[lineIndex].trim();
+  let firstNonEmpty = true;
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
     if (!line) continue;
     const fields = csv ? parseCsvFields(line) : [line.replace(/^["']|["']$/g, "")];
-    if (lineIndex === 0 && csv) {
+    if (firstNonEmpty && csv) {
+      firstNonEmpty = false;
       phoneColumn = fields.findIndex(field =>
         ["phone", "phone_number", "number", "mobile", "mobile_number"]
-          .includes(field.toLowerCase().replace(/[\\s-]+/g, "_"))
+          .includes(field.toLowerCase().replace(/[\s-]+/g, "_"))
       );
       if (phoneColumn >= 0) continue;
+    } else {
+      firstNonEmpty = false;
     }
     let candidate;
     if (phoneColumn >= 0) {
       candidate = (fields[phoneColumn] || "").trim().replace(/^["']|["']$/g, "");
     } else {
       const matches = fields.map(field => field.trim().replace(/^["']|["']$/g, ""))
-        .filter(field => /^\\+?[1-9]\\d{7,14}$/.test(field));
+        .filter(field => /^\+?[1-9]\d{7,14}$/.test(field));
       if (matches.length !== 1) throw new Error("ambiguous_or_invalid_csv_row");
       candidate = matches[0];
     }
-    if (!/^\\+?[1-9]\\d{7,14}$/.test(candidate)) {
+    if (!/^\+?[1-9]\d{7,14}$/.test(candidate)) {
       throw new Error("invalid_phone_numbers");
     }
     entries.push(candidate);
@@ -1251,7 +1255,6 @@ async function processProviderTask(env, task) {
   \`).bind(resultUrl, task.id).run();
   if (!deliveryClaim.meta?.changes) throw new Error("provider_delivery_already_claimed");
 
-  const deliveryForm = new FormData();
   const deliveryForm = new FormData();
   deliveryForm.append("chat_id", String(task.telegram_id));
   deliveryForm.append("document", new Blob([resultBytes], { type: "application/zip" }), "verification-result-" + task.id + ".zip");
