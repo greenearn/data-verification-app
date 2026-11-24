@@ -813,7 +813,7 @@ async function lockAdminDashboard(){
   if(!adminUnlockToken)return;
   const old=adminUnlockToken;
   adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");
-  if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(window.adminNotificationTimer){clearInterval(window.adminNotificationTimer);window.adminNotificationTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}
+  if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(window.adminNotificationTimer){clearInterval(window.adminNotificationTimer);window.adminNotificationTimer=null;}if(window.adminNumberRequestTimer){clearInterval(window.adminNumberRequestTimer);window.adminNumberRequestTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}
   try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":old}});}catch(e){}
   renderAdminGate(true);
 }
