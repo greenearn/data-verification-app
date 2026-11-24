@@ -1,5 +1,6 @@
 
-const ALLOWED_ORIGIN = "https://data-verification-app-git-manual-a72ddf-shrestharaj980888-6433.vercel.app";
+const ALLOWED_ORIGINS = new Set(["https://greenearn.github.io","https://data-verification-app-git-manual-a72ddf-shrestharaj980888-6433.vercel.app"]);
+const DEFAULT_ALLOWED_ORIGIN = "https://greenearn.github.io";
 const WORKER_ORIGIN = "https://manual-customer-orders-launch-data-verification-api.shrestharaj980888.workers.dev";
 const SESSION_DAYS = 7;
 const MAX_INIT_DATA_AGE = 3600;
@@ -68,7 +69,7 @@ function json(data, status = 200, origin = "") {
     status,
     headers: {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": origin || ALLOWED_ORIGIN,
+      "Access-Control-Allow-Origin": origin || DEFAULT_ALLOWED_ORIGIN,
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Vary": "Origin",
@@ -1579,7 +1580,7 @@ export default {
 
     if (
       origin &&
-      origin !== ALLOWED_ORIGIN &&
+      !ALLOWED_ORIGINS.has(origin) &&
       origin !== WORKER_ORIGIN
     ) {
       return new Response("Origin not allowed", { status: 403 });
@@ -1589,7 +1590,7 @@ export default {
       return new Response(null, {
         status: 204,
         headers: {
-          "Access-Control-Allow-Origin": origin || ALLOWED_ORIGIN,
+          "Access-Control-Allow-Origin": origin || DEFAULT_ALLOWED_ORIGIN,
           "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Authorization",
           "Vary": "Origin"
