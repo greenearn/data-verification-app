@@ -29,36 +29,57 @@ async function ensureCustomerOrderSchema(env) {
 // --------------------------------------------------
 
 const CHECKNUMBER_CATALOGUE = [
-  {
-    category: "Phone Validation",
-    category_order: 1,
-    resource_code: "phoneCheck",
-    name: "Phone Number Validation",
-    description: "Validate phone numbers and check carrier-related data",
-    input_type: "phone",
-    task_type: "phoneCheck",
-    display_order: 1
-  },
-  {
-    category: "Email Validation",
-    category_order: 2,
-    resource_code: "email_check",
-    name: "Email Deliverability",
-    description: "Check email address deliverability",
-    input_type: "email",
-    task_type: "email_check",
-    display_order: 1
-  },
-  {
-    category: "TELEGRAM SERVICES",
-    category_order: 3,
-    resource_code: "tg_username_check",
-    name: "Telegram Username Availability",
-    description: "Check a public Telegram username",
-    input_type: "username",
-    task_type: "tg_username",
-    display_order: 1
-  }
+  // Prices below are provider-cost reference values supplied for this catalogue,
+  // in USD cents per 10,000 entries. Every product starts disabled until the
+  // account-specific task code and availability are confirmed by an administrator.
+  {category:"WhatsApp",category_order:1,resource_code:"whatsapp_realtime",name:"WhatsApp Real-time Checker",description:"Higher-accuracy real-time WhatsApp registration check",input_type:"phone",task_type:"ws_advanced",provider_cost_cents:100,display_order:1},
+  {category:"WhatsApp",category_order:1,resource_code:"whatsapp_checker",name:"WhatsApp Number Checker",description:"Check WhatsApp registration status",input_type:"phone",task_type:"ws",provider_cost_cents:70,display_order:2},
+  {category:"WhatsApp",category_order:1,resource_code:"whatsapp_business",name:"WhatsApp Business Checker",description:"Identify WhatsApp Business registrations",input_type:"phone",task_type:"ws_business",provider_cost_cents:120,display_order:3},
+  {category:"WhatsApp",category_order:1,resource_code:"whatsapp_activity",name:"WhatsApp Number Activity",description:"Check activity signals for WhatsApp numbers",input_type:"phone",task_type:"ws_active",provider_cost_cents:120,display_order:4},
+  {category:"WhatsApp",category_order:1,resource_code:"whatsapp_profile",name:"WhatsApp Number Profile",description:"Profile-related signals where permitted by provider",input_type:"phone",task_type:"ws_avatar",provider_cost_cents:380,display_order:5},
+  {category:"Telegram",category_order:2,resource_code:"telegram_checker",name:"Telegram Number Checker",description:"Check Telegram registration status",input_type:"phone",task_type:"tg",provider_cost_cents:90,display_order:1},
+  {category:"Telegram",category_order:2,resource_code:"telegram_activity",name:"Telegram Number Activity",description:"Check Telegram activity signals",input_type:"phone",task_type:"tg_active",provider_cost_cents:290,display_order:2},
+  {category:"Telegram",category_order:2,resource_code:"telegram_profile",name:"Telegram Number Profile",description:"Profile-related signals where permitted by provider",input_type:"phone",task_type:"tg_avatar",provider_cost_cents:390,display_order:3},
+  {category:"Number Checker",category_order:3,resource_code:"phoneCheck",name:"Number Validation",description:"Validate phone numbers and check carrier-related data",input_type:"phone",task_type:"phoneCheck",provider_cost_cents:150,display_order:1},
+  {category:"Number Checker",category_order:3,resource_code:"number_activity",name:"Number Activity",description:"Check phone-number activity signals",input_type:"phone",task_type:"active_check",provider_cost_cents:450,display_order:2},
+  {category:"Number Checker",category_order:3,resource_code:"high_value_number",name:"High-Value Number",description:"High-value number classification",input_type:"phone",task_type:"high_value_users",provider_cost_cents:550,display_order:3},
+  {category:"Viber",category_order:4,resource_code:"viber_checker",name:"Viber Number Checker",description:"Check Viber registration status",input_type:"phone",task_type:"viber",provider_cost_cents:25,display_order:1},
+  {category:"Viber",category_order:4,resource_code:"viber_activity",name:"Viber Number Activity",description:"Check Viber activity signals",input_type:"phone",task_type:"viber_active",provider_cost_cents:250,display_order:2},
+  {category:"Viber",category_order:4,resource_code:"viber_profile",name:"Viber Number Profile",description:"Profile-related signals where permitted by provider",input_type:"phone",task_type:"viber_senior",provider_cost_cents:900,display_order:3},
+  {category:"iMessage",category_order:5,resource_code:"imessage_checker",name:"iMessage Number Checker",description:"Check iMessage availability",input_type:"phone",task_type:"imessage",provider_cost_cents:200,display_order:1},
+  {category:"RCS",category_order:6,resource_code:"rcs_checker",name:"RCS Number Checker",description:"Check RCS availability",input_type:"phone",task_type:"rcs",provider_cost_cents:150,display_order:1},
+  {category:"Facebook",category_order:7,resource_code:"facebook_checker",name:"Facebook Number Checker",description:"Check phone-number registration on Facebook",input_type:"phone",task_type:"facebook",provider_cost_cents:30,display_order:1},
+  {category:"Apple ID",category_order:8,resource_code:"apple_id_checker",name:"Apple ID Number Checker",description:"Check Apple ID registration by phone number",input_type:"phone",task_type:"apple",provider_cost_cents:150,display_order:1},
+  {category:"Apple ID",category_order:8,resource_code:"apple_id_email",name:"Apple ID Email Checker",description:"Check Apple ID registration by email",input_type:"email",task_type:"apple_email",provider_cost_cents:150,display_order:2},
+  {category:"Amazon",category_order:9,resource_code:"amazon_checker",name:"Amazon Number Checker",description:"Check Amazon registration by phone number",input_type:"phone",task_type:"amazon",provider_cost_cents:150,display_order:1},
+  {category:"Amazon",category_order:9,resource_code:"amazon_email",name:"Amazon Email Checker",description:"Check Amazon registration by email",input_type:"email",task_type:"amazon_email",provider_cost_cents:150,display_order:2},
+  {category:"Instagram",category_order:10,resource_code:"instagram_checker",name:"Instagram Number Checker",description:"Check Instagram registration by phone number",input_type:"phone",task_type:"instagram",provider_cost_cents:100,display_order:1},
+  {category:"Instagram",category_order:10,resource_code:"instagram_email",name:"Instagram Email Checker",description:"Check Instagram registration by email",input_type:"email",task_type:"instagram_email",provider_cost_cents:30,display_order:2},
+  {category:"MAX",category_order:11,resource_code:"max_checker",name:"MAX Number Checker",description:"MAX number checker; confirm task code in provider dashboard",input_type:"phone",task_type:"VERIFY_IN_DASHBOARD",provider_cost_cents:1000,display_order:1},
+  {category:"MAX",category_order:11,resource_code:"max_profile",name:"MAX Number Profile",description:"MAX profile checker; confirm task code in provider dashboard",input_type:"phone",task_type:"VERIFY_IN_DASHBOARD",provider_cost_cents:2000,display_order:2},
+  {category:"Netflix",category_order:12,resource_code:"netflix_checker",name:"Netflix Number Checker",description:"Netflix number checker; confirm task code in provider dashboard",input_type:"phone",task_type:"VERIFY_IN_DASHBOARD",provider_cost_cents:700,display_order:1},
+  {category:"Netflix",category_order:12,resource_code:"netflix_email",name:"Netflix Email Checker",description:"Netflix email checker; confirm task code in provider dashboard",input_type:"email",task_type:"VERIFY_IN_DASHBOARD",provider_cost_cents:700,display_order:2},
+  {category:"PayPal",category_order:13,resource_code:"paypal_email",name:"PayPal Email Checker",description:"PayPal email checker; confirm task code in provider dashboard",input_type:"email",task_type:"VERIFY_IN_DASHBOARD",provider_cost_cents:1000,display_order:1},
+  {category:"PayPal",category_order:13,resource_code:"paypal_phone",name:"PayPal Number Checker",description:"PayPal number checker; confirm task code in provider dashboard",input_type:"phone",task_type:"VERIFY_IN_DASHBOARD",provider_cost_cents:1500,display_order:2},
+  {category:"Line",category_order:14,resource_code:"line_checker",name:"Line Number Checker",description:"Check Line registration status",input_type:"phone",task_type:"line",provider_cost_cents:150,display_order:1},
+  {category:"Line",category_order:14,resource_code:"line_profile",name:"Line Number Profile",description:"Line profile checker",input_type:"phone",task_type:"line_senior",provider_cost_cents:600,display_order:2},
+  {category:"Zalo",category_order:15,resource_code:"zalo_checker",name:"Zalo Number Checker",description:"Check Zalo registration status",input_type:"phone",task_type:"zalo",provider_cost_cents:200,display_order:1},
+  {category:"Zalo",category_order:15,resource_code:"zalo_profile",name:"Zalo Number Profile",description:"Zalo profile checker",input_type:"phone",task_type:"zalo_gender",provider_cost_cents:600,display_order:2},
+  {category:"LinkedIn",category_order:16,resource_code:"linkedin_phone",name:"LinkedIn Number Checker",description:"Check LinkedIn registration by phone number",input_type:"phone",task_type:"linkedin_phone",provider_cost_cents:400,display_order:1},
+  {category:"LinkedIn",category_order:16,resource_code:"linkedin_email",name:"LinkedIn Email Checker",description:"Check LinkedIn registration by email",input_type:"email",task_type:"linkedin",provider_cost_cents:30,display_order:2},
+  {category:"LinkedIn",category_order:16,resource_code:"linkedin_email_profile",name:"LinkedIn Email Profile",description:"Email profile signals; use only with appropriate authorization",input_type:"email",task_type:"linkedin_profile",provider_cost_cents:300,display_order:3},
+  {category:"X (Twitter)",category_order:17,resource_code:"twitter_phone",name:"X (Twitter) Number Checker",description:"Check X registration by phone number",input_type:"phone",task_type:"twitter",provider_cost_cents:90,display_order:1},
+  {category:"X (Twitter)",category_order:17,resource_code:"twitter_email_profile",name:"X (Twitter) Email Profile",description:"Email profile checker; confirm task code in provider dashboard",input_type:"email",task_type:"VERIFY_IN_DASHBOARD",provider_cost_cents:700,display_order:2},
+  {category:"Carrier Checker",category_order:18,resource_code:"global_carrier",name:"Number Carrier",description:"Global carrier and number-type lookup",input_type:"phone",task_type:"globalCarrier",provider_cost_cents:150,display_order:1},
+  {category:"Carrier Checker",category_order:18,resource_code:"us_carrier_advanced",name:"US Carrier Advanced",description:"Advanced US carrier lookup",input_type:"phone",task_type:"us_carrier_premium",provider_cost_cents:1500,display_order:2},
+  {category:"Airbnb",category_order:19,resource_code:"airbnb_checker",name:"Airbnb Number Checker",description:"Check Airbnb registration by phone number",input_type:"phone",task_type:"airbnb",provider_cost_cents:200,display_order:1},
+  {category:"TikTok",category_order:20,resource_code:"tiktok_checker",name:"TikTok Number Checker",description:"Check TikTok registration by phone number",input_type:"phone",task_type:"tiktok",provider_cost_cents:900,display_order:1},
+  {category:"Signal",category_order:21,resource_code:"signal_checker",name:"Signal Number Checker",description:"Check Signal registration status",input_type:"phone",task_type:"signal",provider_cost_cents:150,display_order:1},
+  {category:"Microsoft",category_order:22,resource_code:"microsoft_checker",name:"Microsoft Number Checker",description:"Check Microsoft registration by phone number",input_type:"phone",task_type:"microsoft",provider_cost_cents:90,display_order:1},
+  {category:"Snapchat",category_order:23,resource_code:"snapchat_checker",name:"Snapchat Number Checker",description:"Check Snapchat registration by phone number",input_type:"phone",task_type:"snapchat",provider_cost_cents:800,display_order:1},
+  {category:"Exchange Account Checkers",category_order:24,resource_code:"binance_checker",name:"Binance Number Checker",description:"Check Binance registration by phone number",input_type:"phone",task_type:"Binance",provider_cost_cents:650,display_order:1},
+  {category:"Exchange Account Checkers",category_order:24,resource_code:"kucoin_checker",name:"KuCoin Number Checker",description:"Check KuCoin registration by phone number",input_type:"phone",task_type:"Kucoin",provider_cost_cents:700,display_order:2},
+  {category:"Email Deliverability Checker",category_order:25,resource_code:"email_deliverability",name:"Email Deliverability Checker",description:"Email deliverability/validation; confirm task code in provider dashboard",input_type:"email",task_type:"VERIFY_IN_DASHBOARD",provider_cost_cents:500,display_order:1}
 ];
 // --------------------------------------------------
 // GENERAL HELPERS
@@ -584,60 +605,36 @@ function calculatePrice(pricing, quantity) {
 
 async function importCheckNumberCatalogue(env) {
   const categories = new Map();
-
-  for (const service of CHECKNUMBER_CATALOGUE) {
-    categories.set(service.category, service.category_order);
-  }
-
+  for (const service of CHECKNUMBER_CATALOGUE) categories.set(service.category, service.category_order);
   const statements = [];
-
   for (const [category, displayOrder] of categories) {
-    statements.push(
-      env.DB.prepare(`
-        INSERT OR IGNORE INTO service_categories (
-          category,
-          display_order,
-          is_listed
-        )
-        VALUES (?, ?, 1)
-      `).bind(category, displayOrder)
-    );
+    statements.push(env.DB.prepare(`
+      INSERT OR IGNORE INTO service_categories (category,display_order,is_listed)
+      VALUES (?, ?, 1)
+    `).bind(category,displayOrder));
   }
-
   for (const service of CHECKNUMBER_CATALOGUE) {
-    statements.push(
-      env.DB.prepare(`
-        INSERT OR IGNORE INTO service_catalogue (
-          resource_code,
-          name,
-          description,
-          category,
-          input_type,
-          task_type,
-          display_order,
-          is_listed
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-      `).bind(
-        service.resource_code,
-        service.name,
-        service.description,
-        service.category,
-        service.input_type,
-        service.task_type,
-        service.display_order
-      )
-    );
+    statements.push(env.DB.prepare(`
+      INSERT OR IGNORE INTO service_catalogue
+        (resource_code,name,description,category,input_type,task_type,display_order,is_listed)
+      VALUES (?,?,?,?,?,?,?,1)
+    `).bind(service.resource_code,service.name,service.description,service.category,
+      service.input_type,service.task_type,service.display_order));
+    statements.push(env.DB.prepare(`
+      INSERT OR IGNORE INTO resource_pricing
+        (resource_code,provider_cost_cents,markup_type,markup_value,final_price_cents,
+         enabled,pricing_unit_quantity,minimum_order_quantity,currency,updated_at)
+      VALUES (?,?,'percentage',10,NULL,0,10000,500,'USDT',CURRENT_TIMESTAMP)
+    `).bind(service.resource_code,service.provider_cost_cents));
   }
-
-  const results = await env.DB.batch(statements);
-
+  const results=await env.DB.batch(statements);
   return {
-    imported_categories: categories.size,
-    catalogue_entries_processed: CHECKNUMBER_CATALOGUE.length,
-    database_operations: results.length,
-    ordering_enabled: false,
-    message: "safe_catalogue_import_completed"
+    imported_categories:categories.size,
+    catalogue_entries_processed:CHECKNUMBER_CATALOGUE.length,
+    database_operations:results.length,
+    ordering_enabled:false,
+    message:"catalogue_imported_preserving_existing_services_and_prices",
+    note:"Products are listed but disabled until each provider task code and account availability are verified in Admin."
   };
 }
 
