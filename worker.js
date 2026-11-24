@@ -3953,32 +3953,8 @@ if (
       }
     }
 
-    // SAFE ORDER REJECTION
-    // No order creation. No wallet deduction.
-    // ------------------------------------------------
+    // Customer order processing is implemented above.
 
-    if (
-      request.method === "POST" &&
-      url.pathname === "/api/phone-check/order"
-    ) {
-      try {
-        await getSessionUser(request, env);
-
-        return json({
-          ok: false,
-          error: "service_disabled",
-          can_order: false,
-          message: "Order processing is not enabled yet."
-        }, 403, origin);
-      } catch {
-        return json({
-          ok: false,
-          error: "unauthorized"
-        }, 401, origin);
-      }
-    }
-
-    // ------------------------------------------------
     // ADMIN: TEST TELEGRAM STORAGE CONNECTION
     // ------------------------------------------------
 
