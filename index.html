@@ -2768,7 +2768,7 @@ async function loadNumberRequests() {
             <button class="btn save-upload-status" type="button">
               Save Status
             </button>
-            ${upload.resource_code==="phoneCheck" && ["uploaded","reviewed"].includes(currentStatus) && !String(upload.admin_note||"").startsWith("Submitted to CheckNumber") ? '<button class="btn submit-provider-task" type="button">Submit to CheckNumber</button>' : ''}
+            ${upload.resource_code==="phoneCheck" && ["uploaded","reviewed"].includes(currentStatus) && Number(upload.provider_task_exists)!==1 ? '<button class="btn submit-provider-task" type="button">Submit to CheckNumber</button>' : Number(upload.provider_task_exists)===1 ? '<p class="muted">A provider task already exists for this upload. Check Provider Tasks for its status.</p>' : ''}
           </div>
         `;
       }).join("");
@@ -2902,7 +2902,7 @@ async function loadNumberRequests() {
           '<div class="muted">Upload #'+esc(task.upload_id)+' · '+esc(task.resource_code)+' · Provider ID: '+esc(task.provider_task_id||"not assigned")+'</div>'+
           '<div class="muted">Total: '+esc(task.total??"—")+' · Success: '+esc(task.success??"—")+' · Failed: '+esc(task.failure??"—")+'</div>'+
           (task.last_error?'<div class="error">'+esc(task.last_error)+'</div>':'')+
-          (canPoll?'<button class="btn secondary poll-provider-task" data-task-id="'+Number(task.id)+'" type="button">Check status now</button>':'')+
+          (task.status==="delivery_sending"?'<div class="error">Delivery outcome needs manual review. Do not resubmit this task; check the customer chat and Telegram delivery status first.</div>':'')+(canPoll?'<button class="btn secondary poll-provider-task" data-task-id="'+Number(task.id)+'" type="button">Check status now</button>':'')+
         '</div>';
       }).join("")||'<p class="muted">No provider tasks yet.</p>';
       box.querySelectorAll(".poll-provider-task").forEach(button=>{
