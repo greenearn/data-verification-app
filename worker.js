@@ -1799,6 +1799,12 @@ async function createAdminNotifications(
 
   await env.DB.batch(statements);
 }
+async function ensureNumberFileRequestServiceColumns(env) {
+  for (const [column,type] of [["service_code","TEXT"],["service_name","TEXT"],["consent_confirmed","INTEGER NOT NULL DEFAULT 0"]]) {
+    try { await env.DB.prepare("ALTER TABLE number_file_requests ADD COLUMN "+column+" "+type).run(); }
+    catch(error) { if(!String(error.message||"").toLowerCase().includes("duplicate column")) throw error; }
+  }
+}
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
@@ -4582,10 +4588,7 @@ if (
     ) {
       try {
         const user = await getSessionUser(request, env);
-        for (const [column,type] of [["service_code","TEXT"],["service_name","TEXT"],["consent_confirmed","INTEGER NOT NULL DEFAULT 0"]]) {
-          try { await env.DB.prepare("ALTER TABLE number_file_requests ADD COLUMN "+column+" "+type).run(); }
-          catch(migrationError) { if(!String(migrationError.message||"").toLowerCase().includes("duplicate column")) throw migrationError; }
-        }
+        await ensureNumberFileRequestServiceColumns(env);
         const body = await readBody(request);
 
         const countries = {
@@ -4726,6 +4729,7 @@ if (
     ) {
       try {
         await requireAdmin(request, env);
+        await ensureNumberFileRequestServiceColumns(env);
 
         const result = await env.DB.prepare(`
           SELECT
@@ -5314,6 +5318,7 @@ if (
   request.method === "GET"
 ) {
   const user = await getSessionUser(request, env);
+  await ensureNumberFileRequestServiceColumns(env);
 
   const status = url.searchParams.get("status") || "all";
   const allowedStatuses = ["all", "pending", "completed", "rejected"];
