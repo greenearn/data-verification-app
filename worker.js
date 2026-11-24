@@ -417,6 +417,7 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "POST /api/admin/support/chats/reply": "support_manage",
   "GET /api/admin/support/settings": "support_manage",
   "POST /api/admin/support/settings": "support_manage",
+  "GET /api/admin/users": "users_manage",
   "POST /api/admin/users/balance": "users_manage",
   "POST /api/admin/users/message": "users_manage",
   "GET /api/admin/broadcasts": "users_manage",
@@ -1573,10 +1574,17 @@ async function sendBroadcastToTelegram(env, recipient, campaign) {
 
 async function processBroadcastQueue(env) {
   await ensureBroadcastSchema(env);
+  // A worker interruption can leave a recipient in "sending". Mark it as
+  // uncertain instead of retrying automatically and risking duplicate DMs.
+  await env.DB.prepare(`
+    UPDATE telegram_broadcast_recipients
+    SET status='failed',last_error='delivery_outcome_unknown_after_worker_interruption'
+    WHERE status='sending' AND created_at < datetime('now','-10 minutes')
+  `).run();
   const campaigns = await env.DB.prepare(`
     SELECT id, message_text, media_type, media_file_id
     FROM telegram_broadcasts WHERE status IN ('queued','sending')
-    ORDER BY id ASC LIMIT 5
+    ORDER BY id ASC LIMIT 1
   `).all();
   for (const campaign of campaigns.results || []) {
     const recipients = await env.DB.prepare(`
