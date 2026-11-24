@@ -2710,6 +2710,7 @@ if (
 ) {
   try {
     await requireAdmin(request, env);
+    await ensureProviderTasksSchema(env);
 
     const limit = Number(
       url.searchParams.get("limit") || 20
