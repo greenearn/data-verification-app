@@ -110,6 +110,41 @@ input:focus,select:focus,textarea:focus{border-color:#6366f1;box-shadow:0 0 0 3p
 footer{border-top-color:#e3e8f0;color:#667085}
 
 .service-heading{display:flex;align-items:center;gap:11px;min-height:48px}.service-logo{width:34px;height:34px;object-fit:contain;flex:0 0 34px}.service-logo-fallback{width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border-radius:10px;background:linear-gradient(135deg,#dbeafe,#ede9fe);color:#4338ca;font-weight:900;font-size:16px}.service-heading p{margin:3px 0 0}.service strong{display:block}
+
+/* Premium soft-depth visual system */
+body{background:radial-gradient(ellipse at 10% 0%,#eef3ff 0,transparent 36%),radial-gradient(ellipse at 100% 20%,#fff4e3 0,transparent 28%),#f7f8fc;color:#1d2740}
+.wrap{max-width:1120px;padding:22px 18px 60px}
+.panel,.service,.category{border:1px solid rgba(220,227,241,.95);border-radius:22px;box-shadow:0 8px 24px rgba(37,55,98,.07),0 2px 5px rgba(37,55,98,.035);transition:transform .2s ease,box-shadow .2s ease}
+.panel{padding:20px;margin:15px 0}.service{border-radius:18px;padding:16px;box-shadow:0 7px 18px rgba(42,65,112,.08)}
+.service:active,.btn:active{transform:translateY(1px) scale(.99)}
+.balance{border-radius:24px;box-shadow:0 14px 28px rgba(64,87,185,.20);background:linear-gradient(125deg,#3478f6,#8a65e8 72%,#b17af4)}
+.nav{position:sticky;top:0;z-index:20;background:rgba(247,248,252,.9);backdrop-filter:blur(14px);margin:0 -8px;padding:12px 8px}
+.nav a{border-radius:14px;padding:9px 13px;font-weight:700}
+.btn{border-radius:14px;padding:12px 17px;transition:transform .18s ease,box-shadow .18s ease;box-shadow:0 7px 15px rgba(73,93,172,.16)}
+.btn:hover{transform:translateY(-1px);box-shadow:0 10px 20px rgba(73,93,172,.2)}
+input,select,textarea{border-radius:14px;padding:13px}
+.support-card{background:linear-gradient(145deg,#fff,#f8faff)}.support-heading{display:flex;justify-content:space-between;align-items:center;gap:15px}
+.support-avatar{width:54px;height:54px;display:grid;place-items:center;border-radius:19px;color:white;font-size:25px;background:linear-gradient(135deg,#3478f6,#9b70ed);box-shadow:0 9px 20px #6f77dc55}
+.support-contact-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}
+.support-contact{display:flex;align-items:center;gap:12px;padding:15px;border:1px solid #e5eaf5;border-radius:18px;background:#fff;box-shadow:0 5px 15px #243b6810;text-decoration:none;color:#26324b;min-width:0}.support-contact p{margin:3px 0 0}.support-contact-icon{width:42px;height:42px;display:grid;place-items:center;flex:0 0 42px;border-radius:14px;background:#edf3ff;color:#3677ed;font-size:19px}
+.support-chat-box{padding:16px;border:1px solid #e5eaf5;border-radius:20px;background:#fff}
+.support-messages{height:260px;overflow:auto;display:flex;flex-direction:column;gap:9px;padding:12px;background:#f5f7fc;border-radius:16px;margin:12px 0}
+.support-bubble{max-width:85%;padding:11px 14px;border-radius:16px;background:#fff;box-shadow:0 3px 9px #1b315010;align-self:flex-start;overflow-wrap:anywhere}
+.support-bubble.mine{background:linear-gradient(135deg,#3478f6,#7868e8);color:#fff;align-self:flex-end}
+.support-bubble small{display:block;opacity:.68;font-size:10px;margin-top:5px}
+.support-compose{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}
+.support-admin-layout{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(0,1.4fr);gap:12px}
+.support-inbox-list{max-height:360px;overflow:auto}.support-thread-item{padding:12px;border:1px solid #e5eaf5;border-radius:13px;margin:7px 0;cursor:pointer;background:#fff}
+.support-thread-item.active{border-color:#6d75e8;background:#f4f5ff}
+.admin-workspace{background:linear-gradient(145deg,#101b35,#1d2b50);padding:18px;border-radius:26px;box-shadow:0 18px 40px #1d2b5033;color:#f5f7ff}
+.admin-workspace .panel{background:#fff;color:#1d2740;border-radius:20px}
+.admin-workspace>header{border-bottom:1px solid #ffffff22;color:#fff;padding:10px 5px 18px}
+.admin-shell-title{font-size:23px;font-weight:800;color:#fff}.admin-shell-subtitle{color:#c7d0e6;font-size:12px}
+.admin-gate{max-width:470px;margin:8vh auto;padding:30px;background:#fff;border:1px solid #e6eafa;border-radius:28px;box-shadow:0 22px 60px #243b681c}
+.admin-gate-icon{width:60px;height:60px;border-radius:20px;display:grid;place-items:center;background:linear-gradient(135deg,#3478f6,#8b66e8);color:#fff;font-size:26px}
+.back-button{border:1px solid #e1e7f2;background:#fff;color:#34405a;border-radius:12px;padding:9px 13px;font-weight:700}
+@media(max-width:650px){.support-contact-grid,.support-admin-layout{grid-template-columns:1fr}.support-compose{grid-template-columns:1fr}.admin-workspace{padding:10px;border-radius:18px}.wrap{padding:14px 12px 45px}}
+
 </style>
 </head>
 <body>
@@ -134,6 +169,12 @@ let uploadedFileId=null;
 let adminMode=false;
 let adminRole=null;
 let adminPermissions=[];
+let adminUnlockToken=sessionStorage.getItem('dv_admin_unlock')||'';
+let adminIdleTimer=null;
+let adminHeartbeatTimer=null;
+let supportPollTimer=null;
+let supportConversationId=null;
+let supportContacts={};
 let notificationPollTimer = null;
 let notificationIds = new Set();
 let notificationsInitialized = false;
@@ -164,7 +205,8 @@ async function request(path,method="GET",body=null){
     method,
     headers:{
       "Authorization":"Bearer "+token,
-      "Accept":"application/json"
+      "Accept":"application/json",
+      ...(adminUnlockToken?{"X-Admin-Unlock":adminUnlockToken}:{})
     }
   };
 
@@ -181,6 +223,7 @@ async function request(path,method="GET",body=null){
   const data=await response.json();
 
   if(!response.ok||!data.ok){
+    if(data.error==="admin_unlock_required"&&adminMode){adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}renderAdminGate(true);}
     let message = data.error || "Request failed (" + response.status + ")";
     if (data.error === "invalid_phone_number_count") {
       message = "Phone file count is outside the allowed range. " +
@@ -251,22 +294,11 @@ async function login(){
     adminRole=user.admin_role||null;
     adminPermissions=Array.isArray(user.admin_permissions)?user.admin_permissions:[];
     await loadCustomerServices();
-
-    if(adminMode && (
-      adminRole==="main_admin" ||
-      adminRole==="full_admin" ||
-      adminPermissions.includes("catalogue_manage")
-    )){
-      try{
-        const admin=await request("/api/admin/catalogue");
-        categories=admin.categories||[];
-        adminServices=admin.services||adminServices;
-        globalMarkupPercentage=Number(admin.global_markup_percentage??10);
-      }catch(error){
-        console.warn("Admin catalogue unavailable:",error.message);
-      }
+    if(adminMode){
+      try{const security=await request("/api/admin/security/status");renderAdminGate(!!security.configured);}
+      catch(error){showError("Could not verify administrator access: "+error.message);}
+      return;
     }
-
     renderDashboard();
 
   }catch(error){
@@ -686,6 +718,127 @@ ${d.admin_note?`<div class="muted">Admin note: ${esc(d.admin_note)}</div>`:""}
   await loadWalletDeposits();
 }
 
+
+function renderAdminGate(configured){
+  adminPasswordConfigured=!!configured;
+  app.innerHTML='<main class="wrap"><section class="admin-gate"><div class="admin-gate-icon">◆</div><p class="admin-label">PRIVATE ADMIN ACCESS</p><h1>'+(configured?'Unlock Admin Dashboard':'Create Admin Password')+'</h1><p>'+(configured?'Enter your administrator password to continue. The dashboard locks after 15 minutes of inactivity.':'Set a private password for this administrator account. Use at least 10 characters.')+'</p><label class="field" for="admin-gate-password">Administrator password</label><input id="admin-gate-password" type="password" minlength="10" maxlength="128" autocomplete="'+(configured?'current-password':'new-password')+'" placeholder="Enter password"><button class="btn" id="admin-gate-submit" type="button">'+(configured?'Unlock dashboard':'Create password')+'</button><p id="admin-gate-message" class="muted"></p><button class="back-button" id="admin-gate-back" type="button">← Back to customer dashboard</button></section></main>';
+  const input=document.getElementById("admin-gate-password"),button=document.getElementById("admin-gate-submit"),msg=document.getElementById("admin-gate-message");
+  button.onclick=async()=>{
+    const password=input.value;
+    if(!password){msg.textContent="Enter your password.";return;}
+    button.disabled=true;msg.textContent="Verifying securely…";
+    try{
+      if(!configured){await request("/api/admin/security/setup","POST",{password});configured=true;adminPasswordConfigured=true;}
+      const result=await request("/api/admin/security/unlock","POST",{password});
+      adminUnlockToken=result.unlock_token;sessionStorage.setItem("dv_admin_unlock",adminUnlockToken);
+      input.value="";startAdminIdleLock();await renderAdminWorkspace();
+    }catch(error){msg.textContent=error.message;button.disabled=false;}
+  };
+  input.addEventListener("keydown",e=>{if(e.key==="Enter")button.click();});
+  document.getElementById("admin-gate-back").onclick=()=>{adminMode=true;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderDashboard();};
+}
+
+function startAdminIdleLock(){
+  if(adminIdleTimer)clearTimeout(adminIdleTimer);
+  const reset=()=>{if(!adminUnlockToken)return;if(adminIdleTimer)clearTimeout(adminIdleTimer);adminIdleTimer=setTimeout(()=>lockAdminDashboard(),15*60*1000);};
+  document.onpointerdown=reset;document.onkeydown=reset;document.ontouchstart=reset;document.onmousemove=reset;
+  if(adminHeartbeatTimer)clearInterval(adminHeartbeatTimer);
+  adminHeartbeatTimer=setInterval(()=>{if(adminUnlockToken)fetch(API+"/api/admin/security/heartbeat",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":adminUnlockToken}}).then(r=>{if(r.status===423)lockAdminDashboard();}).catch(()=>{});},60000);
+  reset();
+}
+async function lockAdminDashboard(){
+  if(!adminUnlockToken)return;
+  const old=adminUnlockToken;
+  adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");
+  if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}
+  try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":old}});}catch(e){}
+  renderAdminGate(true);
+}
+async function renderAdminWorkspace(){
+  try{
+    const canManageCatalogue=adminRole==="main_admin"||adminRole==="full_admin"||adminPermissions.includes("catalogue_manage");
+    if(canManageCatalogue){
+      const data=await request("/api/admin/catalogue");
+      categories=data.categories||[];adminServices=data.services||[];globalMarkupPercentage=Number(data.global_markup_percentage??10);
+    }else{categories=[];adminServices=[];}
+    app.innerHTML='<main class="wrap admin-workspace"><header><div><div class="admin-label">CONTROL CENTRE</div><div class="admin-shell-title">Administrator Dashboard</div><div class="admin-shell-subtitle">Secure operations · '+esc(adminRole||"Admin")+'</div></div><div class="admin-shell-actions"><button class="back-button" id="admin-back">← Customer portal</button><button class="back-button" id="admin-lock">Lock dashboard</button></div></header>'+adminMarkup()+'</main>';
+    document.getElementById("admin-back").onclick=async()=>{const oldToken=adminUnlockToken;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}if(oldToken){try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":oldToken}});}catch(e){}}adminMode=true;renderDashboard();};
+    document.getElementById("admin-lock").onclick=lockAdminDashboard;
+    const lockNow=document.getElementById("admin-lock-now");if(lockNow)lockNow.onclick=lockAdminDashboard;
+    wireAdmin();wireSupportAdmin();startAdminIdleLock();
+  }catch(error){if(error.message==="admin_unlock_required"){adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderAdminGate(true);}else showError("Admin dashboard could not load: "+error.message);}
+}
+
+function formatSupportTime(value){try{return new Date(value).toLocaleString();}catch(e){return "";}}
+function renderSupportMessages(target,messages,viewerIsAdmin=false){
+  if(!target)return;
+  target.innerHTML=(messages||[]).map(m=>'<div class="support-bubble '+((viewerIsAdmin?m.sender_type==="admin":m.sender_type!=="admin")?"mine":"")+'">'+esc(m.message)+'<small>'+esc(m.sender_type==="admin"?"Support team":"Customer")+' · '+esc(formatSupportTime(m.created_at))+'</small></div>').join("")||'<p class="muted">No messages yet. Send a message to start the conversation.</p>';
+  target.scrollTop=target.scrollHeight;
+}
+async function wireSupportCustomer(){
+  const contactBox=document.getElementById("support-contact-grid"),thread=document.getElementById("customer-support-messages");
+  if(!contactBox||!thread)return;
+  async function refresh(){
+    try{
+      const [c,chat]=await Promise.all([request("/api/support/contacts"),request("/api/support/chat")]);
+      supportContacts=c.contacts||{};
+      const tgName=String(supportContacts.telegram_username||"").replace(/^@/,"");
+      const wa=String(supportContacts.whatsapp_number||"").replace(/[^0-9]/g,"");
+      contactBox.innerHTML='<div class="support-contact"><span class="support-contact-icon">✦</span><div><strong>'+esc(supportContacts.display_name||"Customer Support")+'</strong><p>'+esc(supportContacts.availability||"Available")+'</p></div></div>'+
+        (tgName?'<a class="support-contact" target="_blank" rel="noopener" href="https://t.me/'+encodeURIComponent(tgName)+'"><span class="support-contact-icon">➤</span><div><strong>Telegram Support</strong><p>@'+esc(tgName)+'</p></div></a>':'')+
+        (wa?'<a class="support-contact" target="_blank" rel="noopener" href="https://wa.me/'+wa+'"><span class="support-contact-icon">◉</span><div><strong>WhatsApp Support</strong><p>'+esc(supportContacts.whatsapp_number)+'</p></div></a>':'');
+      supportConversationId=chat.conversation?.id;renderSupportMessages(thread,chat.messages);
+    }catch(error){thread.innerHTML='<p class="error">'+esc(error.message)+'</p>';}
+  }
+  await refresh();
+  const send=document.getElementById("customer-support-send"),input=document.getElementById("customer-support-input"),status=document.getElementById("customer-support-status");
+  send.onclick=async()=>{const message=input.value.trim();if(!message)return;send.disabled=true;try{await request("/api/support/chat","POST",{message});input.value="";await refresh();status.textContent="Message sent. Replies will appear here."; }catch(e){status.textContent=e.message;}finally{send.disabled=false;}};
+  if(supportPollTimer)clearInterval(supportPollTimer);
+  supportPollTimer=setInterval(refresh,7000);
+}
+
+async function wireSupportAdmin(){
+  const settingsMessage=document.getElementById("support-settings-message");
+  try{
+    const result=await request("/api/admin/support/settings");
+    const x=result.settings||{};
+    document.getElementById("support-display-name").value=x.display_name||"Customer Support";
+    document.getElementById("support-telegram").value=x.telegram_username||"";
+    document.getElementById("support-whatsapp").value=x.whatsapp_number||"";
+    document.getElementById("support-availability").value=x.availability||"Available";
+  }catch(e){if(settingsMessage)settingsMessage.textContent=e.message;}
+  document.getElementById("support-settings-save").onclick=async()=>{
+    const button=document.getElementById("support-settings-save");button.disabled=true;
+    try{await request("/api/admin/support/settings","POST",{display_name:document.getElementById("support-display-name").value,telegram_username:document.getElementById("support-telegram").value,whatsapp_number:document.getElementById("support-whatsapp").value,availability:document.getElementById("support-availability").value});settingsMessage.textContent="Support contacts saved."; }
+    catch(e){settingsMessage.textContent=e.message;}finally{button.disabled=false;}
+  };
+  let selected=null;
+  async function loadInbox(){
+    try{
+      const data=await request("/api/admin/support/chats");
+      document.getElementById("support-inbox-list").innerHTML=(data.chats||[]).map(c=>'<div class="support-thread-item '+(selected===c.id?'active':'')+'" data-chat-id="'+Number(c.id)+'"><strong>'+esc(c.first_name||"Customer")+' · #'+Number(c.id)+'</strong><p>'+esc(c.last_message||"No messages")+'</p><small>'+esc(c.unread_count?c.unread_count+" unread":formatSupportTime(c.last_message_at))+'</small></div>').join("")||'<p class="muted">No customer conversations yet.</p>';
+      document.querySelectorAll("[data-chat-id]").forEach(el=>el.onclick=()=>{selected=Number(el.dataset.chatId);loadThread();loadInbox();});
+    }catch(e){document.getElementById("support-inbox-list").textContent=e.message;}
+  }
+  async function loadThread(){
+    if(!selected)return;
+    const data=await request("/api/admin/support/chats/messages?conversation_id="+selected);
+    document.getElementById("support-admin-thread-title").textContent=(data.conversation.first_name||"Customer")+" · Telegram ID "+data.conversation.telegram_id;
+    renderSupportMessages(document.getElementById("support-admin-messages"),data.messages,true);
+    document.getElementById("support-admin-send").disabled=false;
+  }
+  document.getElementById("support-admin-send").onclick=async()=>{
+    const input=document.getElementById("support-admin-reply"),message=input.value.trim();if(!selected||!message)return;
+    const button=document.getElementById("support-admin-send");button.disabled=true;
+    try{await request("/api/admin/support/chats/reply","POST",{conversation_id:selected,message});input.value="";await loadThread();await loadInbox();}
+    catch(e){document.getElementById("support-admin-thread-title").textContent=e.message;}finally{button.disabled=false;}
+  };
+  document.getElementById("support-inbox-refresh").onclick=loadInbox;
+  await loadInbox();
+  if(supportPollTimer)clearInterval(supportPollTimer);
+  supportPollTimer=setInterval(()=>{loadInbox();if(selected)loadThread().catch(()=>{});},7000);
+}
+
 function renderDashboard(){
   const name=user.first_name||"Customer";
 
@@ -718,14 +871,16 @@ function renderDashboard(){
     </header>
 
    
+<button class="back-button" id="customer-back" type="button">← Back</button>
 <nav class="nav">
   <a href="#services">Services</a>
   <a href="#wallet">Wallet</a>
   <a href="#prepare">Prepare list</a>
   <a href="#toolbox">Toolbox</a>
   <a href="#orders">Orders</a>
+  <a href="#support">Support</a>
   <a href="#account">Account</a>
-  ${adminMode?'<a href="#admin">Admin dashboard</a>':""}
+  ${adminMode?'<a href="#admin" id="open-admin-dashboard">Admin dashboard</a>':""}
 </nav>
 
     <h1>Welcome, ${esc(name)}</h1>
@@ -974,7 +1129,15 @@ function renderDashboard(){
       <button class="btn secondary" id="orders-refresh">Refresh history</button>
     </section>
 
-   <section id="account" class="panel">
+   <section id="support" class="panel support-card">
+  <div class="support-heading"><div><span class="admin-label">WE ARE HERE TO HELP</span><h2>Customer Support</h2><p>Chat directly with our team or use your preferred app.</p></div><span class="support-avatar">✦</span></div>
+  <div class="support-contact-grid" id="support-contact-grid"><div class="note">Loading support contacts…</div></div>
+  <div class="support-chat-box"><div class="item-top"><div><h3>Chat with Admin</h3><p class="muted">Your conversation stays inside this platform.</p></div><span class="pill">Private chat</span></div>
+    <div id="customer-support-messages" class="support-messages"><p class="muted">Loading conversation…</p></div>
+    <div class="support-compose"><textarea id="customer-support-input" maxlength="2000" rows="2" placeholder="Write your message…"></textarea><button class="btn" id="customer-support-send" type="button">Send message</button></div><p id="customer-support-status" class="muted">Support team replies will appear here.</p>
+  </div>
+</section>
+<section id="account" class="panel">
   <h2>Account & Security</h2>
   <div class="item">
     <small>Login method</small>
@@ -1015,7 +1178,12 @@ function renderDashboard(){
     <footer>Data Verification · Secure access · Authorized validation only.</footer>
   </main>`;
 
+  const adminOpen=document.getElementById("open-admin-dashboard");
+  if(adminOpen)adminOpen.onclick=e=>{e.preventDefault();renderAdminGate(adminPasswordConfigured);};
+  const backButton=document.getElementById("customer-back");
+  if(backButton)backButton.onclick=()=>{if(location.hash){history.back();}else{window.scrollTo({top:0,behavior:"smooth"});}};
   renderServices();
+  wireSupportCustomer();
 
   wireNotifications();
   wireRequestHistory();
@@ -1825,6 +1993,7 @@ function adminMarkup(){
         <label class="checkbox"><input type="checkbox" value="number_requests"> Manual number-file requests</label>
         <label class="checkbox"><input type="checkbox" value="provider_balance"> Provider balance</label>
         <label class="checkbox"><input type="checkbox" value="storage_test"> Telegram storage test</label>
+        <label class="checkbox"><input type="checkbox" value="support_manage"> Customer support inbox and contact settings</label>
       </div>
       <div class="actions">
         <button class="btn" id="managed-admin-save" type="button">Grant administrator access</button>
@@ -2091,7 +2260,23 @@ function adminMarkup(){
 
   <div id="number-requests-list"></div>
 </div>
+    <div class="panel">
+  <h3>Customer Support Contact Settings</h3><p class="muted">Update the customer-facing support profile whenever you want.</p>
+  <label class="field" for="support-display-name">Support display name</label><input id="support-display-name" maxlength="80" placeholder="Customer Support">
+  <label class="field" for="support-telegram">Telegram username</label><input id="support-telegram" maxlength="33" placeholder="@your_support_username">
+  <label class="field" for="support-whatsapp">WhatsApp number with country code</label><input id="support-whatsapp" maxlength="24" placeholder="+97798XXXXXXXX">
+  <label class="field" for="support-availability">Availability label</label><input id="support-availability" maxlength="40" value="Available">
+  <button class="btn" id="support-settings-save" type="button">Save support contacts</button><p id="support-settings-message" class="muted"></p>
+</div>
+<div class="panel">
+  <div class="item-top"><h3>Customer Support Inbox</h3><button class="btn secondary" id="support-inbox-refresh" type="button">Refresh</button></div>
+  <div class="support-admin-layout"><div id="support-inbox-list" class="support-inbox-list">Loading conversations…</div>
+    <div class="support-admin-thread"><div id="support-admin-thread-title" class="muted">Select a customer conversation.</div><div id="support-admin-messages" class="support-messages"></div><textarea id="support-admin-reply" rows="2" maxlength="2000" placeholder="Write a reply…"></textarea><button class="btn" id="support-admin-send" type="button" disabled>Send reply</button></div>
+  </div>
+</div>
+
     <div class="note">Manual launch mode: customers pay from their USDT wallet when placing an order. Admins manually submit paid orders, monitor delivery, and issue refunds for failed orders.</div>
+    <button class="btn secondary" id="admin-lock-now" type="button">Lock Admin Dashboard</button>
     <button class="btn secondary" id="reload-admin">Refresh admin catalogue</button>
     <div id="admin-message" class="muted"></div>
   </section>`;
@@ -2659,7 +2844,7 @@ function wireAdmin(){
          let objectUrl=null;
          let overlay=null;
          try{
-           const response=await fetch(API+"/api/admin/wallet/deposits/screenshot?deposit_id="+Number(proofButton.dataset.id),{headers:{Authorization:"Bearer "+token}});
+           const response=await fetch(API+"/api/admin/wallet/deposits/screenshot?deposit_id="+Number(proofButton.dataset.id),{headers:{Authorization:"Bearer "+token,...(adminUnlockToken?{"X-Admin-Unlock":adminUnlockToken}:{})}});
            if(!response.ok)throw Error("Could not retrieve screenshot ("+response.status+")");
            const blob=await response.blob();
            if(!blob.type.startsWith("image/"))throw Error("The stored file is not being returned as an image.");
@@ -3395,7 +3580,8 @@ async function loadNumberRequests() {
         method:"POST",
         headers:{
           "Authorization":"Bearer "+token,
-          "Accept":"application/json"
+          "Accept":"application/json",
+          ...(adminUnlockToken?{"X-Admin-Unlock":adminUnlockToken}:{})
         },
         body:formData
       });

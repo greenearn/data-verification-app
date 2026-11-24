@@ -93,7 +93,7 @@ function json(data, status = 200, origin = "") {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": origin || DEFAULT_ALLOWED_ORIGIN,
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Unlock",
       "Vary": "Origin",
       "Cache-Control": "no-store"
     }
@@ -366,7 +366,8 @@ const ADMIN_PERMISSION_LABELS = {
   uploads_manage: "Customer upload review",
   number_requests: "Manual number-file requests",
   provider_balance: "Provider balance",
-  storage_test: "Telegram storage test"
+  storage_test: "Telegram storage test",
+  support_manage: "Customer support inbox and contact settings"
 };
 
 const ADMIN_ROUTE_PERMISSIONS = {
@@ -394,7 +395,12 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "POST /api/admin/storage-file-test": "storage_test",
   "GET /api/admin/number-file-requests": "number_requests",
   "POST /api/admin/number-file-requests/upload": "number_requests",
-  "POST /api/admin/number-file-requests/reject": "number_requests"
+  "POST /api/admin/number-file-requests/reject": "number_requests",
+  "GET /api/admin/support/chats": "support_manage",
+  "GET /api/admin/support/chats/messages": "support_manage",
+  "POST /api/admin/support/chats/reply": "support_manage",
+  "GET /api/admin/support/settings": "support_manage",
+  "POST /api/admin/support/settings": "support_manage"
 };
 
 async function ensureAdminAccessSchema(env) {
@@ -411,6 +417,13 @@ async function ensureAdminAccessSchema(env) {
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `).run();
+
+
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS admin_passwords (telegram_id TEXT PRIMARY KEY,salt TEXT NOT NULL,password_hash TEXT NOT NULL,failed_attempts INTEGER NOT NULL DEFAULT 0,locked_until TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS admin_unlock_sessions (token_hash TEXT PRIMARY KEY,telegram_id TEXT NOT NULL,expires_at TEXT NOT NULL,last_activity TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS support_contacts (id INTEGER PRIMARY KEY CHECK(id=1),display_name TEXT NOT NULL DEFAULT 'Customer Support',telegram_username TEXT NOT NULL DEFAULT '',whatsapp_number TEXT NOT NULL DEFAULT '',availability TEXT NOT NULL DEFAULT 'Available',updated_by TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS support_conversations (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'open',last_message_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS support_messages (id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER NOT NULL,sender_type TEXT NOT NULL CHECK(sender_type IN ('customer','admin')),sender_user_id INTEGER NOT NULL,message TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,read_at TEXT)").run();
 
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS admin_audit_log (
@@ -469,6 +482,13 @@ async function isAdmin(user, env) {
     ["main_admin", "full_admin", "sub_admin"].includes(admin.role);
 }
 
+
+async function deriveAdminPassword(password, saltHex) {
+  const salt = Uint8Array.from(saltHex.match(/.{2}/g).map(x => parseInt(x,16)));
+  const key = await crypto.subtle.importKey("raw",new TextEncoder().encode(password),"PBKDF2",false,["deriveBits"]);
+  return hex(await crypto.subtle.deriveBits({name:"PBKDF2",salt,iterations:310000,hash:"SHA-256"},key,256));
+}
+
 async function requireAdmin(request, env) {
   const user = await getSessionUser(request, env);
   const admin = await getAdminAccess(user, env);
@@ -480,6 +500,17 @@ async function requireAdmin(request, env) {
   ) {
     throw new Error("admin_access_required");
   }
+
+  const unlockToken = request.headers.get("X-Admin-Unlock") || "";
+  if (!/^[a-f0-9]{64}$/i.test(unlockToken)) throw new Error("admin_unlock_required");
+  const unlockHash = await sha256(unlockToken);
+  const unlock = await env.DB.prepare("SELECT expires_at,last_activity FROM admin_unlock_sessions WHERE token_hash=? AND telegram_id=? LIMIT 1").bind(unlockHash,String(user.telegram_id)).first();
+  const now = Date.now();
+  if (!unlock || Date.parse(unlock.expires_at)<=now || now-Date.parse(unlock.last_activity)>900000) {
+    if (unlock) await env.DB.prepare("DELETE FROM admin_unlock_sessions WHERE token_hash=?").bind(unlockHash).run();
+    throw new Error("admin_unlock_required");
+  }
+  await env.DB.prepare("UPDATE admin_unlock_sessions SET last_activity=? WHERE token_hash=?").bind(new Date(now).toISOString(),unlockHash).run();
 
   const routeKey = request.method.toUpperCase() + " " +
     new URL(request.url).pathname;
@@ -1608,7 +1639,7 @@ export default {
         headers: {
           "Access-Control-Allow-Origin": origin || DEFAULT_ALLOWED_ORIGIN,
           "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Unlock",
           "Vary": "Origin"
         }
       });
@@ -4712,6 +4743,63 @@ claimedRequestId = null;
       }
     }
 // --------------------------------------------------
+
+if (url.pathname === "/api/admin/security/status" && request.method === "GET") {
+  try { const u=await getSessionUser(request,env),a=await getAdminAccess(u,env); if(!a||Number(a.is_active)!==1)return json({ok:false,error:"admin_access_required"},403,origin); const r=await env.DB.prepare("SELECT telegram_id FROM admin_passwords WHERE telegram_id=?").bind(String(u.telegram_id)).first(); return json({ok:true,configured:!!r},200,origin); }
+  catch(e){return json({ok:false,error:e.message||"security_failed"},e.message==="unauthorized"?401:500,origin);}
+}
+if (url.pathname === "/api/admin/security/setup" && request.method === "POST") {
+  try { const u=await getSessionUser(request,env),a=await getAdminAccess(u,env); if(!a||Number(a.is_active)!==1)return json({ok:false,error:"admin_access_required"},403,origin); const b=await readBody(request),p=String(b.password||""); if(p.length<10||p.length>128)return json({ok:false,error:"password_must_be_10_to_128_characters"},400,origin); const old=await env.DB.prepare("SELECT telegram_id FROM admin_passwords WHERE telegram_id=?").bind(String(u.telegram_id)).first(); if(old)return json({ok:false,error:"admin_password_already_configured"},409,origin); const salt=hex(crypto.getRandomValues(new Uint8Array(16))),hash=await deriveAdminPassword(p,salt); await env.DB.prepare("INSERT INTO admin_passwords (telegram_id,salt,password_hash) VALUES (?,?,?)").bind(String(u.telegram_id),salt,hash).run(); await writeAdminAudit(env,u.telegram_id,u.telegram_id,"admin_password_created"); return json({ok:true},200,origin); }
+  catch(e){return json({ok:false,error:e.message||"password_setup_failed"},e.message==="unauthorized"?401:500,origin);}
+}
+if (url.pathname === "/api/admin/security/unlock" && request.method === "POST") {
+  try { const u=await getSessionUser(request,env),a=await getAdminAccess(u,env); if(!a||Number(a.is_active)!==1)return json({ok:false,error:"admin_access_required"},403,origin); const b=await readBody(request),r=await env.DB.prepare("SELECT salt,password_hash,failed_attempts,locked_until FROM admin_passwords WHERE telegram_id=?").bind(String(u.telegram_id)).first(); if(!r)return json({ok:false,error:"admin_password_setup_required"},409,origin); if(r.locked_until&&Date.parse(r.locked_until)>Date.now())return json({ok:false,error:"admin_login_temporarily_locked"},429,origin); const hash=await deriveAdminPassword(String(b.password||""),r.salt); if(!safeEqual(hash,r.password_hash)){const n=Number(r.failed_attempts||0)+1,lock=n>=5?new Date(Date.now()+900000).toISOString():null; await env.DB.prepare("UPDATE admin_passwords SET failed_attempts=?,locked_until=? WHERE telegram_id=?").bind(n>=5?0:n,lock,String(u.telegram_id)).run(); return json({ok:false,error:lock?"admin_login_temporarily_locked":"incorrect_admin_password"},lock?429:403,origin);} await env.DB.prepare("UPDATE admin_passwords SET failed_attempts=0,locked_until=NULL WHERE telegram_id=?").bind(String(u.telegram_id)).run(); const raw=hex(crypto.getRandomValues(new Uint8Array(32))),now=new Date(),expires=new Date(now.getTime()+43200000).toISOString(); await env.DB.prepare("INSERT INTO admin_unlock_sessions (token_hash,telegram_id,expires_at,last_activity) VALUES (?,?,?,?)").bind(await sha256(raw),String(u.telegram_id),expires,now.toISOString()).run(); return json({ok:true,unlock_token:raw,expires_at:expires,idle_timeout_minutes:15},200,origin); }
+  catch(e){return json({ok:false,error:e.message||"unlock_failed"},e.message==="unauthorized"?401:500,origin);}
+}
+
+if (url.pathname === "/api/admin/security/heartbeat" && request.method === "POST") {
+  try {
+    const u=await getSessionUser(request,env),a=await getAdminAccess(u,env),raw=request.headers.get("X-Admin-Unlock")||"";
+    if(!a||Number(a.is_active)!==1||!/^[a-f0-9]{64}$/i.test(raw))return json({ok:false,error:"admin_unlock_required"},423,origin);
+    const hash=await sha256(raw),row=await env.DB.prepare("SELECT expires_at,last_activity FROM admin_unlock_sessions WHERE token_hash=? AND telegram_id=?").bind(hash,String(u.telegram_id)).first();
+    const now=Date.now();if(!row||Date.parse(row.expires_at)<=now||now-Date.parse(row.last_activity)>900000)return json({ok:false,error:"admin_unlock_required"},423,origin);
+    await env.DB.prepare("UPDATE admin_unlock_sessions SET last_activity=? WHERE token_hash=?").bind(new Date(now).toISOString(),hash).run();
+    return json({ok:true},200,origin);
+  } catch(e){return json({ok:false,error:e.message||"heartbeat_failed"},401,origin);}
+}
+
+if (url.pathname === "/api/admin/security/lock" && request.method === "POST") {
+  try {const u=await getSessionUser(request,env),raw=request.headers.get("X-Admin-Unlock")||"";if(/^[a-f0-9]{64}$/i.test(raw))await env.DB.prepare("DELETE FROM admin_unlock_sessions WHERE token_hash=? AND telegram_id=?").bind(await sha256(raw),String(u.telegram_id)).run();return json({ok:true},200,origin);}
+  catch(e){return json({ok:false,error:"lock_failed"},401,origin);}
+}
+if (url.pathname === "/api/support/contacts" && request.method === "GET") {
+  await ensureAdminAccessSchema(env);
+  await getSessionUser(request,env);const c=await env.DB.prepare("SELECT display_name,telegram_username,whatsapp_number,availability FROM support_contacts WHERE id=1").first();return json({ok:true,contacts:c||{display_name:"Customer Support",telegram_username:"",whatsapp_number:"",availability:"Available"}},200,origin);
+}
+if (url.pathname === "/api/support/chat" && request.method === "GET") {
+  await ensureAdminAccessSchema(env);
+  const u=await getSessionUser(request,env);let c=await env.DB.prepare("SELECT id,status FROM support_conversations WHERE user_id=? ORDER BY id DESC LIMIT 1").bind(u.id).first();if(!c){const r=await env.DB.prepare("INSERT INTO support_conversations (user_id) VALUES (?)").bind(u.id).run();c={id:r.meta.last_row_id,status:"open"};}const m=await env.DB.prepare("SELECT id,sender_type,message,created_at FROM support_messages WHERE conversation_id=? ORDER BY id ASC LIMIT 200").bind(c.id).all();await env.DB.prepare("UPDATE support_messages SET read_at=CURRENT_TIMESTAMP WHERE conversation_id=? AND sender_type='admin' AND read_at IS NULL").bind(c.id).run();return json({ok:true,conversation:c,messages:m.results||[]},200,origin);
+}
+if (url.pathname === "/api/support/chat" && request.method === "POST") {
+  await ensureAdminAccessSchema(env);
+  const u=await getSessionUser(request,env),b=await readBody(request),msg=String(b.message||"").trim();if(!msg||msg.length>2000)return json({ok:false,error:"message_must_be_1_to_2000_characters"},400,origin);let c=await env.DB.prepare("SELECT id,status FROM support_conversations WHERE user_id=? ORDER BY id DESC LIMIT 1").bind(u.id).first();if(!c||c.status==="closed"){const r=await env.DB.prepare("INSERT INTO support_conversations (user_id) VALUES (?)").bind(u.id).run();c={id:r.meta.last_row_id};}await env.DB.prepare("INSERT INTO support_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'customer',?,?)").bind(c.id,u.id,msg).run();await env.DB.prepare("UPDATE support_conversations SET last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(c.id).run();return json({ok:true},201,origin);
+}
+if (url.pathname === "/api/admin/support/settings" && request.method === "GET") {
+  try{await requireAdmin(request,env);const c=await env.DB.prepare("SELECT display_name,telegram_username,whatsapp_number,availability FROM support_contacts WHERE id=1").first();return json({ok:true,settings:c||{display_name:"Customer Support",telegram_username:"",whatsapp_number:"",availability:"Available"}},200,origin);}catch(e){return json({ok:false,error:e.message},e.message==="admin_unlock_required"?423:e.message==="unauthorized"?401:403,origin);}
+}
+if (url.pathname === "/api/admin/support/settings" && request.method === "POST") {
+  try{const a=await requireAdmin(request,env),b=await readBody(request),name=String(b.display_name||"Customer Support").trim().slice(0,80),tg=String(b.telegram_username||"").trim().replace(/^@/,""),wa=String(b.whatsapp_number||"").trim(),status=String(b.availability||"Available").trim().slice(0,40);if(tg&&!/^[A-Za-z0-9_]{5,32}$/.test(tg))return json({ok:false,error:"invalid_telegram_username"},400,origin);if(wa&&!/^[+0-9 ()-]{7,24}$/.test(wa))return json({ok:false,error:"invalid_whatsapp_number"},400,origin);await env.DB.prepare("INSERT INTO support_contacts (id,display_name,telegram_username,whatsapp_number,availability,updated_by) VALUES (1,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET display_name=excluded.display_name,telegram_username=excluded.telegram_username,whatsapp_number=excluded.whatsapp_number,availability=excluded.availability,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP").bind(name,tg,wa,status,String(a.telegram_id)).run();return json({ok:true},200,origin);}catch(e){return json({ok:false,error:e.message},e.message==="admin_unlock_required"?423:e.message==="unauthorized"?401:403,origin);}
+}
+if (url.pathname === "/api/admin/support/chats" && request.method === "GET") {
+  try{await requireAdmin(request,env);const r=await env.DB.prepare("SELECT c.id,c.status,c.last_message_at,u.telegram_id,u.username,u.first_name,(SELECT message FROM support_messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) AS last_message,(SELECT COUNT(*) FROM support_messages m WHERE m.conversation_id=c.id AND m.sender_type='customer' AND m.read_at IS NULL) AS unread_count FROM support_conversations c JOIN users u ON u.id=c.user_id ORDER BY c.last_message_at DESC LIMIT 100").all();return json({ok:true,chats:r.results||[]},200,origin);}catch(e){return json({ok:false,error:e.message},e.message==="admin_unlock_required"?423:e.message==="unauthorized"?401:403,origin);}
+}
+if (url.pathname === "/api/admin/support/chats/messages" && request.method === "GET") {
+  try{await requireAdmin(request,env);const id=Number(url.searchParams.get("conversation_id"));if(!Number.isInteger(id)||id<1)return json({ok:false,error:"invalid_conversation_id"},400,origin);const c=await env.DB.prepare("SELECT c.id,u.telegram_id,u.username,u.first_name FROM support_conversations c JOIN users u ON u.id=c.user_id WHERE c.id=?").bind(id).first();if(!c)return json({ok:false,error:"conversation_not_found"},404,origin);const r=await env.DB.prepare("SELECT id,sender_type,message,created_at FROM support_messages WHERE conversation_id=? ORDER BY id ASC LIMIT 300").bind(id).all();await env.DB.prepare("UPDATE support_messages SET read_at=CURRENT_TIMESTAMP WHERE conversation_id=? AND sender_type='customer' AND read_at IS NULL").bind(id).run();return json({ok:true,conversation:c,messages:r.results||[]},200,origin);}catch(e){return json({ok:false,error:e.message},e.message==="admin_unlock_required"?423:e.message==="unauthorized"?401:403,origin);}
+}
+if (url.pathname === "/api/admin/support/chats/reply" && request.method === "POST") {
+  try{const a=await requireAdmin(request,env),b=await readBody(request),id=Number(b.conversation_id),msg=String(b.message||"").trim();if(!Number.isInteger(id)||id<1||!msg||msg.length>2000)return json({ok:false,error:"invalid_support_reply"},400,origin);const c=await env.DB.prepare("SELECT id FROM support_conversations WHERE id=?").bind(id).first();if(!c)return json({ok:false,error:"conversation_not_found"},404,origin);await env.DB.prepare("INSERT INTO support_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'admin',?,?)").bind(id,a.id,msg).run();await env.DB.prepare("UPDATE support_conversations SET last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(id).run();return json({ok:true},201,origin);}catch(e){return json({ok:false,error:e.message},e.message==="admin_unlock_required"?423:e.message==="unauthorized"?401:403,origin);}
+}
+
 // NOTIFICATIONS API
 // --------------------------------------------------
 
