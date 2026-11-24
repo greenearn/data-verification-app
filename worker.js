@@ -4699,17 +4699,23 @@ if (
             "request_submitted",
             requestId
           );
+        } catch (userNotificationError) {
+          console.error("Customer request notification failed:", userNotificationError.message);
+        }
 
+        // Keep the admin alert independent from the customer notification.
+        try {
           await createAdminNotifications(
             env,
             "New file request",
-            `Request #${requestId}: ${serviceName}, ${countries[countryCode]}, quantity ${quantity}.`,
+            `Request #${requestId}: ${serviceName}, ${countries[countryCode]}, quantity ${quantity}, type ${numberType}.`,
             "request_submitted",
             requestId
           );
-        } catch (inAppError) {
-          console.error("In-app notification failed:", inAppError.message);
+        } catch (adminNotificationError) {
+          console.error("Admin file request notification failed:", adminNotificationError.message);
         }
+
         return json({
           ok: true,
           request_id: requestId,
