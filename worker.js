@@ -2034,7 +2034,13 @@ if(request.method==="GET"&&url.pathname==="/api/admin/wallet/deposits/screenshot
  const meta=await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${encodeURIComponent(row.screenshot_file_id)}`).then(r=>r.json());
  if(!meta.ok||!meta.result?.file_path)throw Error("telegram_file_lookup_failed");
  const f=await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${meta.result.file_path}`);if(!f.ok)throw Error("telegram_file_download_failed");
- return new Response(f.body,{headers:{"Content-Type":f.headers.get("Content-Type")||"application/octet-stream","Cache-Control":"private, no-store","Access-Control-Allow-Origin":origin||DEFAULT_ALLOWED_ORIGIN,"Vary":"Origin"}});
+ const bytes=new Uint8Array(await f.arrayBuffer());
+ let imageType="";
+ if(bytes.length>=3&&bytes[0]===0xff&&bytes[1]===0xd8&&bytes[2]===0xff)imageType="image/jpeg";
+ else if(bytes.length>=8&&bytes[0]===0x89&&bytes[1]===0x50&&bytes[2]===0x4e&&bytes[3]===0x47&&bytes[4]===0x0d&&bytes[5]===0x0a&&bytes[6]===0x1a&&bytes[7]===0x0a)imageType="image/png";
+ else if(bytes.length>=12&&bytes[0]===0x52&&bytes[1]===0x49&&bytes[2]===0x46&&bytes[3]===0x46&&bytes[8]===0x57&&bytes[9]===0x45&&bytes[10]===0x42&&bytes[11]===0x50)imageType="image/webp";
+ if(!imageType)return json({ok:false,error:"stored_file_is_not_a_supported_image"},415,origin);
+ return new Response(bytes,{headers:{"Content-Type":imageType,"X-Content-Type-Options":"nosniff","Cache-Control":"private, no-store","Access-Control-Allow-Origin":origin||DEFAULT_ALLOWED_ORIGIN,"Vary":"Origin"}});
  }catch(e){if(e.message==="unauthorized")return json({ok:false,error:"unauthorized"},401,origin);if(e.message==="admin_access_required")return json({ok:false,error:"admin_access_required"},403,origin);console.error(e);return json({ok:false,error:"screenshot_fetch_failed"},500,origin);}
 }
 
