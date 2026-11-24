@@ -9,11 +9,18 @@ let customerOrderSchemaReady = false;
 
 async function ensureCustomerOrderSchema(env) {
   if (customerOrderSchemaReady) return;
-  await env.DB.prepare(`
-    CREATE UNIQUE INDEX IF NOT EXISTS orders_unique_phonecheck_upload
-    ON orders(result_reference)
-    WHERE resource_code='phoneCheck' AND substr(result_reference,1,7)='upload:'
-  `).run();
+  await env.DB.batch([
+    env.DB.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS orders_unique_phonecheck_upload
+      ON orders(result_reference)
+      WHERE resource_code='phoneCheck' AND substr(result_reference,1,7)='upload:'
+    `),
+    env.DB.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS wallet_ledger_unique_order_refund
+      ON wallet_ledger(reference_id)
+      WHERE transaction_type='order_refund'
+    `)
+  ]);
   customerOrderSchemaReady = true;
 }
 // --------------------------------------------------
@@ -3908,6 +3915,7 @@ if (
     if(request.method==="POST" && url.pathname==="/api/admin/orders/refund") {
       try {
         const admin=await requireAdmin(request,env);
+        await ensureCustomerOrderSchema(env);
         const body=await readBody(request);
         const orderId=Number(body.order_id);
         const reason=String(body.reason||"").trim();
