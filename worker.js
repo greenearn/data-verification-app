@@ -1622,7 +1622,8 @@ async function processBroadcastQueue(env) {
       await new Promise(resolve => setTimeout(resolve, 50));
     }
     const counts = await env.DB.prepare(`
-      SELECT COUNT(*) AS pending,
+      SELECT
+        SUM(CASE WHEN status IN ('pending','sending') THEN 1 ELSE 0 END) AS pending,
         SUM(CASE WHEN status='sent' THEN 1 ELSE 0 END) AS sent,
         SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed
       FROM telegram_broadcast_recipients WHERE campaign_id=?
