@@ -1639,7 +1639,7 @@ export default {
         headers: {
           "Access-Control-Allow-Origin": origin || DEFAULT_ALLOWED_ORIGIN,
           "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Unlock",
           "Vary": "Origin"
         }
       });
