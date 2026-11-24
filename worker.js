@@ -384,6 +384,7 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "POST /api/admin/services": "catalogue_manage",
   "POST /api/admin/services/visibility": "catalogue_manage",
   "POST /api/admin/pricing": "catalogue_manage",
+  "POST /api/admin/pricing/global": "catalogue_manage",
   "GET /api/admin/provider-balance": "provider_balance",
   "GET /api/admin/provider-tasks": "checknumber_validate",
   "POST /api/admin/provider-tasks/submit": "checknumber_validate",
