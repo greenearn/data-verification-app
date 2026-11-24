@@ -272,7 +272,7 @@ async function verifyTelegram(initData, botToken) {
 async function createSession(env, telegramUser) {
   const telegramId = String(telegramUser.id);
 
-  await env.DB.prepare(`
+  const registration = await env.DB.prepare(`
     INSERT OR IGNORE INTO users
       (telegram_id, username, first_name)
     VALUES (?, ?, ?)
@@ -281,6 +281,21 @@ async function createSession(env, telegramUser) {
     telegramUser.username || null,
     telegramUser.first_name || null
   ).run();
+
+  if (Number(registration.meta?.changes || 0) > 0) {
+    try {
+      await createAdminNotifications(
+        env,
+        "New customer registered",
+        (telegramUser.first_name || "New customer") +
+          (telegramUser.username ? " · @" + telegramUser.username : "") +
+          " · Telegram ID " + telegramId,
+        "user_registered"
+      );
+    } catch (notificationError) {
+      console.error("New-user admin notification failed:", notificationError.message);
+    }
+  }
 
   await env.DB.prepare(`
     UPDATE users
@@ -1952,6 +1967,19 @@ if (
       VALUES (?,?,'USDT',?,?,'pending',?,?)
     `).bind(user.id,amountCents,paymentMethod,paymentReference,stored.file_id,stored.file_name).run();
 
+    try {
+      await createUserNotification(env,user.id,"Deposit request received",
+        "Your deposit request #"+result.meta.last_row_id+" for "+money(amountCents,"USDT")+" is awaiting admin review.",
+        "deposit_pending",result.meta.last_row_id);
+      await createAdminNotifications(env,"New deposit request",
+        (user.first_name||"Customer")+(user.username?" · @"+user.username:"")+
+        " · Telegram "+user.telegram_id+" submitted "+money(amountCents,"USDT")+
+        " via "+paymentMethod+". Deposit #"+result.meta.last_row_id,
+        "deposit_pending",result.meta.last_row_id);
+    } catch(notificationError) {
+      console.error("Deposit notification failed:",notificationError.message);
+    }
+
     return json({
       ok: true,
       deposit_id: result.meta.last_row_id,
@@ -2265,6 +2293,18 @@ if (
 
       ]);
 
+      try {
+        const depositOwner=await env.DB.prepare(
+          "SELECT user_id,amount_cents FROM wallet_deposit_requests WHERE id=?"
+        ).bind(depositId).first();
+        if(depositOwner) await createUserNotification(env,depositOwner.user_id,
+          "Deposit approved","Deposit #"+depositId+" was approved. "+
+          money(depositOwner.amount_cents,"USDT")+" has been credited to your wallet.",
+          "deposit_approved",depositId);
+      } catch(notificationError) {
+        console.error("Deposit approval notification failed:",notificationError.message);
+      }
+
       return json({
         ok: true,
         message: "Deposit approved and wallet credited.",
@@ -2299,6 +2339,18 @@ if (
         ok: false,
         error: "deposit_not_pending_or_already_reviewed"
       }, 409, origin);
+    }
+
+    try {
+      const depositOwner=await env.DB.prepare(
+        "SELECT user_id FROM wallet_deposit_requests WHERE id=?"
+      ).bind(depositId).first();
+      if(depositOwner) await createUserNotification(env,depositOwner.user_id,
+        "Deposit rejected","Your deposit request #"+depositId+" was rejected."+
+        (adminNote?" Reason: "+adminNote:" Please contact support if you need help."),
+        "deposit_rejected",depositId);
+    } catch(notificationError) {
+      console.error("Deposit rejection notification failed:",notificationError.message);
     }
 
     return json({
@@ -4798,6 +4850,28 @@ if (url.pathname === "/api/admin/support/chats/messages" && request.method === "
 }
 if (url.pathname === "/api/admin/support/chats/reply" && request.method === "POST") {
   try{const a=await requireAdmin(request,env),b=await readBody(request),id=Number(b.conversation_id),msg=String(b.message||"").trim();if(!Number.isInteger(id)||id<1||!msg||msg.length>2000)return json({ok:false,error:"invalid_support_reply"},400,origin);const c=await env.DB.prepare("SELECT id FROM support_conversations WHERE id=?").bind(id).first();if(!c)return json({ok:false,error:"conversation_not_found"},404,origin);await env.DB.prepare("INSERT INTO support_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'admin',?,?)").bind(id,a.id,msg).run();await env.DB.prepare("UPDATE support_conversations SET last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(id).run();return json({ok:true},201,origin);}catch(e){return json({ok:false,error:e.message},e.message==="admin_unlock_required"?423:e.message==="unauthorized"?401:403,origin);}
+}
+
+
+// --------------------------------------------------
+// ADMIN: REGISTERED CUSTOMER DIRECTORY
+// --------------------------------------------------
+if(request.method==="GET" && url.pathname==="/api/admin/users"){
+  try{
+    await requireAdmin(request,env);
+    const result=await env.DB.prepare(`
+      SELECT id,telegram_id,username,first_name,wallet_balance_cents,status,created_at
+      FROM users
+      ORDER BY id DESC
+      LIMIT 500
+    `).all();
+    const count=await env.DB.prepare("SELECT COUNT(*) AS total FROM users").first();
+    return json({ok:true,users:result.results||[],total:Number(count?.total||0),limit:500},200,origin);
+  }catch(error){
+    const status=error.message==="unauthorized"?401:
+      ["admin_access_required","admin_unlock_required"].includes(error.message)?403:500;
+    return json({ok:false,error:error.message||"admin_users_failed"},status,origin);
+  }
 }
 
 // NOTIFICATIONS API
