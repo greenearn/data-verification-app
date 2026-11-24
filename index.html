@@ -734,7 +734,7 @@ function renderAdminGate(configured){
     }catch(error){msg.textContent=error.message;button.disabled=false;}
   };
   input.addEventListener("keydown",e=>{if(e.key==="Enter")button.click();});
-  document.getElementById("admin-gate-back").onclick=()=>{adminMode=false;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderDashboard();};
+  document.getElementById("admin-gate-back").onclick=()=>{adminMode=true;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderDashboard();};
 }
 
 function startAdminIdleLock(){
@@ -758,7 +758,7 @@ async function renderAdminWorkspace(){
     const data=await request("/api/admin/catalogue");
     categories=data.categories||[];adminServices=data.services||[];globalMarkupPercentage=Number(data.global_markup_percentage??10);
     app.innerHTML='<main class="wrap admin-workspace"><header><div><div class="admin-label">CONTROL CENTRE</div><div class="admin-shell-title">Administrator Dashboard</div><div class="admin-shell-subtitle">Secure operations · '+esc(adminRole||"Admin")+'</div></div><div class="admin-shell-actions"><button class="back-button" id="admin-back">← Customer portal</button><button class="back-button" id="admin-lock">Lock dashboard</button></div></header>'+adminMarkup()+'</main>';
-    document.getElementById("admin-back").onclick=async()=>{const oldToken=adminUnlockToken;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}if(oldToken){try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":oldToken}});}catch(e){}}adminMode=false;renderDashboard();};
+    document.getElementById("admin-back").onclick=async()=>{const oldToken=adminUnlockToken;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}if(oldToken){try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":oldToken}});}catch(e){}}adminMode=true;renderDashboard();};
     document.getElementById("admin-lock").onclick=lockAdminDashboard;
     const lockNow=document.getElementById("admin-lock-now");if(lockNow)lockNow.onclick=lockAdminDashboard;
     wireAdmin();wireSupportAdmin();startAdminIdleLock();
@@ -876,7 +876,7 @@ function renderDashboard(){
   <a href="#orders">Orders</a>
   <a href="#support">Support</a>
   <a href="#account">Account</a>
-  ${adminMode?'<a href="#admin">Admin dashboard</a>':""}
+  ${adminMode?'<a href="#admin" id="open-admin-dashboard">Admin dashboard</a>':""}
 </nav>
 
     <h1>Welcome, ${esc(name)}</h1>
@@ -1174,6 +1174,8 @@ function renderDashboard(){
     <footer>Data Verification · Secure access · Authorized validation only.</footer>
   </main>`;
 
+  const adminOpen=document.getElementById("open-admin-dashboard");
+  if(adminOpen)adminOpen.onclick=e=>{e.preventDefault();renderAdminGate(true);};
   const backButton=document.getElementById("customer-back");
   if(backButton)backButton.onclick=()=>{if(location.hash){history.back();}else{window.scrollTo({top:0,behavior:"smooth"});}};
   renderServices();
