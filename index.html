@@ -2574,7 +2574,7 @@ function wireAdmin(){
       try{
         await request("/api/admin/wallet/deposits/review","POST",{
           deposit_id:id,
-          ccredited_amount_cents:action==="approve"?actualAmountCents:undefined,
+          credited_amount_cents:action==="approve"?actualAmountCents:undefined,
            admin_note:note
         });
         depositsMessage.textContent="Deposit #"+id+" "+(action==="approve"?"approved and credited.":"rejected.");
