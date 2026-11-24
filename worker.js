@@ -383,7 +383,8 @@ const ADMIN_PERMISSION_LABELS = {
   provider_balance: "Provider balance",
   storage_test: "Telegram storage test",
   support_manage: "Customer support inbox and contact settings",
-  users_manage: "Customer account management, wallet adjustments and Telegram messaging"
+  users_manage: "Customer account management, wallet adjustments and Telegram messaging",
+  notifications_view: "View and manage admin activity notifications"
 };
 
 const ADMIN_ROUTE_PERMISSIONS = {
@@ -418,6 +419,9 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "GET /api/admin/support/settings": "support_manage",
   "POST /api/admin/support/settings": "support_manage",
   "GET /api/admin/users": "users_manage",
+  "GET /api/admin/notifications": "notifications_view",
+  "POST /api/admin/notifications/read": "notifications_view",
+  "POST /api/admin/notifications/read-all": "notifications_view",
   "POST /api/admin/users/balance": "users_manage",
   "POST /api/admin/users/message": "users_manage",
   "GET /api/admin/broadcasts": "users_manage",
@@ -4578,6 +4582,10 @@ if (
     ) {
       try {
         const user = await getSessionUser(request, env);
+        for (const [column,type] of [["service_code","TEXT"],["service_name","TEXT"],["consent_confirmed","INTEGER NOT NULL DEFAULT 0"]]) {
+          try { await env.DB.prepare("ALTER TABLE number_file_requests ADD COLUMN "+column+" "+type).run(); }
+          catch(migrationError) { if(!String(migrationError.message||"").toLowerCase().includes("duplicate column")) throw migrationError; }
+        }
         const body = await readBody(request);
 
         const countries = {
@@ -4606,8 +4614,11 @@ if (
         const countryCode = String(body.country_code || "").toUpperCase();
         const quantity = Number(body.quantity);
         const numberType = String(body.number_type || "mobile").toLowerCase();
+        const serviceCode=String(body.resource_code||"").trim().slice(0,100);
+        const serviceName=String(body.service_name||"").trim().slice(0,160);
 
         if (
+          body.consent_confirmed!==true || !serviceCode || !serviceName ||
           !countries[countryCode] ||
           !Number.isInteger(quantity) ||
           quantity < 1 ||
@@ -4638,23 +4649,12 @@ if (
 
         const inserted = await env.DB.prepare(`
           INSERT INTO number_file_requests (
-            user_id,
-            telegram_id,
-            username,
-            country_code,
-            country_name,
-            quantity,
-            number_type
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+            user_id,telegram_id,username,country_code,country_name,quantity,number_type,
+            service_code,service_name,consent_confirmed
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         `).bind(
-          user.id,
-          String(user.telegram_id),
-          user.username || null,
-          countryCode,
-          countries[countryCode],
-          quantity,
-          numberType
+          user.id,String(user.telegram_id),user.username||null,countryCode,
+          countries[countryCode],quantity,numberType,serviceCode,serviceName
         ).run();
 // Save individual customer consent records.
 
@@ -4692,7 +4692,7 @@ if (
           await createAdminNotifications(
             env,
             "New file request",
-            `Request #${requestId}: ${countries[countryCode]}, quantity ${quantity}.`,
+            `Request #${requestId}: ${serviceName}, ${countries[countryCode]}, quantity ${quantity}.`,
             "request_submitted",
             requestId
           );
@@ -5228,6 +5228,24 @@ if(request.method==="GET" && url.pathname==="/api/admin/users"){
   }
 }
 
+// ADMIN ACTIVITY NOTIFICATIONS
+if (url.pathname === "/api/admin/notifications" && request.method === "GET") {
+  try { const admin=await requireAdmin(request,env);
+    const rows=await env.DB.prepare("SELECT id,title,message,notification_type,related_request_id,created_at,read_at FROM user_notifications WHERE user_id=? ORDER BY id DESC LIMIT 100").bind(admin.id).all();
+    const unread=await env.DB.prepare("SELECT COUNT(*) AS total FROM user_notifications WHERE user_id=? AND read_at IS NULL").bind(admin.id).first();
+    return json({ok:true,notifications:rows.results||[],unread_count:Number(unread?.total||0)},200,origin);
+  } catch(error) { const status=error.message==="unauthorized"?401:(error.message==="admin_unlock_required"||error.message==="admin_access_required")?403:500; return json({ok:false,error:error.message||"admin_notifications_failed"},status,origin); }
+}
+if (url.pathname === "/api/admin/notifications/read" && request.method === "POST") {
+  try { const admin=await requireAdmin(request,env); const body=await request.json(); const id=Number(body.notification_id);
+    if(!Number.isInteger(id)||id<1)return json({ok:false,error:"invalid_notification_id"},400,origin);
+    await env.DB.prepare("UPDATE user_notifications SET read_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?").bind(id,admin.id).run(); return json({ok:true},200,origin);
+  } catch(error) { const status=error.message==="unauthorized"?401:(error.message==="admin_unlock_required"||error.message==="admin_access_required")?403:500; return json({ok:false,error:error.message||"admin_notification_update_failed"},status,origin); }
+}
+if (url.pathname === "/api/admin/notifications/read-all" && request.method === "POST") {
+  try { const admin=await requireAdmin(request,env); await env.DB.prepare("UPDATE user_notifications SET read_at=CURRENT_TIMESTAMP WHERE user_id=? AND read_at IS NULL").bind(admin.id).run(); return json({ok:true},200,origin);
+  } catch(error) { const status=error.message==="unauthorized"?401:(error.message==="admin_unlock_required"||error.message==="admin_access_required")?403:500; return json({ok:false,error:error.message||"admin_notification_update_failed"},status,origin); }
+}
 // NOTIFICATIONS API
 // --------------------------------------------------
 
