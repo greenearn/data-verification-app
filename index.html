@@ -637,7 +637,7 @@ ${d.admin_note?`<div class="muted">Admin note: ${esc(d.admin_note)}</div>`:""}
       const data=await request("/api/wallet/deposits","POST",fd);
       message.textContent="Deposit request #"+data.deposit_id+" submitted. Your wallet will be credited only after admin verification.";
       amountInput.value="";
-      eif(screenshotInput)screenshotInput.value="";
+      if(screenshotInput)screenshotInput.value="";
       await loadWalletDeposits();
     }catch(error){
       message.textContent="Submission failed: "+error.message;
@@ -2523,7 +2523,7 @@ function wireAdmin(){
             <div class="muted">Customer: ${esc(d.first_name||"Customer")} ${d.username?"(@"+esc(d.username)+")":""}</div>
             <div class="muted">Telegram ID: ${esc(d.telegram_id)}</div>
             <div class="muted">Network: ${esc(d.payment_method)}</div>
-            d
+            <div class="muted">Transaction reference: <span style="overflow-wrap:anywhere">${esc(d.payment_reference)}</span></div>
              ${d.screenshot_file_id?'<button class="btn secondary view-deposit-proof" data-id="'+id+'" type="button">View payment screenshot</button>':'<p class="muted">No screenshot attached</p>'}
             <div class="muted">Submitted: ${esc(formatDate(d.created_at))}</div>
             ${d.admin_note?`<div class="muted">Previous admin note: ${esc(d.admin_note)}</div>`:""}
