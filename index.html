@@ -1545,6 +1545,9 @@ function renderServices(){
   box.querySelectorAll("[data-code]").forEach(card=>{
     card.onclick=()=>{
       selectedCode=card.dataset.code;
+      uploadedFileId=null;
+      const orderButton=document.getElementById("place-order-button");
+      if(orderButton)orderButton.classList.add("hidden");
       select.value=selectedCode;
       renderServices();
       updateEstimate();
@@ -1605,7 +1608,7 @@ function updateEstimate(){
       " · Minimum quantity: " + minimum +
       " · Minimum price estimate: " +
       money(minimumPrice, service.currency) +
-      ". Ordering is disabled.";
+      ". Upload an eligible file to place an order.";
 
     return;
   }
@@ -1619,7 +1622,7 @@ function updateEstimate(){
   box.textContent =
     "Estimated price: " + money(total, service.currency) +
     " · Estimate quantity: " + amount.toLocaleString() +
-    " · Estimate only; ordering is disabled.";
+    " · Final charge is calculated from your uploaded file before order submission.";
 }
 
 
