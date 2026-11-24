@@ -321,7 +321,7 @@ async function getSessionUser(request, env) {
 const ADMIN_PERMISSION_LABELS = {
   wallet_deposits: "Wallet deposit review",
   catalogue_manage: "Catalogue, categories, services and pricing",
-  checknumber_validate: "CheckNumber file validation",
+  checknumber_validate: "CheckNumber validation and provider task processing",
   uploads_manage: "Customer upload review",
   number_requests: "Manual number-file requests",
   provider_balance: "Provider balance",
