@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#f5f7fb">
+<meta name="theme-color" content="#080b18">
 <title>Data Verification</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -173,6 +173,31 @@ input,select,textarea{border-radius:14px;padding:13px}
   .notification-panel{top:118px;max-height:60dvh;padding:10px}
   .notification-tools .btn{font-size:10px}
 }
+
+/* Modern midnight / aurora visual refresh */
+:root{color-scheme:dark;--bg:#070914;--panel:#11152a;--line:rgba(159,174,255,.18);--text:#f4f5ff;--muted:#a2a9c7;--mint:#54f0d0;--red:#ff718d;--violet:#9b7bff;--cyan:#42d9ff;--gold:#ffd479}
+body{background:radial-gradient(ellipse at 12% -8%,rgba(91,74,210,.28),transparent 38%),radial-gradient(ellipse at 92% 4%,rgba(0,193,213,.16),transparent 32%),linear-gradient(145deg,#080a18 0%,#0b1022 48%,#090d1b 100%);background-attachment:fixed}
+.wrap{max-width:1120px}
+header{border-color:rgba(161,174,255,.18)}
+.logo{background:linear-gradient(145deg,#7a5cff,#19c9d5);color:#fff;box-shadow:0 8px 24px rgba(103,82,255,.32),inset 0 1px 1px rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.22);transform:translateY(-1px)}
+.panel,.balance,.admin-gate,.service,.item{background:linear-gradient(145deg,rgba(24,30,58,.94),rgba(13,18,38,.96));border:1px solid rgba(158,171,255,.17);box-shadow:0 14px 34px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.055);border-radius:20px}
+.panel{backdrop-filter:blur(14px)}
+.service{transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
+.service:hover{transform:translateY(-4px);border-color:rgba(84,240,208,.45);box-shadow:0 18px 34px rgba(0,0,0,.34),0 0 22px rgba(84,240,208,.08)}
+.btn{background:linear-gradient(135deg,#7b61ff,#4a9dff 55%,#20c7d4);border:1px solid rgba(255,255,255,.2);box-shadow:0 8px 20px rgba(83,94,255,.22),inset 0 1px 0 rgba(255,255,255,.28);border-radius:13px}
+.btn.secondary{background:linear-gradient(145deg,#222a4a,#151c35);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+input,select,textarea{background:#0b1022!important;border:1px solid rgba(160,174,255,.24)!important;color:var(--text)!important;border-radius:12px!important}
+.nav a{background:rgba(28,36,68,.78);border:1px solid rgba(159,174,255,.16);border-radius:999px}
+.admin-page-nav{display:flex;gap:9px;overflow-x:auto;padding:12px 2px 16px;margin:14px 0 18px;scrollbar-width:thin;scroll-snap-type:x proximity}
+.admin-page-tab{flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:11px 15px;border-radius:14px;border:1px solid rgba(155,169,255,.2);background:linear-gradient(145deg,#1b2140,#10162c);color:#dce4ff;font-weight:750;white-space:nowrap;box-shadow:0 7px 16px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.06);scroll-snap-align:start;cursor:pointer}
+.admin-page-tab.active{background:linear-gradient(135deg,#745cff,#3f8fff 60%,#19b9c8);border-color:rgba(255,255,255,.4);color:#fff;box-shadow:0 9px 22px rgba(85,96,255,.32),inset 0 1px 0 rgba(255,255,255,.32)}
+.admin-tab-icon{font-size:17px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.3))}
+.admin-page{min-height:220px;scroll-margin-top:12px;animation:adminPageIn .22s ease}
+.admin-page[hidden]{display:none!important}
+.admin-page>.panel,.admin-page>.item{margin:0 0 14px}
+.admin-page-footer{padding:16px 4px;color:var(--muted);font-size:12px;text-align:center}
+@keyframes adminPageIn{from{opacity:.35;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:600px){.wrap{padding:14px 11px 34px}.admin-page-tab{padding:10px 12px;font-size:12px}.panel{border-radius:17px}}
 </style>
 </head>
 <body>
@@ -828,6 +853,7 @@ async function renderAdminWorkspace(){
     document.getElementById("admin-back").onclick=async()=>{const oldToken=adminUnlockToken;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}if(oldToken){try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":oldToken}});}catch(e){}}adminMode=true;renderDashboard();};
     document.getElementById("admin-lock").onclick=lockAdminDashboard;
     const lockNow=document.getElementById("admin-lock-now");if(lockNow)lockNow.onclick=lockAdminDashboard;
+    setupAdminPageNavigation();
     applyAdminUiPermissions();
     wireAdmin();wireSupportAdmin();wireAdminNotifications();wireAdminReferralTiers();startAdminIdleLock();
   }catch(error){if(error.message==="admin_unlock_required"){adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderAdminGate(true);}else showError("Admin dashboard could not load: "+error.message);}
@@ -2468,6 +2494,77 @@ function adminMarkup(){
   </section>`;
 }
 
+function setupAdminPageNavigation(){
+  const root=document.getElementById("admin");
+  if(!root||root.dataset.pagesReady==="1")return;
+  root.dataset.pagesReady="1";
+  const children=[...root.children];
+  const headingNodes=children.slice(0,4);
+  const nav=document.createElement("div");
+  nav.className="admin-page-nav";
+  nav.setAttribute("role","tablist");
+  nav.setAttribute("aria-label","Admin dashboard pages");
+  const pages=[
+    {id:"overview",label:"Overview",icon:"◈"},
+    {id:"users",label:"Users",icon:"♙"},
+    {id:"wallets",label:"Wallets",icon:"◉"},
+    {id:"orders",label:"Orders & Requests",icon:"▤"},
+    {id:"catalogue",label:"Services & Catalogue",icon:"◇"},
+    {id:"support",label:"Support",icon:"✉"},
+    {id:"referrals",label:"Referrals",icon:"↗"},
+    {id:"broadcast",label:"Broadcast",icon:"◎"},
+    {id:"settings",label:"Admin Settings",icon:"⚙"}
+  ];
+  const containers={};
+  pages.forEach((p,index)=>{
+    const section=document.createElement("section");
+    section.className="admin-page";
+    section.dataset.adminPage=p.id;
+    section.hidden=index!==0;
+    containers[p.id]=section;
+    const btn=document.createElement("button");
+    btn.type="button";btn.className="admin-page-tab"+(index===0?" active":"");
+    btn.setAttribute("role","tab");btn.setAttribute("aria-selected",index===0?"true":"false");
+    btn.dataset.target=p.id;btn.innerHTML='<span class="admin-tab-icon">'+p.icon+'</span><span>'+p.label+'</span>';
+    btn.addEventListener("click",()=>{
+      Object.values(containers).forEach(el=>el.hidden=true);
+      Object.values(nav.querySelectorAll(".admin-page-tab")).forEach(el=>{el.classList.remove("active");el.setAttribute("aria-selected","false");});
+      section.hidden=false;btn.classList.add("active");btn.setAttribute("aria-selected","true");
+      section.scrollIntoView({behavior:"smooth",block:"start"});
+    });
+    nav.appendChild(btn);
+  });
+  const header=headingNodes[3]||headingNodes[headingNodes.length-1];
+  if(header&&header.parentNode===root)header.after(nav);else root.prepend(nav);
+  const classify=(el)=>{
+    const id=(el.id||"").toLowerCase();
+    const t=(el.innerText||el.textContent||"").toLowerCase();
+    if(id.includes("users")||id.includes("user-management"))return "users";
+    if(id.includes("broadcast"))return "broadcast";
+    if(id.includes("referral"))return "referrals";
+    if(id.includes("support"))return "support";
+    if(id.includes("number")||id.includes("request")||id.includes("order")||/manual number|number file|customer orders|order management/.test(t))return "orders";
+    if(id.includes("deposit")||id.includes("wallet")||/wallet deposit review|wallet transactions|deposit requests/.test(t))return "wallets";
+    if(id.includes("catalog")||id.includes("category")||id.includes("service")||/categories|add a category|add or edit a service|pricing|checknumber catalogue/.test(t))return "catalogue";
+    if(id.includes("management")||/administrator management|platform configuration|admin permissions/.test(t))return "settings";
+    if(id.includes("activity")||id.includes("notification")||/platform activity notifications/.test(t))return "overview";
+    if(/support inbox|customer support/.test(t))return "support";
+    if(/broadcast/.test(t))return "broadcast";
+    if(/referral/.test(t))return "referrals";
+    if(/user management|registered customers/.test(t))return "users";
+    if(/deposit|wallet/.test(t))return "wallets";
+    if(/order|number file request/.test(t))return "orders";
+    if(/service|catalogue|category|pricing/.test(t))return "catalogue";
+    return "overview";
+  };
+  [...root.children].forEach(el=>{
+    if(el===nav||headingNodes.includes(el)||el.matches(".admin-page"))return;
+    if(el.id==="admin-lock-now"||el.id==="reload-admin"||el.id==="admin-message")return;
+    containers[classify(el)].appendChild(el);
+  });
+  pages.forEach(p=>root.appendChild(containers[p.id]));
+  const footer=document.createElement("div");footer.className="admin-page-footer";footer.textContent="Choose a section above to switch pages. Your changes are saved through the existing admin controls.";root.appendChild(footer);
+}
 function fillServiceDropdowns(){
   const options=adminServices.map(s=>
     `<option value="${esc(s.resource_code)}">${esc(s.name)} (${esc(s.resource_code)})</option>`
