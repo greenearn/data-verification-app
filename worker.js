@@ -4760,7 +4760,7 @@ if (url.pathname === "/api/admin/security/unlock" && request.method === "POST") 
 if (url.pathname === "/api/admin/security/heartbeat" && request.method === "POST") {
   try {
     const u=await getSessionUser(request,env),a=await getAdminAccess(u,env),raw=request.headers.get("X-Admin-Unlock")||"";
-    if(!a||Number(a.is_active)!==1||!^[a-f0-9]{64}$/i.test(raw))return json({ok:false,error:"admin_unlock_required"},423,origin);
+    if(!a||Number(a.is_active)!==1||!/^[a-f0-9]{64}$/i.test(raw))return json({ok:false,error:"admin_unlock_required"},423,origin);
     const hash=await sha256(raw),row=await env.DB.prepare("SELECT expires_at,last_activity FROM admin_unlock_sessions WHERE token_hash=? AND telegram_id=?").bind(hash,String(u.telegram_id)).first();
     const now=Date.now();if(!row||Date.parse(row.expires_at)<=now||now-Date.parse(row.last_activity)>900000)return json({ok:false,error:"admin_unlock_required"},423,origin);
     await env.DB.prepare("UPDATE admin_unlock_sessions SET last_activity=? WHERE token_hash=?").bind(new Date(now).toISOString(),hash).run();
