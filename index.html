@@ -3156,6 +3156,7 @@ async function loadNumberRequests() {
               <span class="pill">${esc(r.status || "pending")}</span>
             </div>
 
+            <div class="muted">Service: ${esc(r.service_name || r.service_code || "Not specified")}</div>
             <div class="muted">Country: ${esc(r.country_name || r.country_code)}</div>
             <div class="muted">Quantity: ${Number(r.quantity)}</div>
             <div class="muted">Type: ${esc(r.number_type)}</div>
