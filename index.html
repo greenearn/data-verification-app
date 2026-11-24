@@ -2377,7 +2377,8 @@ function wireAdmin(){
         const refundButton=order.status==="failed"&&!Number(order.refunded)
           ?'<button class="btn danger manual-order-refund" data-order-id="'+Number(order.id)+'" type="button">Issue manual refund</button>'
           :Number(order.refunded)?'<span class="pill">REFUNDED</span>':"";
-        const submitButton=order.status==="pending"&&!Number(order.provider_task_exists)
+        const canSubmitPaidOrders=adminRole==="main_admin"||adminRole==="full_admin"||adminPermissions.includes("checknumber_validate");
+        const submitButton=canSubmitPaidOrders&&order.status==="pending"&&!Number(order.provider_task_exists)
           ?'<button class="btn admin-submit-order" data-order-id="'+Number(order.id)+'" data-upload-id="'+Number(order.upload_id)+'" type="button">Submit paid order to CheckNumber</button>'
           :"";
         const uncertain=order.provider_task_status==="submission_unknown"
