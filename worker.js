@@ -345,6 +345,7 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "POST /api/admin/provider-tasks/submit": "checknumber_validate",
   "POST /api/admin/provider-tasks/poll": "checknumber_validate",
   "POST /api/admin/storage-test": "storage_test",
+  "POST /api/admin/storage-file-test": "storage_test",
   "GET /api/admin/number-file-requests": "number_requests",
   "POST /api/admin/number-file-requests/upload": "number_requests",
   "POST /api/admin/number-file-requests/reject": "number_requests"
@@ -3648,6 +3649,97 @@ if (
         }, unauthorized ? 401 : forbidden ? 403 : 500, origin);
       }
     }
+    // ------------------------------------------------
+    // ADMIN: ROUND-TRIP TELEGRAM DOCUMENT STORAGE TEST
+    // ------------------------------------------------
+
+    if (
+      request.method === "POST" &&
+      url.pathname === "/api/admin/storage-file-test"
+    ) {
+      try {
+        await requireAdmin(request, env);
+
+        if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_STORAGE_CHAT_ID) {
+          return json({
+            ok: false,
+            error: "telegram_storage_configuration_missing"
+          }, 500, origin);
+        }
+
+        // Fixed synthetic content only: no customer data, D1 writes, or provider calls.
+        const testContent = "DATA VERIFICATION STORAGE TEST\\nSynthetic file only. No customer data.\\n";
+        const testName = "data-verification-storage-test.txt";
+        const testBlob = new Blob([testContent], { type: "text/plain" });
+        const uploadForm = new FormData();
+        uploadForm.append("chat_id", env.TELEGRAM_STORAGE_CHAT_ID);
+        uploadForm.append("document", testBlob, testName);
+
+        const uploadResponse = await fetch(
+          `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendDocument`,
+          { method: "POST", body: uploadForm }
+        );
+        const uploadResult = await uploadResponse.json();
+
+        if (!uploadResponse.ok || !uploadResult.ok || !uploadResult.result?.document?.file_id) {
+          return json({
+            ok: false,
+            error: "telegram_test_file_upload_failed",
+            telegram_error: uploadResult.description || "Telegram document upload failed"
+          }, 502, origin);
+        }
+
+        const fileId = uploadResult.result.document.file_id;
+        const getFileResponse = await fetch(
+          `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${encodeURIComponent(fileId)}`
+        );
+        const getFileResult = await getFileResponse.json();
+
+        if (!getFileResponse.ok || !getFileResult.ok || !getFileResult.result?.file_path) {
+          return json({
+            ok: false,
+            error: "telegram_test_file_retrieval_failed",
+            telegram_error: getFileResult.description || "Telegram getFile failed"
+          }, 502, origin);
+        }
+
+        const filePath = String(getFileResult.result.file_path);
+        if (filePath.startsWith("/") || filePath.includes("..") || filePath.includes("://")) {
+          return json({ ok: false, error: "telegram_test_file_path_invalid" }, 502, origin);
+        }
+
+        const downloadResponse = await fetch(
+          `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`
+        );
+        if (!downloadResponse.ok) {
+          return json({ ok: false, error: "telegram_test_file_download_failed" }, 502, origin);
+        }
+
+        const downloadedText = await downloadResponse.text();
+        if (downloadedText !== testContent) {
+          return json({ ok: false, error: "telegram_test_file_content_mismatch" }, 502, origin);
+        }
+
+        return json({
+          ok: true,
+          message: "telegram_storage_file_round_trip_successful",
+          file_name: testName,
+          file_size: uploadResult.result.document.file_size || testBlob.size,
+          upload_verified: true,
+          retrieval_verified: true,
+          content_verified: true
+        }, 200, origin);
+      } catch (error) {
+        const unauthorized = error.message === "unauthorized";
+        const forbidden = error.message === "admin_access_required";
+        return json({
+          ok: false,
+          error: unauthorized ? "unauthorized" :
+            forbidden ? "admin_access_required" : "telegram_storage_file_test_failed"
+        }, unauthorized ? 401 : forbidden ? 403 : 500, origin);
+      }
+    }
+
     // --------------------------------------------------
     // TOOLBOX: SEND GENERATED TEST FILE TO TELEGRAM USER
     // --------------------------------------------------
