@@ -2653,6 +2653,13 @@ return json({
           }, 401, origin);
         }
 
+        if (error.message === "admin_access_required") {
+          return json({
+            ok: false,
+            error: "admin_access_required"
+          }, 403, origin);
+        }
+
         return json({
           ok: false,
           error: "file_upload_failed"
