@@ -3914,9 +3914,10 @@ if (
         if(!Number.isSafeInteger(orderId)||orderId<1||reason.length<8||reason.length>500) {
           return json({ok:false,error:"valid_order_id_and_refund_reason_required"},400,origin);
         }
-        const order=await env.DB.prepare(
-          "SELECT id,user_id,status,customer_charge_cents FROM orders WHERE id=? LIMIT 1"
-        ).bind(orderId).first();
+        const order=await env.DB.prepare(`
+          SELECT o.id,o.user_id,o.status,o.customer_charge_cents,u.telegram_id
+          FROM orders o JOIN users u ON u.id=o.user_id WHERE o.id=? LIMIT 1
+        `).bind(orderId).first();
         if(!order)return json({ok:false,error:"order_not_found"},404,origin);
         if(order.status!=="failed")return json({ok:false,error:"only_failed_orders_can_be_refunded"},409,origin);
         const ref="order_refund:"+orderId;
@@ -3945,6 +3946,11 @@ if (
         ]);
         await writeAdminAudit(env,admin.telegram_id,String(order.user_id),
           "customer_order_manual_refund",{order_id:orderId,amount_cents:order.customer_charge_cents,reason});
+        try {
+          await sendProviderTaskNotice(env, order.telegram_id,
+            "Your refund for order #" + orderId + " has been credited to your Data Verification wallet: " +
+            (Number(order.customer_charge_cents)/100).toFixed(2) + " USDT. Reason: " + reason);
+        } catch {}
         return json({ok:true,order_id:orderId,refunded_cents:order.customer_charge_cents},200,origin);
       } catch(error) {
         const status=error.message==="unauthorized"?401:
