@@ -170,6 +170,7 @@ let adminRole=null;
 let adminPermissions=[];
 let adminUnlockToken=sessionStorage.getItem('dv_admin_unlock')||'';
 let adminIdleTimer=null;
+let adminHeartbeatTimer=null;
 let supportPollTimer=null;
 let supportConversationId=null;
 let supportContacts={};
@@ -738,14 +739,16 @@ function renderAdminGate(configured){
 function startAdminIdleLock(){
   if(adminIdleTimer)clearTimeout(adminIdleTimer);
   const reset=()=>{if(!adminUnlockToken)return;if(adminIdleTimer)clearTimeout(adminIdleTimer);adminIdleTimer=setTimeout(()=>lockAdminDashboard(),15*60*1000);};
-  ["pointerdown","keydown","touchstart","mousemove"].forEach(event=>document.addEventListener(event,reset,{passive:true}));
+  document.onpointerdown=reset;document.onkeydown=reset;document.ontouchstart=reset;document.onmousemove=reset;
+  if(adminHeartbeatTimer)clearInterval(adminHeartbeatTimer);
+  adminHeartbeatTimer=setInterval(()=>{if(adminUnlockToken)fetch(API+"/api/admin/security/heartbeat",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":adminUnlockToken}}).then(r=>{if(r.status===423)lockAdminDashboard();}).catch(()=>{});},60000);
   reset();
 }
 async function lockAdminDashboard(){
   if(!adminUnlockToken)return;
   const old=adminUnlockToken;
   adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");
-  if(adminIdleTimer)clearTimeout(adminIdleTimer);
+  if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}
   try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":old}});}catch(e){}
   renderAdminGate(true);
 }
@@ -756,6 +759,7 @@ async function renderAdminWorkspace(){
     app.innerHTML='<main class="wrap admin-workspace"><header><div><div class="admin-label">CONTROL CENTRE</div><div class="admin-shell-title">Administrator Dashboard</div><div class="admin-shell-subtitle">Secure operations · '+esc(adminRole||"Admin")+'</div></div><div class="admin-shell-actions"><button class="back-button" id="admin-back">← Customer portal</button><button class="back-button" id="admin-lock">Lock dashboard</button></div></header>'+adminMarkup()+'</main>';
     document.getElementById("admin-back").onclick=()=>{if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}adminMode=false;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderDashboard();};
     document.getElementById("admin-lock").onclick=lockAdminDashboard;
+    const lockNow=document.getElementById("admin-lock-now");if(lockNow)lockNow.onclick=lockAdminDashboard;
     wireAdmin();wireSupportAdmin();startAdminIdleLock();
   }catch(error){if(error.message==="admin_unlock_required"){adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderAdminGate(true);}else showError("Admin dashboard could not load: "+error.message);}
 }
@@ -1979,6 +1983,7 @@ function adminMarkup(){
         <label class="checkbox"><input type="checkbox" value="number_requests"> Manual number-file requests</label>
         <label class="checkbox"><input type="checkbox" value="provider_balance"> Provider balance</label>
         <label class="checkbox"><input type="checkbox" value="storage_test"> Telegram storage test</label>
+        <label class="checkbox"><input type="checkbox" value="support_manage"> Customer support inbox and contact settings</label>
       </div>
       <div class="actions">
         <button class="btn" id="managed-admin-save" type="button">Grant administrator access</button>
@@ -3565,7 +3570,8 @@ async function loadNumberRequests() {
         method:"POST",
         headers:{
           "Authorization":"Bearer "+token,
-          "Accept":"application/json"
+          "Accept":"application/json",
+          ...(adminUnlockToken?{"X-Admin-Unlock":adminUnlockToken}:{})
         },
         body:formData
       });
