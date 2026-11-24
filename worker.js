@@ -1207,7 +1207,7 @@ async function submitStagedProviderTask(env, uploadId) {
       if (paidOrder.status !== "pending" || Number(paidOrder.quantity) !== entries.length) {
         throw new Error("paid_order_not_ready_or_quantity_mismatch");
       }
-      if (entries.length < 2000 || entries.length > 10000) {
+      if (entries.length < 500 || entries.length > 10000) {
         throw new Error("provider_quantity_out_of_range");
       }
     } else if (entries.length !== 2000) {
@@ -2649,13 +2649,13 @@ if (
           }
 
           if (
-            consentNumbers.length < 2000 ||
+            consentNumbers.length < 500 ||
             consentNumbers.length > 10000
           ) {
             return json({
               ok: false,
               error: "invalid_phone_number_count",
-              minimum: 2000,
+              minimum: 500,
               maximum: 10000,
               received: consentNumbers.length,
               ...uploadStats
@@ -3830,8 +3830,8 @@ if (
         const extension=String(upload.file_name||"").toLowerCase().split(".").pop();
         if(!["txt","csv"].includes(extension)) return json({ok:false,error:"unsupported_file_type"},400,origin);
         const entries=parseProviderPhoneEntries(content,extension);
-        if(entries.length<2000 || entries.length>10000) return json({
-          ok:false,error:"invalid_phone_number_count",minimum:2000,maximum:10000,unique_valid_numbers:entries.length
+        if(entries.length<500 || entries.length>10000) return json({
+          ok:false,error:"invalid_phone_number_count",minimum:500,maximum:10000,unique_valid_numbers:entries.length
         },400,origin);
         const quote=calculatePrice(pricing,entries.length);
         const results=await env.DB.batch([
