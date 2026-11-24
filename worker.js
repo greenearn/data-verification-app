@@ -644,6 +644,14 @@ async function importCheckNumberCatalogue(env) {
       VALUES (?,?,'percentage',?,NULL,0,10000,500,'USDT',CURRENT_TIMESTAMP)
     `).bind(service.resource_code,service.provider_cost_cents,defaultMarkup));
   }
+  // Keep the legacy phoneCheck resource code and its existing pricing,
+  // but group its customer-facing label with the new Number Checker products.
+  statements.push(env.DB.prepare(`
+    UPDATE service_catalogue
+    SET name='Number Validation',description='Validate phone numbers and check carrier-related data',
+        category='Number Checker',updated_at=CURRENT_TIMESTAMP
+    WHERE resource_code='phoneCheck'
+  `));
   const results=await env.DB.batch(statements);
   return {
     imported_categories:categories.size,
