@@ -22,6 +22,7 @@ async function ensureCustomerOrderSchema(env) {
       WHERE transaction_type='order_refund'
     `)
   ]);
+  await env.DB.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS orders_unique_upload_reference ON orders(result_reference) WHERE substr(result_reference,1,7)='upload:'`).run();
   customerOrderSchemaReady = true;
 }
 // --------------------------------------------------
@@ -1139,6 +1140,24 @@ function parseProviderPhoneEntries(content, extension) {
   return [...new Set(entries)];
 }
 
+function parseProviderEntries(content, extension, inputType) {
+  if(inputType==="phone")return parseProviderPhoneEntries(content,extension);
+  const lines=String(content||"").replace(/^\uFEFF/,"").split(/\r?\n/);
+  const values=[];const email=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const username=/^@?[A-Za-z][A-Za-z0-9_]{3,63}$/;
+  const pattern=inputType==="email"?email:username;let first=true;
+  for(const raw of lines){
+    const line=raw.trim();if(!line)continue;
+    const fields=extension==="csv"?parseCsvFields(line):[line.replace(/^["']|["']$/g,"")];
+    const cleaned=fields.map(v=>String(v||"").trim().replace(/^["']|["']$/g,""));
+    if(first){first=false;if(cleaned.some(v=>["email","email_address","username","user_name","value","identifier"].includes(v.toLowerCase())))continue;}
+    const value=cleaned.find(v=>pattern.test(v));
+    if(!value)throw new Error(inputType==="email"?"invalid_email_entries":"invalid_username_entries");
+    values.push(inputType==="email"?value.toLowerCase():value.replace(/^@/,""));
+  }
+  return [...new Set(values)];
+}
+
 async function providerApi(env, path, options = {}) {
   if (!env.CN_API_KEY || !env.CN_BASE_URL) throw new Error("provider_configuration_missing");
   const base = String(env.CN_BASE_URL).replace(/\/+$/, "");
@@ -1159,145 +1178,88 @@ async function providerApi(env, path, options = {}) {
 
 async function submitStagedProviderTask(env, uploadId) {
   await ensureProviderTasksSchema(env);
-  const upload = await env.DB.prepare(`
-    SELECT s.id, s.user_id, s.telegram_file_id, s.file_name,
-           s.file_size, s.resource_code, s.status, u.telegram_id
-    FROM upload_staging s JOIN users u ON u.id = s.user_id
-    WHERE s.id = ? LIMIT 1
+  const upload=await env.DB.prepare(`
+    SELECT s.id,s.user_id,s.telegram_file_id,s.file_name,s.file_size,s.resource_code,s.status,
+      u.telegram_id,c.task_type,c.input_type
+    FROM upload_staging s JOIN users u ON u.id=s.user_id
+    JOIN service_catalogue c ON c.resource_code=s.resource_code WHERE s.id=? LIMIT 1
   `).bind(uploadId).first();
-  if (!upload) throw new Error("upload_not_found");
-  if (!["uploaded", "reviewed"].includes(upload.status)) throw new Error("upload_not_ready");
-  // The first live adapter is phoneCheck only: its upload flow already records
-  // explicit consent for each submitted phone number.
-  if (upload.resource_code !== "phoneCheck") throw new Error("service_not_enabled_for_provider_submission");
-
-  const existing = await env.DB.prepare(
-    "SELECT id FROM provider_tasks WHERE upload_id = ? LIMIT 1"
-  ).bind(uploadId).first();
-  if (existing) throw new Error("provider_task_already_created");
-
-  const claim = await env.DB.prepare(`
-    INSERT INTO provider_tasks (upload_id,user_id,telegram_id,resource_code,task_type,status)
-    VALUES (?,?,?,'phoneCheck','phoneCheck','submitting')
-  `).bind(upload.id, upload.user_id, String(upload.telegram_id)).run();
-  const localId = Number(claim.meta.last_row_id);
-
-  let providerSubmissionStarted = false;
-  try {
-    if (!env.TELEGRAM_BOT_TOKEN) throw new Error("telegram_storage_configuration_missing");
-    const infoResponse = await fetch(
-      `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${encodeURIComponent(upload.telegram_file_id)}`
-    );
-    const info = await infoResponse.json();
-    const filePath = info?.result?.file_path;
-    if (!infoResponse.ok || !info.ok || !filePath || filePath.includes("..")) {
-      throw new Error("telegram_source_file_unavailable");
-    }
-    const source = await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`);
-    if (!source.ok) throw new Error("telegram_source_download_failed");
-    const bytes = await source.arrayBuffer();
-    if (!bytes.byteLength || bytes.byteLength > 20 * 1024 * 1024) throw new Error("provider_file_size_invalid");
-    const content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    const extension = String(upload.file_name || "").toLowerCase().split(".").pop();
-    if (!["csv", "txt"].includes(extension)) throw new Error("unsupported_file_type");
-    const entries = parseProviderPhoneEntries(content, extension);
-
-    const paidOrder = await env.DB.prepare(`
-      SELECT id, quantity, estimated_provider_cost_cents, status
-      FROM orders
-      WHERE result_reference = ? AND resource_code = 'phoneCheck'
-      LIMIT 1
-    `).bind("upload:" + uploadId).first();
-    if (paidOrder) {
-      if (paidOrder.status !== "pending" || Number(paidOrder.quantity) !== entries.length) {
-        throw new Error("paid_order_not_ready_or_quantity_mismatch");
-      }
-      if (entries.length < 500 || entries.length > 10000) {
-        throw new Error("provider_quantity_out_of_range");
-      }
-    } else if (entries.length !== 2000) {
-      // Preserve the existing admin-only test path for unbilled uploads.
-      throw new Error("provider_test_requires_exactly_2000_unique_numbers");
-    }
-
-    const pricing = await env.DB.prepare(`
-      SELECT provider_cost_cents, pricing_unit_quantity
-      FROM resource_pricing
-      WHERE resource_code = 'phoneCheck'
-      LIMIT 1
-    `).first();
-    const configuredProviderCost = Number(pricing?.provider_cost_cents);
-    const configuredUnitQuantity = Number(pricing?.pricing_unit_quantity);
-    if (
-      !Number.isSafeInteger(configuredProviderCost) ||
-      configuredProviderCost < 0 ||
-      !Number.isSafeInteger(configuredUnitQuantity) ||
-      configuredUnitQuantity <= 0
-    ) {
+  if(!upload)throw new Error("upload_not_found");
+  if(!["uploaded","reviewed"].includes(upload.status))throw new Error("upload_not_ready");
+  const taskType=String(upload.task_type||"");
+  if(!taskType||taskType==="VERIFY_IN_DASHBOARD"||!validTaskType(taskType))
+    throw new Error("service_task_code_not_verified");
+  const existing=await env.DB.prepare("SELECT id FROM provider_tasks WHERE upload_id=? LIMIT 1").bind(uploadId).first();
+  if(existing)throw new Error("provider_task_already_created");
+  const claim=await env.DB.prepare(`
+    INSERT INTO provider_tasks(upload_id,user_id,telegram_id,resource_code,task_type,status)
+    VALUES(?,?,?,?,?,'submitting')
+  `).bind(upload.id,upload.user_id,String(upload.telegram_id),upload.resource_code,taskType).run();
+  const localId=Number(claim.meta.last_row_id);let providerSubmissionStarted=false;
+  try{
+    if(!env.TELEGRAM_BOT_TOKEN)throw new Error("telegram_storage_configuration_missing");
+    const infoResponse=await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${encodeURIComponent(upload.telegram_file_id)}`);
+    const info=await infoResponse.json();const filePath=info?.result?.file_path;
+    if(!infoResponse.ok||!info.ok||!filePath||filePath.includes(".."))throw new Error("telegram_source_file_unavailable");
+    const source=await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`);
+    if(!source.ok)throw new Error("telegram_source_download_failed");
+    const bytes=await source.arrayBuffer();
+    if(!bytes.byteLength||bytes.byteLength>20*1024*1024)throw new Error("provider_file_size_invalid");
+    const content=new TextDecoder("utf-8",{fatal:true}).decode(bytes);
+    const extension=String(upload.file_name||"").toLowerCase().split(".").pop();
+    if(!["csv","txt"].includes(extension))throw new Error("unsupported_file_type");
+    const entries=parseProviderEntries(content,extension,upload.input_type||"phone");
+    const paidOrder=await env.DB.prepare(`
+      SELECT id,quantity,estimated_provider_cost_cents,status FROM orders
+      WHERE result_reference=? AND resource_code=? LIMIT 1
+    `).bind("upload:"+uploadId,upload.resource_code).first();
+    const pricing=await env.DB.prepare(`
+      SELECT provider_cost_cents,pricing_unit_quantity,minimum_order_quantity
+      FROM resource_pricing WHERE resource_code=? LIMIT 1
+    `).bind(upload.resource_code).first();
+    const minimum=Number(pricing?.minimum_order_quantity);
+    if(!Number.isSafeInteger(minimum)||minimum<1||entries.length<minimum||entries.length>1000000)
+      throw new Error("provider_quantity_out_of_range");
+    if(paidOrder&&(paidOrder.status!=="pending"||Number(paidOrder.quantity)!==entries.length))
+      throw new Error("paid_order_not_ready_or_quantity_mismatch");
+    if(!paidOrder&&(upload.resource_code!=="phoneCheck"||entries.length!==2000))
+      throw new Error("provider_test_requires_paid_order");
+    const providerCost=Number(pricing?.provider_cost_cents),unitQuantity=Number(pricing?.pricing_unit_quantity);
+    if(!Number.isSafeInteger(providerCost)||providerCost<0||!Number.isSafeInteger(unitQuantity)||unitQuantity<=0)
       throw new Error("provider_cost_estimate_unavailable");
-    }
-    const estimatedProviderCostCents = Math.ceil(
-      configuredProviderCost * entries.length / configuredUnitQuantity
-    );
-    if (paidOrder &&
-        estimatedProviderCostCents > Number(paidOrder.estimated_provider_cost_cents)) {
+    const estimatedProviderCostCents=Math.ceil(providerCost*entries.length/unitQuantity);
+    if(paidOrder&&estimatedProviderCostCents>Number(paidOrder.estimated_provider_cost_cents))
       throw new Error("provider_cost_now_exceeds_paid_order_estimate");
-    }
-    if (!paidOrder && estimatedProviderCostCents > 30) {
-      throw new Error("provider_cost_exceeds_approved_30_cent_limit");
-    }
-
-    const form = new FormData();
-    const normalizedFile = entries.join("\n") + "\n";
-    form.append("file", new Blob([normalizedFile], { type: "text/plain" }),
-      String(upload.file_name || "numbers.txt").replace(/\.(csv|txt)$/i, "") + ".txt");
-    form.append("task_type", "phoneCheck");
-
-    // Never auto-retry task creation: a timeout may happen after provider acceptance.
-    providerSubmissionStarted = true;
-    const providerResult = await providerApi(env, "/v1/tasks", { method: "POST", body: form });
-    const providerTaskId = String(providerResult.task_id || "");
-    if (!providerTaskId || providerTaskId.length > 200) throw new Error("provider_task_id_missing");
-
+    if(!paidOrder&&estimatedProviderCostCents>30)throw new Error("provider_cost_exceeds_approved_30_cent_limit");
+    const form=new FormData();form.append("file",new Blob([entries.join("\n")+"\n"],{type:"text/plain"}),
+      String(upload.file_name||"input.txt").replace(/\.(csv|txt)$/i,"")+".txt");
+    form.append("task_type",taskType);
+    providerSubmissionStarted=true;
+    const providerResult=await providerApi(env,"/v1/tasks",{method:"POST",body:form});
+    const providerTaskId=String(providerResult.task_id||"");
+    if(!providerTaskId||providerTaskId.length>200)throw new Error("provider_task_id_missing");
     await env.DB.prepare(`
-      UPDATE provider_tasks SET provider_task_id=?, status='submitted',
-        provider_status=?, total=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='submitting'
-    `).bind(
-      providerTaskId, String(providerResult.status || "pending"),
-      Number.isSafeInteger(Number(providerResult.total)) ? Number(providerResult.total) : entries.length,
-      localId
-    ).run();
+      UPDATE provider_tasks SET provider_task_id=?,status='submitted',provider_status=?,total=?,
+        updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='submitting'
+    `).bind(providerTaskId,String(providerResult.status||"pending"),
+      Number.isSafeInteger(Number(providerResult.total))?Number(providerResult.total):entries.length,localId).run();
     await env.DB.prepare(`
-      UPDATE upload_staging SET status='reviewed',
-        admin_note='Submitted to CheckNumber provider task ' || ?,
+      UPDATE upload_staging SET status='reviewed',admin_note='Submitted to CheckNumber provider task '||?,
         reviewed_at=CURRENT_TIMESTAMP WHERE id=?
-    `).bind(providerTaskId, uploadId).run();
-    if (paidOrder) {
-      await env.DB.prepare(`
-        UPDATE orders SET provider_task_id=?, status='processing'
-        WHERE id=? AND status='pending' AND result_reference=?
-      `).bind(providerTaskId, paidOrder.id, "upload:" + uploadId).run();
-    }
-    return { id: localId, provider_task_id: providerTaskId, status: "submitted", quantity: entries.length,
-      paid_order_id: paidOrder?.id || null };
-  } catch (error) {
-    const definiteProviderRejection =
-      [400, 401, 402, 403, 404, 413].includes(Number(error.providerStatus));
-    const finalStatus = providerSubmissionStarted && !definiteProviderRejection
-      ? "submission_unknown"
-      : "failed";
-    await env.DB.prepare(`
-      UPDATE provider_tasks SET status=?, last_error=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
-    `).bind(
-      finalStatus,
-      String(error.message || "submission_failed").slice(0, 200), localId
-    ).run();
-    if (finalStatus === "failed") {
-      await env.DB.prepare(`
-        UPDATE orders SET status='failed'
-        WHERE result_reference=? AND status='pending'
-      `).bind("upload:" + uploadId).run();
-    }
+    `).bind(providerTaskId,uploadId).run();
+    if(paidOrder)await env.DB.prepare(`
+      UPDATE orders SET provider_task_id=?,status='processing'
+      WHERE id=? AND status='pending' AND result_reference=?
+    `).bind(providerTaskId,paidOrder.id,"upload:"+uploadId).run();
+    return {id:localId,provider_task_id:providerTaskId,status:"submitted",quantity:entries.length,
+      resource_code:upload.resource_code,task_type:taskType,paid_order_id:paidOrder?.id||null};
+  }catch(error){
+    const rejected=[400,401,402,403,404,413].includes(Number(error.providerStatus));
+    const finalStatus=providerSubmissionStarted&&!rejected?"submission_unknown":"failed";
+    await env.DB.prepare("UPDATE provider_tasks SET status=?,last_error=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .bind(finalStatus,String(error.message||"submission_failed").slice(0,200),localId).run();
+    if(finalStatus==="failed")await env.DB.prepare("UPDATE orders SET status='failed' WHERE result_reference=? AND status='pending'")
+      .bind("upload:"+uploadId).run();
     throw error;
   }
 }
@@ -2457,7 +2419,7 @@ if (
             display_order: Number(row.display_order),
             configured,
             enabled: configured && Number(row.enabled) === 1,
-            can_order: row.resource_code === "phoneCheck" &&
+            can_order: String(row.task_type||"") !== "VERIFY_IN_DASHBOARD" &&
               configured && Number(row.enabled) === 1 && row.currency === "USDT",
             minimum_order_quantity:
               configured ? Number(row.minimum_order_quantity) : null,
@@ -2477,7 +2439,7 @@ if (
           categories,
           services,
           ordering_enabled: services.some(service => service.can_order),
-          message: "Phone Number Validation orders are available when enabled by the administrator; other services are not connected yet."
+          message: "Services are available when their provider task code and pricing are verified and enabled by an administrator."
         }, 200, origin);
       } catch (error) {
         return json({
@@ -2544,11 +2506,10 @@ const consentVersion = String(
 );
 
 if (
-  resourceCode === "phoneCheck" &&
-  (
-    consentConfirmed !== "yes" ||
-    consentVersion !== "phone-validation-v1"
-  )
+  consentConfirmed !== "yes" ||
+  (resourceCode === "phoneCheck"
+    ? consentVersion !== "phone-validation-v1"
+    : consentVersion !== "authorized-list-v1")
 ) {
   return json({
     ok: false,
@@ -2565,17 +2526,12 @@ if (
 
         // Normal customer uploads require a listed service and enabled pricing.
         let service = await env.DB.prepare(`
-          SELECT c.resource_code
+          SELECT c.resource_code,c.input_type,c.task_type,p.minimum_order_quantity
           FROM service_catalogue c
-          JOIN service_categories sc
-            ON sc.category = c.category COLLATE NOCASE
-          JOIN resource_pricing p
-            ON p.resource_code = c.resource_code
-          WHERE c.resource_code = ?
-            AND c.is_listed = 1
-            AND sc.is_listed = 1
-            AND p.enabled = 1
-            AND c.resource_code = 'phoneCheck'
+          JOIN service_categories sc ON sc.category = c.category COLLATE NOCASE
+          JOIN resource_pricing p ON p.resource_code = c.resource_code
+          WHERE c.resource_code = ? AND c.is_listed = 1 AND sc.is_listed = 1
+            AND p.enabled = 1 AND c.task_type <> 'VERIFY_IN_DASHBOARD'
           LIMIT 1
         `).bind(resourceCode).first();
 
@@ -2586,10 +2542,9 @@ if (
         if (!service && resourceCode === "phoneCheck") {
           await requireAdmin(request, env);
           service = await env.DB.prepare(`
-            SELECT resource_code
+            SELECT resource_code,input_type,task_type,500 AS minimum_order_quantity
             FROM service_catalogue
-            WHERE resource_code = 'phoneCheck'
-              AND task_type = 'phoneCheck'
+            WHERE resource_code = 'phoneCheck' AND task_type = 'phoneCheck'
             LIMIT 1
           `).first();
         }
@@ -2645,78 +2600,16 @@ if (
         }
         let consentNumbers = [];
 
-        if (resourceCode === "phoneCheck") {
-          const content = await file.text();
-          const lines = content.split(/\r?\n/);
-          const uniqueNumbers = new Set();
-          let invalidCount = 0;
-          let nonEmptyLineCount = 0;
-          let validEntryCount = 0;
-
-          for (let i = 0; i < lines.length; i++) {
-            let value = lines[i].trim();
-
-            if (!value) continue;
-            nonEmptyLineCount++;
-
-            if (extension === "csv") {
-              value = value
-                .split(",")[0]
-                .replace(/^["']|["']$/g, "")
-                .trim();
-            }
-
-            if (
-              i === 0 &&
-              ["phone", "phone_number", "number"].includes(
-                value.toLowerCase()
-              )
-            ) {
-              continue;
-            }
-
-          if (!/^\+?[1-9]\d{7,14}$/.test(value)) {
-              invalidCount++;
-              continue;
-            }
-
-            validEntryCount++;
-            uniqueNumbers.add(value);
-          }
-
-          consentNumbers = [...uniqueNumbers];
-          const duplicateCount = validEntryCount - consentNumbers.length;
-          const uploadStats = {
-            non_empty_lines: nonEmptyLineCount,
-            valid_entries: validEntryCount,
-            unique_valid_numbers: consentNumbers.length,
-            duplicate_entries: duplicateCount,
-            invalid_entries: invalidCount
-          };
-
-          if (invalidCount > 0) {
-            return json({
-              ok: false,
-              error: "invalid_phone_numbers",
-              invalid_count: invalidCount,
-              ...uploadStats
-            }, 400, origin);
-          }
-
-          if (
-            consentNumbers.length < 500 ||
-            consentNumbers.length > 10000
-          ) {
-            return json({
-              ok: false,
-              error: "invalid_phone_number_count",
-              minimum: 500,
-              maximum: 10000,
-              received: consentNumbers.length,
-              ...uploadStats
-            }, 400, origin);
-          }
+        const uploadContent=await file.text();
+        let parsedEntries;
+        try{parsedEntries=parseProviderEntries(uploadContent,extension,service.input_type||"phone");}
+        catch(parseError){return json({ok:false,error:parseError.message||"invalid_input_entries"},400,origin);}
+        const minimumQuantity=Number(service.minimum_order_quantity||500);
+        if(!Number.isSafeInteger(minimumQuantity)||minimumQuantity<1||
+           parsedEntries.length<minimumQuantity||parsedEntries.length>1000000){
+          return json({ok:false,error:"invalid_entry_count",minimum:minimumQuantity,maximum:1000000,received:parsedEntries.length},400,origin);
         }
+        if(service.input_type==="phone")consentNumbers=parsedEntries;
         // Store the file in the private Telegram channel.
         const stored = await telegramStoreDocument(env, file);
 
@@ -3709,6 +3602,111 @@ if (request.method === "POST" && url.pathname === "/api/admin/provider-tasks/del
     // ------------------------------------------------
 
     
+// Generic catalogue quote.
+if(request.method==="POST"&&url.pathname==="/api/services/quote"){
+  try{
+    const user=await getSessionUser(request,env),body=await readBody(request);
+    const code=String(body.resource_code||""),quantity=Number(body.quantity);
+    if(!validResourceCode(code)||!Number.isSafeInteger(quantity)||quantity<1||quantity>1000000)
+      return json({ok:false,error:"invalid_quote_request"},400,origin);
+    const pricing=await env.DB.prepare(`
+      SELECT c.task_type,p.provider_cost_cents,p.markup_type,p.markup_value,p.final_price_cents,
+        p.pricing_unit_quantity,p.minimum_order_quantity,p.currency,p.enabled
+      FROM service_catalogue c JOIN resource_pricing p ON p.resource_code=c.resource_code
+      WHERE c.resource_code=? AND c.is_listed=1 LIMIT 1
+    `).bind(code).first();
+    if(!pricing||pricing.task_type==="VERIFY_IN_DASHBOARD"||Number(pricing.enabled)!==1||pricing.currency!=="USDT")
+      return json({ok:false,error:"service_unavailable"},403,origin);
+    const quote=calculatePrice(pricing,quantity);
+    return json({ok:true,service:code,customer:user.first_name||"Customer",quantity,
+      minimum_quantity:quote.minimum,pricing_unit_quantity:quote.unitQuantity,
+      unit_price_cents:quote.unitPriceCents,total_price_cents:quote.totalCents,
+      currency:pricing.currency,can_order:true},200,origin);
+  }catch(error){
+    const status=error.message==="unauthorized"?401:
+      ["invalid_pricing_configuration","unsupported_pricing_type","invalid_order_amount"].includes(error.message)?500:400;
+    return json({ok:false,error:error.message||"quote_request_failed"},status,origin);
+  }
+}
+
+// Generic catalogue checkout. Uses the existing wallet, orders, and ledger tables.
+if(request.method==="POST"&&url.pathname==="/api/services/order"){
+  try{
+    const user=await getSessionUser(request,env),body=await readBody(request);
+    const uploadId=Number(body.upload_id),code=String(body.resource_code||""),key=String(body.idempotency_key||"");
+    if(!Number.isSafeInteger(uploadId)||uploadId<1||!validResourceCode(code)||!/^[A-Za-z0-9_-]{12,100}$/.test(key))
+      return json({ok:false,error:"invalid_order_request"},400,origin);
+    await ensureCustomerOrderSchema(env);
+    const upload=await env.DB.prepare(`
+      SELECT s.id,s.telegram_file_id,s.file_name,s.status,s.expires_at,c.input_type,c.task_type
+      FROM upload_staging s JOIN service_catalogue c ON c.resource_code=s.resource_code
+      WHERE s.id=? AND s.user_id=? AND s.resource_code=? LIMIT 1
+    `).bind(uploadId,user.id,code).first();
+    if(!upload||!["uploaded","reviewed"].includes(upload.status)||!upload.expires_at||
+       new Date(upload.expires_at).getTime()<=Date.now()||upload.task_type==="VERIFY_IN_DASHBOARD")
+      return json({ok:false,error:"upload_not_orderable"},409,origin);
+    const prior=await env.DB.prepare("SELECT id,status FROM orders WHERE user_id=? AND result_reference=? LIMIT 1")
+      .bind(user.id,"upload:"+uploadId).first();
+    if(prior)return json({ok:false,error:"upload_already_ordered",order_id:prior.id,status:prior.status},409,origin);
+    const pricing=await env.DB.prepare(`
+      SELECT provider_cost_cents,markup_type,markup_value,final_price_cents,
+        pricing_unit_quantity,minimum_order_quantity,currency,enabled
+      FROM resource_pricing WHERE resource_code=? LIMIT 1
+    `).bind(code).first();
+    if(!pricing||Number(pricing.enabled)!==1||pricing.currency!=="USDT")
+      return json({ok:false,error:"service_unavailable"},403,origin);
+    if(!env.TELEGRAM_BOT_TOKEN)throw new Error("telegram_storage_configuration_missing");
+    const infoResponse=await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${encodeURIComponent(upload.telegram_file_id)}`);
+    const info=await infoResponse.json(),filePath=info?.result?.file_path;
+    if(!infoResponse.ok||!info.ok||!filePath||filePath.includes(".."))throw new Error("uploaded_file_unavailable");
+    const fileResponse=await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`);
+    if(!fileResponse.ok)throw new Error("uploaded_file_unavailable");
+    const bytes=await fileResponse.arrayBuffer();
+    if(!bytes.byteLength||bytes.byteLength>20*1024*1024)throw new Error("invalid_uploaded_file_size");
+    const content=new TextDecoder("utf-8",{fatal:true}).decode(bytes),extension=String(upload.file_name||"").toLowerCase().split(".").pop();
+    if(!["txt","csv"].includes(extension))return json({ok:false,error:"unsupported_file_type"},400,origin);
+    const entries=parseProviderEntries(content,extension,upload.input_type||"phone"),minimum=Number(pricing.minimum_order_quantity);
+    if(entries.length<minimum||entries.length>1000000)
+      return json({ok:false,error:"invalid_entry_count",minimum,maximum:1000000,received:entries.length},400,origin);
+    const quote=calculatePrice(pricing,entries.length);
+    const results=await env.DB.batch([
+      env.DB.prepare(`
+        INSERT INTO orders(user_id,resource_code,idempotency_key,customer_charge_cents,
+          estimated_provider_cost_cents,status,result_reference,quantity,unit_price_cents,
+          pricing_unit_quantity,currency,markup_type,markup_value,minimum_order_quantity,provider_currency)
+        SELECT ?,?,?,?,?, 'pending',?,?,?,?, 'USDT',?,?,?,'USD'
+        WHERE EXISTS(SELECT 1 FROM users WHERE id=? AND wallet_balance_cents>=?)
+      `).bind(user.id,code,key,quote.totalCents,quote.estimatedCostCents,"upload:"+uploadId,
+        entries.length,quote.unitPriceCents,quote.unitQuantity,pricing.markup_type,
+        Number(pricing.markup_value),quote.minimum,user.id,quote.totalCents),
+      env.DB.prepare(`
+        UPDATE users SET wallet_balance_cents=wallet_balance_cents-
+          (SELECT customer_charge_cents FROM orders WHERE idempotency_key=?)
+        WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE idempotency_key=?)
+      `).bind(key,user.id,key),
+      env.DB.prepare(`
+        INSERT INTO wallet_ledger(user_id,amount_cents,transaction_type,reference_id,description)
+        SELECT user_id,-customer_charge_cents,'order_charge','order:'||id,?
+        FROM orders WHERE idempotency_key=? AND NOT EXISTS(
+          SELECT 1 FROM wallet_ledger WHERE reference_id='order:'||orders.id AND transaction_type='order_charge')
+      `).bind(code+" order charge",key)
+    ]);
+    if(!results[0]?.meta?.changes){
+      const dup=await env.DB.prepare("SELECT id FROM orders WHERE idempotency_key=? LIMIT 1").bind(key).first();
+      if(dup)return json({ok:false,error:"idempotency_key_already_used",order_id:dup.id},409,origin);
+      return json({ok:false,error:"insufficient_wallet_balance"},402,origin);
+    }
+    const order=await env.DB.prepare("SELECT id,customer_charge_cents,quantity,status FROM orders WHERE idempotency_key=? LIMIT 1").bind(key).first();
+    return json({ok:true,order,wallet_debited:true,message:"Order received and queued for provider processing."},201,origin);
+  }catch(error){
+    if(String(error.message||"").includes("UNIQUE constraint failed"))return json({ok:false,error:"upload_already_ordered"},409,origin);
+    const status=error.message==="unauthorized"?401:
+      ["invalid_json","unsupported_file_type","invalid_phone_numbers","invalid_email_entries","invalid_username_entries","ambiguous_or_invalid_csv_row"].includes(error.message)?400:
+      ["invalid_pricing_configuration","unsupported_pricing_type","invalid_order_amount"].includes(error.message)?500:502;
+    return json({ok:false,error:status===502?"order_creation_failed":error.message},status,origin);
+  }
+}
+
 if (
   request.method === "POST" &&
   url.pathname === "/api/phone-check/quote"
