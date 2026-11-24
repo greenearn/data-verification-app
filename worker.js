@@ -80,7 +80,7 @@ const CHECKNUMBER_CATALOGUE = [
   {category:"Snapchat",category_order:23,resource_code:"snapchat_checker",name:"Snapchat Number Checker",description:"Check Snapchat registration by phone number",input_type:"phone",task_type:"snapchat",provider_cost_cents:800,display_order:1},
   {category:"Exchange Account Checkers",category_order:24,resource_code:"binance_checker",name:"Binance Number Checker",description:"Check Binance registration by phone number",input_type:"phone",task_type:"Binance",provider_cost_cents:650,display_order:1},
   {category:"Exchange Account Checkers",category_order:24,resource_code:"kucoin_checker",name:"KuCoin Number Checker",description:"Check KuCoin registration by phone number",input_type:"phone",task_type:"Kucoin",provider_cost_cents:700,display_order:2},
-  {category:"Email Deliverability Checker",category_order:25,resource_code:"email_deliverability",name:"Email Deliverability Checker",description:"Email deliverability/validation; confirm task code in provider dashboard",input_type:"email",task_type:"email_check",provider_cost_cents:500,display_order:1}
+  {category:"Email Deliverability Checker",category_order:25,resource_code:"email_check",name:"Email Deliverability Checker",description:"Email deliverability/validation; confirm task code in provider dashboard",input_type:"email",task_type:"email_check",provider_cost_cents:500,display_order:1}
 ];
 // --------------------------------------------------
 // GENERAL HELPERS
@@ -652,6 +652,14 @@ async function importCheckNumberCatalogue(env) {
     SET name='Number Validation',description='Validate phone numbers and check carrier-related data',
         category='Number Checker',updated_at=CURRENT_TIMESTAMP
     WHERE resource_code='phoneCheck'
+  `));
+  // Reuse the legacy email_check resource instead of creating a duplicate email product.
+  statements.push(env.DB.prepare(`
+    UPDATE service_catalogue
+    SET name='Email Deliverability Checker',description='Check email deliverability and validation',
+        category='Email Deliverability Checker',input_type='email',task_type='email_check',
+        updated_at=CURRENT_TIMESTAMP
+    WHERE resource_code='email_check'
   `));
   const results=await env.DB.batch(statements);
   return {
