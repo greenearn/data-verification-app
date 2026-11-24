@@ -382,7 +382,8 @@ const ADMIN_PERMISSION_LABELS = {
   number_requests: "Manual number-file requests",
   provider_balance: "Provider balance",
   storage_test: "Telegram storage test",
-  support_manage: "Customer support inbox and contact settings"
+  support_manage: "Customer support inbox and contact settings",
+  users_manage: "Customer account management, wallet adjustments and Telegram messaging"
 };
 
 const ADMIN_ROUTE_PERMISSIONS = {
@@ -415,7 +416,11 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "GET /api/admin/support/chats/messages": "support_manage",
   "POST /api/admin/support/chats/reply": "support_manage",
   "GET /api/admin/support/settings": "support_manage",
-  "POST /api/admin/support/settings": "support_manage"
+  "POST /api/admin/support/settings": "support_manage",
+  "POST /api/admin/users/balance": "users_manage",
+  "POST /api/admin/users/message": "users_manage",
+  "GET /api/admin/broadcasts": "users_manage",
+  "POST /api/admin/broadcasts": "users_manage"
 };
 
 async function ensureAdminAccessSchema(env) {
@@ -1474,6 +1479,152 @@ async function pollProviderTasks(env, onlyId = null) {
     }
   }
   return outcomes;
+}
+
+
+// --------------------------------------------------
+// ADMIN CUSTOMER MANAGEMENT + TELEGRAM BROADCASTS
+// --------------------------------------------------
+let broadcastSchemaReady = false;
+async function ensureBroadcastSchema(env) {
+  if (broadcastSchemaReady) return;
+  await env.DB.batch([
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS telegram_broadcasts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      admin_telegram_id TEXT NOT NULL,
+      message_text TEXT NOT NULL DEFAULT '',
+      media_type TEXT,
+      media_file_id TEXT,
+      media_file_name TEXT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      total_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      completed_at TEXT
+    )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS telegram_broadcast_recipients (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      telegram_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      sent_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(campaign_id,user_id)
+    )`),
+    env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_broadcast_recipients_pending
+      ON telegram_broadcast_recipients(campaign_id,status,id)`)
+  ]);
+  broadcastSchemaReady = true;
+}
+
+async function uploadBroadcastMedia(env, file, mediaType) {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_STORAGE_CHAT_ID) {
+    throw new Error("telegram_storage_configuration_missing");
+  }
+  const form = new FormData();
+  form.append("chat_id", String(env.TELEGRAM_STORAGE_CHAT_ID));
+  form.append(mediaType === "video" ? "video" : "document", file, file.name);
+  const response = await fetch(
+    `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${mediaType === "video" ? "sendVideo" : "sendDocument"}`,
+    { method: "POST", body: form }
+  );
+  const result = await response.json();
+  const fileId = mediaType === "video"
+    ? result.result?.video?.file_id
+    : result.result?.document?.file_id;
+  if (!response.ok || !result.ok || !fileId) {
+    throw new Error(result.description || "telegram_media_upload_failed");
+  }
+  return fileId;
+}
+
+async function sendBroadcastToTelegram(env, recipient, campaign) {
+  const base = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/`;
+  let method = "sendMessage";
+  const payload = { chat_id: String(recipient.telegram_id) };
+  if (campaign.media_type === "document") {
+    method = "sendDocument";
+    payload.document = campaign.media_file_id;
+    if (campaign.message_text) payload.caption = campaign.message_text;
+  } else if (campaign.media_type === "video") {
+    method = "sendVideo";
+    payload.video = campaign.media_file_id;
+    if (campaign.message_text) payload.caption = campaign.message_text;
+  } else {
+    payload.text = campaign.message_text;
+  }
+  const response = await fetch(base + method, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json();
+  if (response.status === 429) {
+    const error = new Error("telegram_rate_limited");
+    error.retryAfter = Number(result.parameters?.retry_after || 60);
+    throw error;
+  }
+  if (!response.ok || !result.ok) {
+    throw new Error(String(result.description || "telegram_delivery_failed").slice(0, 300));
+  }
+}
+
+async function processBroadcastQueue(env) {
+  await ensureBroadcastSchema(env);
+  const campaigns = await env.DB.prepare(`
+    SELECT id, message_text, media_type, media_file_id
+    FROM telegram_broadcasts WHERE status IN ('queued','sending')
+    ORDER BY id ASC LIMIT 5
+  `).all();
+  for (const campaign of campaigns.results || []) {
+    const recipients = await env.DB.prepare(`
+      SELECT id,user_id,telegram_id FROM telegram_broadcast_recipients
+      WHERE campaign_id=? AND status='pending' ORDER BY id ASC LIMIT 100
+    `).bind(campaign.id).all();
+    for (const recipient of recipients.results || []) {
+      // Claim each recipient before sending so overlapping cron runs cannot duplicate a delivery.
+      const claim = await env.DB.prepare(`
+        UPDATE telegram_broadcast_recipients
+        SET status='sending', attempts=attempts+1
+        WHERE id=? AND status='pending'
+      `).bind(recipient.id).run();
+      if (!claim.meta?.changes) continue;
+      try {
+        await sendBroadcastToTelegram(env, recipient, campaign);
+        await env.DB.prepare(`
+          UPDATE telegram_broadcast_recipients
+          SET status='sent',sent_at=CURRENT_TIMESTAMP,last_error=NULL WHERE id=? AND status='sending'
+        `).bind(recipient.id).run();
+      } catch (error) {
+        if (error.message === "telegram_rate_limited") {
+          await env.DB.prepare(`
+            UPDATE telegram_broadcast_recipients
+            SET status='pending',last_error=? WHERE id=? AND status='sending'
+          `).bind("Telegram rate limit; retry after " + Number(error.retryAfter || 60) + " seconds",recipient.id).run();
+          break;
+        }
+        await env.DB.prepare(`
+          UPDATE telegram_broadcast_recipients
+          SET status='failed',last_error=? WHERE id=? AND status='sending'
+        `).bind(String(error.message || "delivery_failed").slice(0,300),recipient.id).run();
+      }
+      // Stay below Telegram's broadcast rate limit.
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    const counts = await env.DB.prepare(`
+      SELECT COUNT(*) AS pending,
+        SUM(CASE WHEN status='sent' THEN 1 ELSE 0 END) AS sent,
+        SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed
+      FROM telegram_broadcast_recipients WHERE campaign_id=?
+    `).bind(campaign.id).first();
+    const pending = Number(counts?.pending || 0);
+    await env.DB.prepare(`
+      UPDATE telegram_broadcasts SET status=?,completed_at=CASE WHEN ?=0 THEN CURRENT_TIMESTAMP ELSE completed_at END
+      WHERE id=?
+    `).bind(pending ? "sending" : (Number(counts?.failed || 0) ? "completed_with_errors" : "completed"),pending,campaign.id).run();
+  }
 }
 
 // --------------------------------------------------
@@ -4853,6 +5004,186 @@ if (url.pathname === "/api/admin/support/chats/reply" && request.method === "POS
 }
 
 
+
+    // --------------------------------------------------
+    // ADMIN: ADJUST CUSTOMER WALLET BALANCE
+    // --------------------------------------------------
+    if (request.method === "POST" && url.pathname === "/api/admin/users/balance") {
+      try {
+        const admin = await requireAdmin(request, env);
+        const body = await readBody(request);
+        const userId = Number(body.user_id);
+        const direction = String(body.direction || "").trim().toLowerCase();
+        const amountCents = Number(body.amount_cents);
+        const reason = String(body.reason || "").trim();
+        if (!Number.isSafeInteger(userId) || userId < 1 ||
+            !["credit","debit"].includes(direction) ||
+            !Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > 100000000 ||
+            reason.length < 8 || reason.length > 500) {
+          return json({ok:false,error:"invalid_balance_adjustment"},400,origin);
+        }
+        const target = await env.DB.prepare(
+          "SELECT id,telegram_id,wallet_balance_cents FROM users WHERE id=? LIMIT 1"
+        ).bind(userId).first();
+        if (!target) return json({ok:false,error:"user_not_found"},404,origin);
+        const reference = "admin_adjustment:" + hex(crypto.getRandomValues(new Uint8Array(16)));
+        const ledgerAmount = direction === "credit" ? amountCents : -amountCents;
+        const description = (direction === "credit" ? "Admin wallet credit: " : "Admin wallet deduction: ") + reason;
+        const results = await env.DB.batch([
+          env.DB.prepare(`
+            INSERT INTO wallet_ledger(user_id,amount_cents,transaction_type,reference_id,description)
+            SELECT id,?,'admin_adjustment',?,? FROM users
+            WHERE id=? AND (?='credit' OR wallet_balance_cents>=?)
+          `).bind(ledgerAmount,reference,description,userId,direction,amountCents),
+          env.DB.prepare(`
+            UPDATE users SET wallet_balance_cents=wallet_balance_cents+?
+            WHERE id=? AND EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='admin_adjustment')
+          `).bind(ledgerAmount,userId,reference)
+        ]);
+        if (!results[0]?.meta?.changes) {
+          return json({ok:false,error:direction==="debit"?"insufficient_wallet_balance":"user_not_found"},409,origin);
+        }
+        const updated = await env.DB.prepare(
+          "SELECT wallet_balance_cents FROM users WHERE id=?"
+        ).bind(userId).first();
+        await writeAdminAudit(env,admin.telegram_id,String(target.telegram_id),"customer_wallet_adjustment",{
+          user_id:userId,direction,amount_cents:amountCents,reason,reference
+        });
+        try {
+          await createUserNotification(env,userId,
+            direction === "credit" ? "Wallet credited by admin" : "Wallet adjusted by admin",
+            (direction === "credit" ? "Your wallet was credited with " : "Your wallet was deducted by ") +
+              (amountCents/100).toFixed(2) + " USDT. Reason: " + reason,
+            "admin_wallet_adjustment",userId);
+        } catch (e) { console.error("Wallet adjustment notification failed:",e.message); }
+        return json({ok:true,user_id:userId,direction,amount_cents:amountCents,
+          wallet_balance_cents:Number(updated?.wallet_balance_cents||0),reference},200,origin);
+      } catch (error) {
+        const status=error.message==="unauthorized"?401:
+          error.message==="admin_unlock_required"?423:
+          error.message==="admin_access_required"?403:500;
+        return json({ok:false,error:error.message||"balance_adjustment_failed"},status,origin);
+      }
+    }
+
+    // --------------------------------------------------
+    // ADMIN: SEND A PRIVATE TELEGRAM MESSAGE TO ONE CUSTOMER
+    // --------------------------------------------------
+    if (request.method === "POST" && url.pathname === "/api/admin/users/message") {
+      try {
+        const admin = await requireAdmin(request, env);
+        const body = await readBody(request);
+        const userId = Number(body.user_id);
+        const message = String(body.message || "").trim();
+        if (!Number.isSafeInteger(userId) || userId < 1 || !message || message.length > 4096) {
+          return json({ok:false,error:"invalid_personal_message"},400,origin);
+        }
+        const target = await env.DB.prepare(
+          "SELECT id,telegram_id FROM users WHERE id=? AND status='active' LIMIT 1"
+        ).bind(userId).first();
+        if (!target) return json({ok:false,error:"user_not_found_or_inactive"},404,origin);
+        const response = await fetch(
+          `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+          {method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({chat_id:String(target.telegram_id),text:message})}
+        );
+        const result = await response.json();
+        if (!response.ok || !result.ok) {
+          return json({ok:false,error:"telegram_message_failed",details:String(result.description||"Telegram rejected the message").slice(0,300)},502,origin);
+        }
+        await writeAdminAudit(env,admin.telegram_id,String(target.telegram_id),"customer_personal_message_sent",{
+          user_id:userId,message_length:message.length
+        });
+        return json({ok:true,user_id:userId,message_id:result.result?.message_id||null},200,origin);
+      } catch (error) {
+        const status=error.message==="unauthorized"?401:
+          error.message==="admin_unlock_required"?423:
+          error.message==="admin_access_required"?403:500;
+        return json({ok:false,error:error.message||"personal_message_failed"},status,origin);
+      }
+    }
+
+    // --------------------------------------------------
+    // ADMIN: CREATE AND TRACK BROADCAST CAMPAIGNS
+    // --------------------------------------------------
+    if (request.method === "POST" && url.pathname === "/api/admin/broadcasts") {
+      try {
+        const admin = await requireAdmin(request, env);
+        await ensureBroadcastSchema(env);
+        if (!(request.headers.get("Content-Type")||"").toLowerCase().includes("multipart/form-data")) {
+          return json({ok:false,error:"multipart_form_data_required"},400,origin);
+        }
+        const form = await request.formData();
+        const message = String(form.get("message")||"").trim();
+        const file = form.get("file");
+        const hasFile = file instanceof File && file.size > 0;
+        if ((!message && !hasFile) || message.length > (hasFile ? 1024 : 4096)) {
+          return json({ok:false,error:hasFile?"caption_must_be_1_to_1024_characters":"message_must_be_1_to_4096_characters"},400,origin);
+        }
+        let mediaType = null, mediaFileId = null, mediaFileName = null;
+        if (hasFile) {
+          if (file.size > 20*1024*1024) return json({ok:false,error:"media_file_too_large",maximum_size_mb:20},413,origin);
+          const name = String(file.name||"").toLowerCase();
+          if (name.endsWith(".txt") && (file.type==="text/plain" || file.type==="application/octet-stream" || !file.type)) {
+            mediaType = "document";
+          } else if (name.endsWith(".mp4") && (file.type==="video/mp4" || file.type==="application/octet-stream" || !file.type)) {
+            mediaType = "video";
+          } else {
+            return json({ok:false,error:"only_txt_and_mp4_files_allowed"},400,origin);
+          }
+          mediaFileId = await uploadBroadcastMedia(env,file,mediaType);
+          mediaFileName = String(file.name||"broadcast-media").slice(0,200);
+        }
+        const created = await env.DB.prepare(`
+          INSERT INTO telegram_broadcasts(admin_telegram_id,message_text,media_type,media_file_id,media_file_name,status)
+          VALUES(?,?,?,?,?,'queued')
+        `).bind(String(admin.telegram_id),message,mediaType,mediaFileId,mediaFileName).run();
+        const campaignId = Number(created.meta.last_row_id);
+        await env.DB.prepare(`
+          INSERT INTO telegram_broadcast_recipients(campaign_id,user_id,telegram_id)
+          SELECT ?,id,CAST(telegram_id AS TEXT) FROM users
+          WHERE status='active' AND telegram_id IS NOT NULL AND CAST(telegram_id AS TEXT)<>''
+        `).bind(campaignId).run();
+        const total = await env.DB.prepare(
+          "SELECT COUNT(*) AS total FROM telegram_broadcast_recipients WHERE campaign_id=?"
+        ).bind(campaignId).first();
+        await env.DB.prepare("UPDATE telegram_broadcasts SET total_count=? WHERE id=?")
+          .bind(Number(total?.total||0),campaignId).run();
+        if (!Number(total?.total||0)) {
+          await env.DB.prepare("UPDATE telegram_broadcasts SET status='completed',completed_at=CURRENT_TIMESTAMP WHERE id=?")
+            .bind(campaignId).run();
+        }
+        await writeAdminAudit(env,admin.telegram_id,"all_active_users","telegram_broadcast_created",{
+          campaign_id:campaignId,total_recipients:Number(total?.total||0),media_type:mediaType
+        });
+        return json({ok:true,campaign_id:campaignId,total_recipients:Number(total?.total||0),status:Number(total?.total||0)?"queued":"completed"},201,origin);
+      } catch (error) {
+        const status=error.message==="unauthorized"?401:
+          error.message==="admin_unlock_required"?423:
+          error.message==="admin_access_required"?403:500;
+        return json({ok:false,error:error.message||"broadcast_create_failed"},status,origin);
+      }
+    }
+    if (request.method === "GET" && url.pathname === "/api/admin/broadcasts") {
+      try {
+        await requireAdmin(request, env);
+        await ensureBroadcastSchema(env);
+        const result = await env.DB.prepare(`
+          SELECT b.id,b.message_text,b.media_type,b.media_file_name,b.status,b.total_count,b.created_at,b.completed_at,
+            (SELECT COUNT(*) FROM telegram_broadcast_recipients r WHERE r.campaign_id=b.id AND r.status='sent') AS sent_count,
+            (SELECT COUNT(*) FROM telegram_broadcast_recipients r WHERE r.campaign_id=b.id AND r.status='failed') AS failed_count,
+            (SELECT COUNT(*) FROM telegram_broadcast_recipients r WHERE r.campaign_id=b.id AND r.status IN ('pending','sending')) AS pending_count
+          FROM telegram_broadcasts b ORDER BY b.id DESC LIMIT 20
+        `).all();
+        return json({ok:true,broadcasts:result.results||[]},200,origin);
+      } catch (error) {
+        const status=error.message==="unauthorized"?401:
+          error.message==="admin_unlock_required"?423:
+          error.message==="admin_access_required"?403:500;
+        return json({ok:false,error:error.message||"broadcast_list_failed"},status,origin);
+      }
+    }
+
 // --------------------------------------------------
 // ADMIN: REGISTERED CUSTOMER DIRECTORY
 // --------------------------------------------------
@@ -5378,6 +5709,6 @@ if (
     }, 404, origin);
   },
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(pollProviderTasks(env));
+    ctx.waitUntil(Promise.allSettled([pollProviderTasks(env), processBroadcastQueue(env)]));
   }
 };
