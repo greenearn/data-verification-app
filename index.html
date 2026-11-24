@@ -793,6 +793,7 @@ async function renderAdminWorkspace(){
     document.getElementById("admin-back").onclick=async()=>{const oldToken=adminUnlockToken;adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");if(adminIdleTimer)clearTimeout(adminIdleTimer);if(adminHeartbeatTimer){clearInterval(adminHeartbeatTimer);adminHeartbeatTimer=null;}if(supportPollTimer){clearInterval(supportPollTimer);supportPollTimer=null;}if(oldToken){try{await fetch(API+"/api/admin/security/lock",{method:"POST",headers:{"Authorization":"Bearer "+token,"X-Admin-Unlock":oldToken}});}catch(e){}}adminMode=true;renderDashboard();};
     document.getElementById("admin-lock").onclick=lockAdminDashboard;
     const lockNow=document.getElementById("admin-lock-now");if(lockNow)lockNow.onclick=lockAdminDashboard;
+    applyAdminUiPermissions();
     wireAdmin();wireSupportAdmin();startAdminIdleLock();
   }catch(error){if(error.message==="admin_unlock_required"){adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderAdminGate(true);}else showError("Admin dashboard could not load: "+error.message);}
 }
@@ -1988,6 +1989,7 @@ function adminMarkup(){
         <label class="checkbox"><input type="checkbox" value="provider_balance"> Provider balance</label>
         <label class="checkbox"><input type="checkbox" value="storage_test"> Telegram storage test</label>
         <label class="checkbox"><input type="checkbox" value="support_manage"> Customer support inbox and contact settings</label>
+        <label class="checkbox"><input type="checkbox" value="users_manage"> User management, wallet adjustments and Telegram messaging</label>
       </div>
       <div class="actions">
         <button class="btn" id="managed-admin-save" type="button">Grant administrator access</button>
@@ -2009,12 +2011,30 @@ function adminMarkup(){
 
     <div class="panel" id="admin-users-panel">
       <div class="item-top">
-        <h3>Registered customers</h3>
-        <button class="btn secondary" id="admin-users-refresh" type="button">Refresh</button>
+        <h3>User Management</h3>
+        <button class="btn secondary" id="admin-users-refresh" type="button">Refresh users</button>
       </div>
-      <p>Customer account details visible only to authorized administrators. Telegram IDs and wallet balances are shown for account support; never share them publicly.</p>
+      <p>Search registered customers, view Telegram usernames and balances, adjust wallet funds, or send a private Telegram message. Every wallet change is recorded in the ledger and admin audit log.</p>
+      <label class="field" for="admin-user-search">Search by name, username, Telegram ID or customer ID</label>
+      <input id="admin-user-search" type="search" placeholder="Search customers…">
       <div id="admin-users-message" class="muted">Customer list has not been loaded.</div>
       <div id="admin-users-list"></div>
+    </div>
+
+    <div class="panel" id="admin-broadcast-panel">
+      <div class="item-top">
+        <h3>Broadcast Messaging</h3>
+        <button class="btn secondary" id="admin-broadcast-refresh" type="button">Refresh history</button>
+      </div>
+      <p>Send an announcement to all active registered users through your Telegram bot. You can send text only, a TXT file with a caption, or an MP4 video with a caption. Large broadcasts are queued and delivered in batches.</p>
+      <label class="field" for="admin-broadcast-message">Message / caption</label>
+      <textarea id="admin-broadcast-message" maxlength="4096" placeholder="Write your announcement here…"></textarea>
+      <label class="field" for="admin-broadcast-file">Optional attachment (TXT or MP4 video · max 20 MB)</label>
+      <input id="admin-broadcast-file" type="file" accept=".txt,.mp4,text/plain,video/mp4">
+      <p class="muted">For attachments, Telegram captions are limited to 1,024 characters. Only active users are included in the recipient snapshot. Users who have blocked the bot may fail delivery.</p>
+      <button class="btn" id="admin-broadcast-send" type="button">Create broadcast to all users</button>
+      <p id="admin-broadcast-message-status" class="muted">No broadcast has been created.</p>
+      <div id="admin-broadcast-history"></div>
     </div>
 
     <div class="panel">
@@ -2490,7 +2510,9 @@ function applyAdminUiPermissions(){
     ["Provider Balance","provider_balance"],
     ["Telegram Storage Connection","storage_test"],
     ["Admin Upload Management","uploads_manage"],
-    ["Manual Number File Requests","number_requests"]
+    ["Manual Number File Requests","number_requests"],
+    ["User Management","users_manage"],
+    ["Broadcast Messaging","users_manage"]
   ];
   section.querySelectorAll(".panel").forEach(panel=>{
     if(panel===section)return;
@@ -2688,25 +2710,129 @@ function wireAdminActivityAndUsers(){
     finally{if(activityRefresh)activityRefresh.disabled=false;}
   }
 
+  let adminCustomers=[];
+  function renderAdminUsers(){
+    if(!usersList)return;
+    const query=(document.getElementById("admin-user-search")?.value||"").trim().toLowerCase();
+    const filtered=adminCustomers.filter(customer=>{
+      const haystack=[customer.id,customer.telegram_id,customer.username,customer.first_name].join(" ").toLowerCase();
+      return !query||haystack.includes(query);
+    });
+    usersMessage.textContent="Registered accounts: "+adminCustomers.length+" · Showing "+filtered.length;
+    usersList.innerHTML=filtered.map(customer=>{
+      const displayName=[customer.first_name,customer.username?"@"+customer.username:""].filter(Boolean).join(" · ")||"Telegram customer";
+      return '<div class="item" data-managed-user-id="'+Number(customer.id)+'">'+
+        '<div class="item-top"><strong>'+esc(displayName)+'</strong><span class="pill">'+esc(customer.status||"unknown")+'</span></div>'+
+        '<div class="muted">Customer ID: '+esc(customer.id)+' · Telegram ID: '+esc(customer.telegram_id)+'</div>'+
+        '<div class="muted">Telegram username: '+(customer.username?"@"+esc(customer.username):"Not set")+'</div>'+
+        '<div class="muted">Wallet balance: <strong>'+esc(money(customer.wallet_balance_cents,"USDT"))+'</strong></div>'+
+        '<small>Registered: '+esc(formatDate(customer.created_at))+'</small>'+
+        '<div class="actions"><button class="btn secondary adjust-customer-balance" type="button">Add / Deduct Balance</button>'+
+        '<button class="btn secondary message-customer" type="button">Send Bot Message</button></div></div>';
+    }).join("")||'<p class="muted">No customer accounts match this search.</p>';
+  }
   async function loadUsers(){
     if(!usersMessage||!usersList)return;
     usersMessage.textContent="Loading registered customers…";
     usersList.innerHTML="";
     if(usersRefresh)usersRefresh.disabled=true;
     try{
-      const data=await request("/api/admin/users");
-      const users=data.users||[];
-      usersMessage.textContent="Registered accounts: "+Number(data.total||users.length)+" · Showing latest "+users.length;
-      usersList.innerHTML=users.map(customer=>{
-        const displayName=[customer.first_name,customer.username?"@"+customer.username:""].filter(Boolean).join(" · ")||"Telegram customer";
-        return '<div class="item"><div class="item-top"><strong>'+esc(displayName)+'</strong><span class="pill">'+esc(customer.status||"unknown")+'</span></div>'+
-          '<div class="muted">Customer ID: '+esc(customer.id)+' · Telegram ID: '+esc(customer.telegram_id)+'</div>'+
-          '<div class="muted">Wallet: '+esc(money(customer.wallet_balance_cents,"USDT"))+'</div>'+
-          '<small>Registered: '+esc(formatDate(customer.created_at))+'</small></div>';
-      }).join("")||'<p class="muted">No customer accounts found.</p>';
+      const allUsers=[];
+      let offset=0;
+      let hasMore=true;
+      while(hasMore){
+        const data=await request("/api/admin/users?limit=500&offset="+offset);
+        const page=data.users||[];
+        allUsers.push(...page);
+        offset+=page.length;
+        hasMore=!!data.pagination?.has_more&&page.length>0;
+      }
+      adminCustomers=allUsers;
+      renderAdminUsers();
     }catch(error){usersMessage.textContent="Could not load customers: "+error.message;}
     finally{if(usersRefresh)usersRefresh.disabled=false;}
   }
+  const userSearch=document.getElementById("admin-user-search");
+  if(userSearch)userSearch.oninput=renderAdminUsers;
+  if(usersList)usersList.addEventListener("click",async event=>{
+    const item=event.target.closest("[data-managed-user-id]");
+    if(!item)return;
+    const customer=adminCustomers.find(x=>Number(x.id)===Number(item.dataset.managedUserId));
+    if(!customer)return;
+    if(event.target.closest(".adjust-customer-balance")){
+      const direction=prompt("Enter CREDIT to add funds or DEBIT to deduct funds:","CREDIT");
+      if(direction===null)return;
+      const normalized=direction.trim().toLowerCase();
+      if(!["credit","debit"].includes(normalized)){alert("Enter CREDIT or DEBIT.");return;}
+      const amount=Number(prompt("Enter amount in USDT (example: 10.00):",""));
+      const amountCents=Math.round(amount*100);
+      if(!Number.isFinite(amount)||amount<=0||!Number.isSafeInteger(amountCents)||amountCents>100000000){alert("Enter a valid amount up to 1,000,000 USDT.");return;}
+      const reason=prompt("Reason for this wallet adjustment (at least 8 characters):","");
+      if(reason===null)return;
+      if(reason.trim().length<8){alert("Please enter a clear reason of at least 8 characters.");return;}
+      if(!confirm((normalized==="credit"?"Add ":"Deduct ")+amount.toFixed(2)+" USDT "+(normalized==="credit"?"to ":"from ")+(customer.first_name||"this customer")+"'s wallet? This will be recorded in the wallet ledger."))return;
+      const button=event.target.closest(".adjust-customer-balance");button.disabled=true;
+      try{
+        const result=await request("/api/admin/users/balance","POST",{user_id:Number(customer.id),direction:normalized,amount_cents:amountCents,reason:reason.trim()});
+        alert("Wallet updated. New balance: "+money(result.wallet_balance_cents,"USDT"));
+        await loadUsers();
+      }catch(error){alert("Wallet adjustment failed: "+error.message);button.disabled=false;}
+      return;
+    }
+    if(event.target.closest(".message-customer")){
+      const message=prompt("Write a private Telegram bot message for "+(customer.username?"@"+customer.username:(customer.first_name||"this customer"))+":","");
+      if(message===null||!message.trim())return;
+      if(message.trim().length>4096){alert("Telegram messages can contain up to 4,096 characters.");return;}
+      if(!confirm("Send this private message to the selected customer through your bot?"))return;
+      const button=event.target.closest(".message-customer");button.disabled=true;
+      try{
+        await request("/api/admin/users/message","POST",{user_id:Number(customer.id),message:message.trim()});
+        alert("Telegram message sent.");
+      }catch(error){alert("Message could not be sent: "+error.message);button.disabled=false;}
+    }
+  });
+
+  const broadcastSend=document.getElementById("admin-broadcast-send");
+  const broadcastRefresh=document.getElementById("admin-broadcast-refresh");
+  const broadcastStatus=document.getElementById("admin-broadcast-message-status");
+  const broadcastHistory=document.getElementById("admin-broadcast-history");
+  async function loadBroadcastHistory(){
+    if(!broadcastHistory)return;
+    try{
+      const data=await request("/api/admin/broadcasts");
+      broadcastHistory.innerHTML=(data.broadcasts||[]).map(campaign=>{
+        const progress=Number(campaign.sent_count||0)+Number(campaign.failed_count||0);
+        return '<div class="item"><div class="item-top"><strong>Broadcast #'+Number(campaign.id)+'</strong><span class="pill">'+esc(campaign.status)+'</span></div>'+
+          '<p>'+esc(campaign.message_text||"(Attachment only)")+'</p>'+
+          '<div class="muted">Attachment: '+esc(campaign.media_file_name||"None")+'</div>'+
+          '<div class="muted">Recipients: '+Number(campaign.total_count||0)+' · Sent: '+Number(campaign.sent_count||0)+' · Failed: '+Number(campaign.failed_count||0)+' · Remaining: '+Number(campaign.pending_count||0)+'</div>'+
+          '<small>Created: '+esc(formatDate(campaign.created_at))+'</small></div>';
+      }).join("")||'<p class="muted">No broadcast campaigns yet.</p>';
+    }catch(error){broadcastHistory.innerHTML='<p class="error">Could not load broadcast history: '+esc(error.message)+'</p>';}
+  }
+  if(broadcastSend)broadcastSend.onclick=async()=>{
+    const message=document.getElementById("admin-broadcast-message").value.trim();
+    const file=document.getElementById("admin-broadcast-file").files?.[0];
+    if(!message&&!file){broadcastStatus.textContent="Enter a message or select a TXT / MP4 attachment.";return;}
+    if(file&&file.size>20*1024*1024){broadcastStatus.textContent="File is too large. Maximum size is 20 MB.";return;}
+    if(file&&message.length>1024){broadcastStatus.textContent="Caption must be 1,024 characters or fewer when an attachment is selected.";return;}
+    if(!file&&message.length>4096){broadcastStatus.textContent="Message must be 4,096 characters or fewer.";return;}
+    if(!confirm("Create a broadcast for ALL active registered users? Messages will be sent by the Telegram bot in queued batches."))return;
+    broadcastSend.disabled=true;broadcastStatus.textContent="Preparing broadcast and uploading attachment…";
+    try{
+      const form=new FormData();form.append("message",message);if(file)form.append("file",file,file.name);
+      const result=await request("/api/admin/broadcasts","POST",form);
+      broadcastStatus.textContent="Broadcast #"+result.campaign_id+" queued for "+Number(result.total_recipients||0)+" active users. Delivery will continue in background batches.";
+      document.getElementById("admin-broadcast-message").value="";
+      document.getElementById("admin-broadcast-file").value="";
+      await loadBroadcastHistory();
+    }catch(error){broadcastStatus.textContent="Broadcast creation failed: "+error.message;}
+    finally{broadcastSend.disabled=false;}
+  };
+  if(broadcastRefresh)broadcastRefresh.onclick=loadBroadcastHistory;
+  loadBroadcastHistory();
+  if(window.adminBroadcastRefreshTimer)clearInterval(window.adminBroadcastRefreshTimer);
+  window.adminBroadcastRefreshTimer=setInterval(loadBroadcastHistory,15000);
   if(activityRefresh)activityRefresh.onclick=loadActivity;
   if(usersRefresh)usersRefresh.onclick=loadUsers;
   loadActivity();
