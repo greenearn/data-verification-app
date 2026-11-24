@@ -77,6 +77,39 @@ button{cursor:pointer}
 @keyframes spin{to{transform:rotate(360deg)}}
 footer{text-align:center;border-top:1px solid var(--line);padding:17px;margin-top:25px;color:#72899b;font-size:10px}
 @media(max-width:480px){.grid,.category-content{grid-template-columns:1fr}.wrap{padding:14px 12px 35px}.row{grid-template-columns:1fr}}
+
+/* Professional light theme — scoped overrides; application logic unchanged. */
+:root{color-scheme:light;--bg:#f5f7fb;--panel:#ffffff;--line:#e3e8f0;--text:#172033;--muted:#667085;--mint:#2563eb;--red:#dc3545}
+body{background:#f5f7fb;color:#172033}
+.wrap{color:#172033}
+header{border-bottom-color:#e3e8f0}
+.brand .logo{background:linear-gradient(135deg,#2563eb,#8b5cf6);color:#fff}
+.brand small,p,.muted{color:#667085}
+.status,.pill{border-color:#dbeafe;color:#1d4ed8;background:#eff6ff}
+.nav a{color:#344054;background:#fff;border-color:#e3e8f0;box-shadow:0 1px 2px #1018280a}
+.panel,.service,.category{background:#fff;border-color:#e3e8f0;box-shadow:0 3px 14px #1018280a}
+.balance{background:linear-gradient(115deg,#2563eb,#7c3aed);border:0;color:#fff}
+.balance small{color:#e0e7ff}
+.category-toggle{color:#344054}
+.category-content{background:#fff}
+.service.selected{border-color:#2563eb;box-shadow:0 0 0 2px #dbeafe}
+.field{color:#344054}
+input,select,textarea{background:#fff;border-color:#d0d5dd;color:#172033}
+input:focus,select:focus,textarea:focus{border-color:#6366f1;box-shadow:0 0 0 3px #eef2ff}
+.btn{background:linear-gradient(110deg,#2563eb,#7c3aed);color:#fff;box-shadow:0 2px 5px #3440541f}
+.btn:nth-of-type(3n){background:linear-gradient(110deg,#0891b2,#06b6d4)}
+.btn:nth-of-type(4n){background:linear-gradient(110deg,#059669,#10b981)}
+.secondary{background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;box-shadow:none}
+.danger{background:#fff1f2;color:#be123c;border:1px solid #fecdd3;box-shadow:none}
+.note{background:#f1f5f9;color:#475467;border:1px solid #e2e8f0}
+.success{color:#15803d}.error{color:#b42318}
+.admin-label{color:#4f46e5}
+.notification-button,.notification-panel{background:#fff;color:#172033;border-color:#e3e8f0}
+.notification-panel{box-shadow:0 12px 35px #10182820}
+.item{border-bottom-color:#e3e8f0}
+footer{border-top-color:#e3e8f0;color:#667085}
+
+.service-heading{display:flex;align-items:center;gap:11px;min-height:48px}.service-logo{width:34px;height:34px;object-fit:contain;flex:0 0 34px}.service-logo-fallback{width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border-radius:10px;background:linear-gradient(135deg,#dbeafe,#ede9fe);color:#4338ca;font-weight:900;font-size:16px}.service-heading p{margin:3px 0 0}.service strong{display:block}
 </style>
 </head>
 <body>
@@ -1477,6 +1510,42 @@ function getPrepareServices(){
   return selectable;
 }
 
+const BRAND_LOGOS = {
+  whatsapp:"whatsapp",telegram:"telegram",viber:"viber",imessage:"apple",
+  rcs:"android",facebook:"facebook",apple:"apple",amazon:"amazon",
+  instagram:"instagram",max:"",netflix:"netflix",paypal:"paypal",line:"line",
+  zalo:"",linkedin:"linkedin",twitter:"x",carrier:"",airbnb:"airbnb",
+  tiktok:"tiktok",signal:"signal",microsoft:"microsoft",snapchat:"snapchat",
+  binance:"binance",kucoin:""
+};
+function logoForService(s){
+  const c=String(s.resource_code||"");
+  if(c.startsWith("whatsapp"))return BRAND_LOGOS.whatsapp;
+  if(c.startsWith("telegram"))return BRAND_LOGOS.telegram;
+  if(c.startsWith("viber"))return BRAND_LOGOS.viber;
+  if(c.startsWith("imessage"))return BRAND_LOGOS.imessage;
+  if(c.startsWith("rcs"))return BRAND_LOGOS.rcs;
+  if(c.startsWith("facebook"))return BRAND_LOGOS.facebook;
+  if(c.startsWith("apple"))return BRAND_LOGOS.apple;
+  if(c.startsWith("amazon"))return BRAND_LOGOS.amazon;
+  if(c.startsWith("instagram"))return BRAND_LOGOS.instagram;
+  if(c.startsWith("max"))return BRAND_LOGOS.max;
+  if(c.startsWith("netflix"))return BRAND_LOGOS.netflix;
+  if(c.startsWith("paypal"))return BRAND_LOGOS.paypal;
+  if(c.startsWith("line"))return BRAND_LOGOS.line;
+  if(c.startsWith("zalo"))return BRAND_LOGOS.zalo;
+  if(c.startsWith("linkedin"))return BRAND_LOGOS.linkedin;
+  if(c.startsWith("twitter"))return BRAND_LOGOS.twitter;
+  if(c.includes("carrier"))return BRAND_LOGOS.carrier;
+  if(c.startsWith("airbnb"))return BRAND_LOGOS.airbnb;
+  if(c.startsWith("tiktok"))return BRAND_LOGOS.tiktok;
+  if(c.startsWith("signal"))return BRAND_LOGOS.signal;
+  if(c.startsWith("microsoft"))return BRAND_LOGOS.microsoft;
+  if(c.startsWith("snapchat"))return BRAND_LOGOS.snapchat;
+  if(c.startsWith("binance"))return BRAND_LOGOS.binance;
+  return "";
+}
+
 function renderServices(){
   const box=document.getElementById("services-list");
   const select=document.getElementById("service-select");
@@ -1505,7 +1574,8 @@ function renderServices(){
 
     items.forEach(s=>{
       const selected=s.resource_code===selectedCode;
-      const status=!s.configured?"Pricing not configured":
+      const status=String(s.task_type||"")==="VERIFY_IN_DASHBOARD"?"API code needs verification":
+        !s.configured?"Pricing not configured":
         !s.enabled?"Not active":
         !s.can_order?"Ordering unavailable":"Available";
 
@@ -1520,9 +1590,13 @@ function renderServices(){
         )+" / minimum order"
         :"Price not configured";
 
+      const logoSlug=logoForService(s);
+      const logoHtml=logoSlug
+        ? `<img class="service-logo" src="https://cdn.simpleicons.org/${logoSlug}" alt="" loading="lazy" onerror="this.style.display='none'">`
+        : `<span class="service-logo-fallback">${esc((s.name||"?").slice(0,1).toUpperCase())}</span>`;
+      const apiConfigured=String(s.task_type||"")!=="VERIFY_IN_DASHBOARD";
       html+=`<article class="service ${selected?"selected":""}" data-code="${esc(s.resource_code)}">
-        <strong>${esc(s.name)}</strong>
-        <p>${esc(s.description)}</p>
+        <div class="service-heading">${logoHtml}<div><strong>${esc(s.name)}</strong><p>${esc(s.description)}</p></div></div>
         <span class="pill">${esc(status)}</span>
         <p>Minimum quantity: ${s.minimum_order_quantity==null?"Not set":Number(s.minimum_order_quantity).toLocaleString()}</p>
         <p>${esc(priceText)}</p>
