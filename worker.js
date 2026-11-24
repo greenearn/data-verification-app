@@ -1184,12 +1184,21 @@ async function submitStagedProviderTask(env, uploadId) {
     if (!["csv", "txt"].includes(extension)) throw new Error("unsupported_file_type");
     const entries = parseProviderPhoneEntries(content, extension);
 
-    // One-time, explicitly approved phoneCheck test guard:
-    // exactly 2,000 unique numbers and a maximum estimated provider cost of $0.30.
-    // This is an application-side estimate guard, not a provider-side price guarantee.
-    const testQuantityLimit = 2000;
-    const maxProviderCostCents = 30;
-    if (entries.length !== testQuantityLimit) {
+    const paidOrder = await env.DB.prepare(`
+      SELECT id, quantity, estimated_provider_cost_cents, status
+      FROM orders
+      WHERE result_reference = ? AND resource_code = 'phoneCheck'
+      LIMIT 1
+    `).bind("upload:" + uploadId).first();
+    if (paidOrder) {
+      if (paidOrder.status !== "pending" || Number(paidOrder.quantity) !== entries.length) {
+        throw new Error("paid_order_not_ready_or_quantity_mismatch");
+      }
+      if (entries.length < 2000 || entries.length > 10000) {
+        throw new Error("provider_quantity_out_of_range");
+      }
+    } else if (entries.length !== 2000) {
+      // Preserve the existing admin-only test path for unbilled uploads.
       throw new Error("provider_test_requires_exactly_2000_unique_numbers");
     }
 
@@ -1212,7 +1221,11 @@ async function submitStagedProviderTask(env, uploadId) {
     const estimatedProviderCostCents = Math.ceil(
       configuredProviderCost * entries.length / configuredUnitQuantity
     );
-    if (estimatedProviderCostCents > maxProviderCostCents) {
+    if (paidOrder &&
+        estimatedProviderCostCents > Number(paidOrder.estimated_provider_cost_cents)) {
+      throw new Error("provider_cost_now_exceeds_paid_order_estimate");
+    }
+    if (!paidOrder && estimatedProviderCostCents > 30) {
       throw new Error("provider_cost_exceeds_approved_30_cent_limit");
     }
 
@@ -1241,7 +1254,14 @@ async function submitStagedProviderTask(env, uploadId) {
         admin_note='Submitted to CheckNumber provider task ' || ?,
         reviewed_at=CURRENT_TIMESTAMP WHERE id=?
     `).bind(providerTaskId, uploadId).run();
-    return { id: localId, provider_task_id: providerTaskId, status: "submitted", quantity: entries.length };
+    if (paidOrder) {
+      await env.DB.prepare(`
+        UPDATE orders SET provider_task_id=?, status='processing'
+        WHERE id=? AND status='pending' AND result_reference=?
+      `).bind(providerTaskId, paidOrder.id, "upload:" + uploadId).run();
+    }
+    return { id: localId, provider_task_id: providerTaskId, status: "submitted", quantity: entries.length,
+      paid_order_id: paidOrder?.id || null };
   } catch (error) {
     const definiteProviderRejection =
       [400, 401, 402, 403, 404, 413].includes(Number(error.providerStatus));
@@ -1254,6 +1274,12 @@ async function submitStagedProviderTask(env, uploadId) {
       finalStatus,
       String(error.message || "submission_failed").slice(0, 200), localId
     ).run();
+    if (finalStatus === "failed") {
+      await env.DB.prepare(`
+        UPDATE orders SET status='failed'
+        WHERE result_reference=? AND status='pending'
+      `).bind("upload:" + uploadId).run();
+    }
     throw error;
   }
 }
@@ -1273,10 +1299,16 @@ async function processProviderTask(env, task) {
   const status = String(provider.status || "").toLowerCase();
 
   if (status === "failed") {
-    await env.DB.prepare(`
-      UPDATE provider_tasks SET status='failed', provider_status=?, total=?, success=?, failure=?,
-        last_error='provider_task_failed', updated_at=CURRENT_TIMESTAMP WHERE id=?
-    `).bind(status, Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE provider_tasks SET status='failed', provider_status=?, total=?, success=?, failure=?,
+          last_error='provider_task_failed', updated_at=CURRENT_TIMESTAMP WHERE id=?
+      `).bind(status, Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id),
+      env.DB.prepare(`
+        UPDATE orders SET status='failed'
+        WHERE result_reference=? AND provider_task_id=? AND status='processing'
+      `).bind("upload:" + task.upload_id, task.provider_task_id)
+    ]);
     await sendProviderTaskNotice(env, task.telegram_id, "Your verification task #" + task.id + " failed at the provider. Please contact support before resubmitting.");
     return "failed";
   }
@@ -1330,11 +1362,17 @@ async function processProviderTask(env, task) {
     throw new Error("telegram_result_delivery_failed");
   }
 
-  await env.DB.prepare(`
-    UPDATE provider_tasks SET status='completed', provider_status='exported',
-      result_url=NULL, total=?, success=?, failure=?, last_error=NULL,
-      completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?
-  `).bind(Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id).run();
+  await env.DB.batch([
+    env.DB.prepare(`
+      UPDATE provider_tasks SET status='completed', provider_status='exported',
+        result_url=NULL, total=?, success=?, failure=?, last_error=NULL,
+        completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?
+    `).bind(Number(provider.total || 0), Number(provider.success || 0), Number(provider.failure || 0), task.id),
+    env.DB.prepare(`
+      UPDATE orders SET status='completed'
+      WHERE result_reference=? AND provider_task_id=? AND status='processing'
+    `).bind("upload:" + task.upload_id, task.provider_task_id)
+  ]);
   await sendProviderTaskNotice(env, task.telegram_id, "Your verification result for task #" + task.id + " has been delivered in this Telegram chat.");
   return "completed";
 }
@@ -2351,7 +2389,8 @@ if (
             display_order: Number(row.display_order),
             configured,
             enabled: configured && Number(row.enabled) === 1,
-            can_order: false,
+            can_order: row.resource_code === "phoneCheck" &&
+              configured && Number(row.enabled) === 1 && row.currency === "USDT",
             minimum_order_quantity:
               configured ? Number(row.minimum_order_quantity) : null,
             pricing_unit_quantity:
@@ -2369,8 +2408,8 @@ if (
           ok: true,
           categories,
           services,
-          ordering_enabled: false,
-          message: "Catalogue loaded. Customer ordering is disabled."
+          ordering_enabled: services.some(service => service.can_order),
+          message: "Phone Number Validation orders are available when enabled by the administrator; other services are not connected yet."
         }, 200, origin);
       } catch (error) {
         return json({
@@ -2468,6 +2507,7 @@ if (
             AND c.is_listed = 1
             AND sc.is_listed = 1
             AND p.enabled = 1
+            AND c.resource_code = 'phoneCheck'
           LIMIT 1
         `).bind(resourceCode).first();
 
@@ -2761,7 +2801,10 @@ return json({
             currency,
             status,
             result_reference,
-            created_at
+            created_at,
+            EXISTS(SELECT 1 FROM wallet_ledger l
+              WHERE l.reference_id='order_refund:' || orders.id
+                AND l.transaction_type='order_refund') AS refunded
           FROM orders
           WHERE user_id = ?
           ORDER BY id DESC
@@ -3580,9 +3623,8 @@ if (request.method === "POST" && url.pathname === "/api/admin/provider-tasks/del
   }
 }
 
-// PHONE CHECK: PRICE QUOTE ONLY
-    // Minimum quantity is read from saved pricing.
-    // No order is created and no wallet is deducted.
+// PHONE CHECK: CUSTOMER PRICE QUOTE
+    // The final order is recalculated server-side from the uploaded file.
     // ------------------------------------------------
 
     
@@ -3672,8 +3714,8 @@ if (
       total_price_cents: quote.totalCents,
       currency: pricing.currency,
       service_enabled: Number(pricing.enabled) === 1,
-      can_order: false,
-      message: "Price estimate only. Customer ordering is disabled."
+      can_order: true,
+      message: "Quote calculated from current USDT pricing. Upload an authorised file to place an order."
     }, 200, origin);
 
   } catch (error) {
