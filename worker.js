@@ -2504,11 +2504,14 @@ if (
           const lines = content.split(/\r?\n/);
           const uniqueNumbers = new Set();
           let invalidCount = 0;
+          let nonEmptyLineCount = 0;
+          let validEntryCount = 0;
 
           for (let i = 0; i < lines.length; i++) {
             let value = lines[i].trim();
 
             if (!value) continue;
+            nonEmptyLineCount++;
 
             if (extension === "csv") {
               value = value
@@ -2531,16 +2534,26 @@ if (
               continue;
             }
 
+            validEntryCount++;
             uniqueNumbers.add(value);
           }
 
           consentNumbers = [...uniqueNumbers];
+          const duplicateCount = validEntryCount - consentNumbers.length;
+          const uploadStats = {
+            non_empty_lines: nonEmptyLineCount,
+            valid_entries: validEntryCount,
+            unique_valid_numbers: consentNumbers.length,
+            duplicate_entries: duplicateCount,
+            invalid_entries: invalidCount
+          };
 
           if (invalidCount > 0) {
             return json({
               ok: false,
               error: "invalid_phone_numbers",
-              invalid_count: invalidCount
+              invalid_count: invalidCount,
+              ...uploadStats
             }, 400, origin);
           }
 
@@ -2553,7 +2566,8 @@ if (
               error: "invalid_phone_number_count",
               minimum: 2000,
               maximum: 10000,
-              received: consentNumbers.length
+              received: consentNumbers.length,
+              ...uploadStats
             }, 400, origin);
           }
         }
