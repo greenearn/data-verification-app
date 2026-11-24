@@ -1036,6 +1036,25 @@ function safeProviderResultUrl(value, env) {
   } catch { return null; }
 }
 
+async function fetchProviderResult(value, env) {
+  let current = safeProviderResultUrl(value, env);
+  if (!current) throw new Error("provider_result_url_not_allowlisted");
+  for (let redirects = 0; redirects <= 3; redirects++) {
+    const response = await fetch(current, { redirect: "manual" });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("Location");
+      if (!location || redirects === 3) throw new Error("provider_result_redirect_blocked");
+      const next = new URL(location, current).toString();
+      current = safeProviderResultUrl(next, env);
+      if (!current) throw new Error("provider_result_redirect_not_allowlisted");
+      continue;
+    }
+    if (!response.ok) throw new Error("provider_result_download_failed");
+    return response;
+  }
+  throw new Error("provider_result_redirect_limit");
+}
+
 function parseCsvFields(line) {
   const fields = [];
   let value = "";
@@ -1237,11 +1256,7 @@ async function processProviderTask(env, task) {
 
   const resultUrl = safeProviderResultUrl(provider.result_url, env);
   if (!resultUrl) throw new Error("provider_result_url_not_allowlisted");
-  const resultResponse = await fetch(resultUrl, { redirect: "manual" });
-  if (resultResponse.status >= 300 && resultResponse.status < 400) {
-    throw new Error("provider_result_redirect_blocked");
-  }
-  if (!resultResponse.ok) throw new Error("provider_result_download_failed");
+  const resultResponse = await fetchProviderResult(resultUrl, env);
   const resultBytes = await resultResponse.arrayBuffer();
   if (!resultBytes.byteLength || resultBytes.byteLength > 20 * 1024 * 1024) throw new Error("provider_result_size_invalid");
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error("telegram_storage_configuration_missing");
