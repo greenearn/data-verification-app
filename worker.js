@@ -1092,10 +1092,11 @@ async function submitStagedProviderTask(env, uploadId) {
     if (!bytes.byteLength || bytes.byteLength > 20 * 1024 * 1024) throw new Error("provider_file_size_invalid");
     const content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     const extension = String(upload.file_name || "").toLowerCase().split(".").pop();
-    const entries = content.split(/\r?\n/).map(line => {
+    const parsedEntries = content.split(/\r?\n/).map(line => {
       const value = extension === "csv" ? line.split(",")[0] : line;
       return value.trim().replace(/^["']|["']$/g, "");
     }).filter(Boolean);
+    const entries = [...new Set(parsedEntries)];
     if (entries[0] && ["phone","phone_number","number"].includes(entries[0].toLowerCase())) {
       entries.shift();
     }
@@ -1103,7 +1104,9 @@ async function submitStagedProviderTask(env, uploadId) {
     if (entries.some(x => !/^\+?[1-9]\d{7,14}$/.test(x))) throw new Error("invalid_phone_numbers");
 
     const form = new FormData();
-    form.append("file", new Blob([bytes], { type: "text/plain" }), upload.file_name || "numbers.txt");
+    const normalizedFile = entries.join("\n") + "\n";
+    form.append("file", new Blob([normalizedFile], { type: "text/plain" }),
+      String(upload.file_name || "numbers.txt").replace(/\.(csv|txt)$/i, "") + ".txt");
     form.append("task_type", "phoneCheck");
 
     // Never auto-retry task creation: a timeout may happen after provider acceptance.
