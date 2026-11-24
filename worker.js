@@ -1076,6 +1076,8 @@ function safeProviderResultUrl(value, env) {
         url.port || url.hash || !base.hostname) return null;
     const allowedHosts = new Set([
       base.hostname.toLowerCase(),
+      "api.checknumber.ai",
+      "api.nchk.cc",
       "wapic.s3.ap-southeast-1.amazonaws.com",
       ...String(env.CN_RESULT_HOSTS || "").split(",")
         .map(host => host.trim().toLowerCase())
@@ -1206,6 +1208,10 @@ async function providerApi(env, path, options = {}) {
   if (data && data.data && typeof data.data === "object" && !Array.isArray(data.data)) {
     data = { ...data, ...data.data };
   }
+  if (data.total == null && data.total_count != null) data.total = data.total_count;
+  if (data.success == null && data.valid_count != null) data.success = data.valid_count;
+  if (data.failure == null && data.invalid_count != null) data.failure = data.invalid_count;
+  if (String(data.status||"").toLowerCase() === "completed") data.status = "exported";
   return data;
 }
 
