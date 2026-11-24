@@ -596,7 +596,7 @@ function wireNotifications(){
 
   notificationPollTimer=setInterval(()=>{
     loadNotifications(true);
-  },45000);
+  },15000);
 }
   async function loadRequestHistory(){
   const message=document.getElementById("request-history-message");
@@ -895,8 +895,8 @@ async function wireSupportAdmin(){
   document.getElementById("support-admin-send").onclick=async()=>{
     const input=document.getElementById("support-admin-reply"),message=input.value.trim();if(!selected||!message)return;
     const button=document.getElementById("support-admin-send");button.disabled=true;
-    try{await request("/api/admin/support/chats/reply","POST",{conversation_id:selected,message});input.value="";await loadThread();await loadInbox();}
-    catch(e){document.getElementById("support-admin-thread-title").textContent=e.message;}finally{button.disabled=false;}
+    try{const result=await request("/api/admin/support/chats/reply","POST",{conversation_id:selected,message});input.value="";await loadThread();await loadInbox();if(!result.telegram_delivered){alert("Reply saved and the customer has an in-app notification, but Telegram delivery failed: "+(result.telegram_error||"unknown error")+". The customer can still read the reply in the Support chat inside the app.");}}
+    catch(e){document.getElementById("support-admin-thread-title").textContent="Reply failed: "+e.message;}finally{button.disabled=false;}
   };
   document.getElementById("support-inbox-refresh").onclick=loadInbox;
   await loadInbox();
@@ -2835,8 +2835,9 @@ function wireAdminActivityAndUsers(){
       if(!confirm("Send this private message to the selected customer through your bot?"))return;
       const button=event.target.closest(".message-customer");button.disabled=true;
       try{
-        await request("/api/admin/users/message","POST",{user_id:Number(customer.id),message:message.trim()});
-        alert("Telegram message sent.");
+        const result=await request("/api/admin/users/message","POST",{user_id:Number(customer.id),message:message.trim()});
+        if(result.telegram_delivered){alert("Telegram message sent successfully.");}
+        else{alert("The message was saved as an in-app notification, but Telegram delivery failed: "+(result.telegram_error||"unknown error")+". The customer can read it in the Notifications section when they open the app.");}
       }catch(error){alert("Message could not be sent: "+error.message);button.disabled=false;}
     }
   });

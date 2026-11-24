@@ -5029,7 +5029,55 @@ if (url.pathname === "/api/admin/support/chats/messages" && request.method === "
   try{await requireAdmin(request,env);const id=Number(url.searchParams.get("conversation_id"));if(!Number.isInteger(id)||id<1)return json({ok:false,error:"invalid_conversation_id"},400,origin);const c=await env.DB.prepare("SELECT c.id,u.telegram_id,u.username,u.first_name FROM support_conversations c JOIN users u ON u.id=c.user_id WHERE c.id=?").bind(id).first();if(!c)return json({ok:false,error:"conversation_not_found"},404,origin);const r=await env.DB.prepare("SELECT id,sender_type,message,created_at FROM support_messages WHERE conversation_id=? ORDER BY id ASC LIMIT 300").bind(id).all();await env.DB.prepare("UPDATE support_messages SET read_at=CURRENT_TIMESTAMP WHERE conversation_id=? AND sender_type='customer' AND read_at IS NULL").bind(id).run();return json({ok:true,conversation:c,messages:r.results||[]},200,origin);}catch(e){return json({ok:false,error:e.message},e.message==="admin_unlock_required"?423:e.message==="unauthorized"?401:403,origin);}
 }
 if (url.pathname === "/api/admin/support/chats/reply" && request.method === "POST") {
-  try{const a=await requireAdmin(request,env),b=await readBody(request),id=Number(b.conversation_id),msg=String(b.message||"").trim();if(!Number.isInteger(id)||id<1||!msg||msg.length>2000)return json({ok:false,error:"invalid_support_reply"},400,origin);const c=await env.DB.prepare("SELECT id FROM support_conversations WHERE id=?").bind(id).first();if(!c)return json({ok:false,error:"conversation_not_found"},404,origin);await env.DB.prepare("INSERT INTO support_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'admin',?,?)").bind(id,a.id,msg).run();await env.DB.prepare("UPDATE support_conversations SET last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(id).run();return json({ok:true},201,origin);}catch(e){return json({ok:false,error:e.message},e.message==="admin_unlock_required"?423:e.message==="unauthorized"?401:403,origin);}
+  try {
+    const admin = await requireAdmin(request, env);
+    const body = await readBody(request);
+    const id = Number(body.conversation_id);
+    const message = String(body.message || "").trim();
+    if (!Number.isInteger(id) || id < 1 || !message || message.length > 2000) {
+      return json({ok:false,error:"invalid_support_reply"},400,origin);
+    }
+    const customer = await env.DB.prepare(
+      "SELECT c.id,c.user_id,u.telegram_id FROM support_conversations c JOIN users u ON u.id=c.user_id WHERE c.id=?"
+    ).bind(id).first();
+    if (!customer) return json({ok:false,error:"conversation_not_found"},404,origin);
+
+    await env.DB.prepare(
+      "INSERT INTO support_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'admin',?,?)"
+    ).bind(id,admin.id,message).run();
+    await env.DB.prepare(
+      "UPDATE support_conversations SET last_message_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?"
+    ).bind(id).run();
+
+    // Always create an in-app notification so the reply is visible even when
+    // Telegram cannot deliver a private message to a user who has not started the bot.
+    await createUserNotification(env,customer.user_id,"New support reply",message,"support_reply",id);
+
+    let telegramDelivered = false;
+    let telegramError = null;
+    if (!env.TELEGRAM_BOT_TOKEN) {
+      telegramError = "telegram_bot_not_configured";
+    } else {
+      try {
+        const telegramResponse = await fetch(
+          `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+          {method:"POST",headers:{"Content-Type":"application/json"},
+           body:JSON.stringify({chat_id:String(customer.telegram_id),text:"Support team replied:\\n\\n"+message})}
+        );
+        const telegramResult = await telegramResponse.json();
+        telegramDelivered = !!(telegramResponse.ok && telegramResult.ok);
+        if (!telegramDelivered) telegramError = String(telegramResult.description || "telegram_delivery_failed").slice(0,300);
+      } catch (deliveryError) {
+        telegramError = String(deliveryError.message || "telegram_delivery_failed").slice(0,300);
+      }
+    }
+    return json({ok:true,telegram_delivered:telegramDelivered,telegram_error:telegramError},201,origin);
+  } catch (error) {
+    const status = error.message === "admin_unlock_required" ? 423 :
+      error.message === "unauthorized" ? 401 :
+      error.message === "admin_access_required" ? 403 : 500;
+    return json({ok:false,error:error.message || "support_reply_failed"},status,origin);
+  }
 }
 
 
@@ -5111,19 +5159,33 @@ if (url.pathname === "/api/admin/support/chats/reply" && request.method === "POS
           "SELECT id,telegram_id FROM users WHERE id=? AND status='active' LIMIT 1"
         ).bind(userId).first();
         if (!target) return json({ok:false,error:"user_not_found_or_inactive"},404,origin);
-        const response = await fetch(
-          `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
-          {method:"POST",headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({chat_id:String(target.telegram_id),text:message})}
-        );
-        const result = await response.json();
-        if (!response.ok || !result.ok) {
-          return json({ok:false,error:"telegram_message_failed",details:String(result.description||"Telegram rejected the message").slice(0,300)},502,origin);
+
+        // Keep a durable in-app copy even if Telegram rejects the private message.
+        await createUserNotification(env,target.id,"Private message from Admin",message,"admin_message");
+        let telegramDelivered = false;
+        let telegramError = null;
+        if (!env.TELEGRAM_BOT_TOKEN) {
+          telegramError = "telegram_bot_not_configured";
+        } else {
+          try {
+            const response = await fetch(
+              `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+              {method:"POST",headers:{"Content-Type":"application/json"},
+                body:JSON.stringify({chat_id:String(target.telegram_id),text:message})}
+            );
+            const result = await response.json();
+            telegramDelivered = !!(response.ok && result.ok);
+            if (!telegramDelivered) telegramError = String(result.description || "telegram_message_failed").slice(0,300);
+            if (telegramDelivered) {
+              await writeAdminAudit(env,admin.telegram_id,String(target.telegram_id),"customer_personal_message_sent",{
+                user_id:userId,message_length:message.length
+              });
+            }
+          } catch (deliveryError) {
+            telegramError = String(deliveryError.message || "telegram_message_failed").slice(0,300);
+          }
         }
-        await writeAdminAudit(env,admin.telegram_id,String(target.telegram_id),"customer_personal_message_sent",{
-          user_id:userId,message_length:message.length
-        });
-        return json({ok:true,user_id:userId,message_id:result.result?.message_id||null},200,origin);
+        return json({ok:true,user_id:userId,telegram_delivered:telegramDelivered,telegram_error:telegramError},200,origin);
       } catch (error) {
         const status=error.message==="unauthorized"?401:
           error.message==="admin_unlock_required"?423:
