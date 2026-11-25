@@ -18,6 +18,7 @@ database_id = "0891dea4-f0e8-4831-ace4-51399ad7a347"
 # Keep these values in version control so deployments can restore them.
 [vars]
 CN_BASE_URL = "https://api.checknumber.ai"
+ZELNUM_BASE_URL = "https://api.zelnum.com/api/v1"
 TELEGRAM_STORAGE_CHAT_ID = "-1003768905030"
 
 # Preserve dashboard-only variables during Wrangler deployments.
