@@ -438,6 +438,8 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "GET /api/admin/provider-balance": "provider_balance",
   "GET /api/admin/zelnum/balance": "provider_balance",
   "GET /api/admin/zelnum/preflight": "catalogue_manage",
+  "GET /api/admin/zelnum/realtime": "catalogue_manage",
+  "POST /api/admin/zelnum/realtime/configure": "catalogue_manage",
   "GET /api/admin/zelnum/products": "catalogue_manage",
   "POST /api/admin/zelnum/catalogue/import": "catalogue_manage",
   "GET /api/admin/provider-tasks": "checknumber_validate",
@@ -866,6 +868,82 @@ async function importZelnumCatalogue(env) {
     bulk_products_imported:items.length,categories:categories.size,database_operations:result.length,
     pricing_enabled:false,customer_ordering_enabled:false,
     note:"Every imported bulk product remains disabled until you enter its actual account price and explicitly enable it. Realtime products are detected but are not yet customer-orderable."};
+}
+
+// Realtime quotes and customer checkout. Identifiers are hashed and never stored.
+let zelnumRealtimeCheckoutSchemaReady=false;
+async function ensureZelnumRealtimeCheckoutSchema(env){
+  if(zelnumRealtimeCheckoutSchemaReady)return;
+  await ensureZelnumRealtimeCatalogueSchema(env);
+  await env.DB.batch([
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS zelnum_realtime_quotes(
+      quote_id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,series TEXT NOT NULL,
+      product_ids_json TEXT NOT NULL,identifier_hash TEXT NOT NULL,country TEXT,
+      quote_token TEXT NOT NULL,quoted_total TEXT NOT NULL,customer_charge_cents INTEGER NOT NULL,
+      expires_at TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS zelnum_realtime_orders(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,idempotency_key TEXT NOT NULL,
+      request_hash TEXT NOT NULL,quote_id TEXT NOT NULL,provider_key TEXT NOT NULL,
+      order_id INTEGER,status TEXT NOT NULL DEFAULT 'reserved',result_json TEXT,last_error TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id,idempotency_key)
+    )`)
+  ]);
+  zelnumRealtimeCheckoutSchemaReady=true;
+}
+function zelnumCustomerChargeCents(usd){
+  const value=Number(usd);
+  if(!Number.isFinite(value)||value<0||value>1000000)throw new Error("invalid_zelnum_quote_amount");
+  // 200% markup means customer pays provider cost plus 200% (3x), USD:USDT 1:1.
+  return Math.ceil(value*30000-1e-8);
+}
+async function zelnumRealtimeProducts(env,series,ids){
+  await ensureZelnumRealtimeCatalogueSchema(env);
+  if(!Array.isArray(ids)||ids.length<1||ids.length>10||
+     ids.some(id=>!Number.isSafeInteger(Number(id))||Number(id)<1)||
+     new Set(ids.map(Number)).size!==ids.length)throw new Error("invalid_product_selection");
+  const rows=await env.DB.prepare(`SELECT product_id,slug,name,series,enabled
+    FROM zelnum_realtime_catalogue WHERE enabled=1 AND series=?`).bind(series).all();
+  const available=new Map((rows.results||[]).map(row=>[Number(row.product_id),row]));
+  const selected=ids.map(id=>available.get(Number(id)));
+  if(selected.some(row=>!row))throw new Error("realtime_product_unavailable");
+  return selected;
+}
+async function settleZelnumRealtimeOrder(env,local,providerResult){
+  const chargedUsd=Number(providerResult.total_charged??providerResult.charged_amount);
+  if(!Number.isFinite(chargedUsd)||chargedUsd<0)throw new Error("zelnum_charge_amount_missing");
+  const finalCents=zelnumCustomerChargeCents(chargedUsd);
+  const reserved=Number(local.customer_charge_cents)||0;
+  if(finalCents>reserved){
+    await env.DB.prepare("UPDATE zelnum_realtime_orders SET status='reconciliation_required',result_json=?,last_error='provider_charge_exceeded_quote',updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .bind(JSON.stringify(providerResult),local.id).run();
+    return {reconciliation_required:true,charged_usd:chargedUsd,customer_reserved_cents:reserved};
+  }
+  const refund=reserved-finalCents,orderId=Number(local.order_id);
+  if(refund>0){
+    await env.DB.batch([
+      env.DB.prepare(`INSERT OR IGNORE INTO wallet_ledger(user_id,amount_cents,transaction_type,reference_id,description)
+        SELECT user_id,?,'order_refund','order_refund:'||id,'Zelnum realtime unused quote refund'
+        FROM orders WHERE id=?`).bind(refund,orderId),
+      env.DB.prepare(`UPDATE users SET wallet_balance_cents=wallet_balance_cents+
+        (SELECT amount_cents FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')
+        WHERE id=? AND changes()>0 AND EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')`)
+        .bind("order_refund:"+orderId,local.user_id,"order_refund:"+orderId),
+      env.DB.prepare("UPDATE orders SET customer_charge_cents=?,status='completed',provider_task_id=? WHERE id=?")
+        .bind(finalCents,String(providerResult.request_id||""),orderId)
+    ]);
+  }else{
+    await env.DB.prepare("UPDATE orders SET status='completed',provider_task_id=? WHERE id=?")
+      .bind(String(providerResult.request_id||""),orderId).run();
+  }
+  await env.DB.prepare("UPDATE zelnum_realtime_orders SET status='completed',result_json=?,last_error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+    .bind(JSON.stringify(providerResult),local.id).run();
+  if(refund>0){
+    try{await createUserNotification(env,Number(local.user_id),"Zelnum realtime refund credited",
+      (refund/100).toFixed(2)+" USDT was returned because the final provider charge was lower than the quote.","order_refund",Number(local.user_id));}catch(e){}
+  }
+  return {charged_usd:chargedUsd,customer_charge_cents:finalCents,refund_cents:refund,order_id:orderId};
 }
 
 // --------------------------------------------------
@@ -4281,6 +4359,178 @@ if (request.method === "GET" && url.pathname === "/api/admin/provider-tasks") {
       error.message === "admin_access_required" ? 403 : 500;
     return json({ ok: false, error: error.message || "provider_tasks_failed" }, status, origin);
   }
+}
+
+// Customer-facing Zelnum realtime catalogue: only administrator-enabled products are visible.
+if(request.method==="GET"&&url.pathname==="/api/zelnum/realtime/catalogue"){
+  try{
+    await getSessionUser(request,env);
+    await ensureZelnumRealtimeCatalogueSchema(env);
+    const rows=await env.DB.prepare("SELECT product_id,slug,name,series FROM zelnum_realtime_catalogue WHERE enabled=1 ORDER BY series,name").all();
+    return json({ok:true,products:rows.results||[]},200,origin);
+  }catch(error){return json({ok:false,error:error.message||"realtime_catalogue_failed"},500,origin);}
+}
+if(request.method==="POST"&&url.pathname==="/api/zelnum/realtime/quote"){
+  try{
+    const user=await getSessionUser(request,env),body=await readBody(request);
+    const series=String(body.series||"").toLowerCase(),identifier=String(body.identifier||"").trim();
+    const country=series==="phone"?String(body.country||"").trim().toUpperCase():null;
+    if(!["phone","email"].includes(series)||!identifier||identifier.length>254||
+       (series==="email"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier))||
+       (series==="phone"&&(!/^\+?[1-9]\d{6,14}$/.test(identifier)||(!identifier.startsWith("+")&&!country)))||
+       (country&&!/^[A-Z]{2}$/.test(country))||body.consent_confirmed!==true)
+      return json({ok:false,error:"invalid_realtime_quote_request"},400,origin);
+    const ids=Array.isArray(body.product_ids)?body.product_ids.map(Number):[];
+    const products=await zelnumRealtimeProducts(env,series,ids);
+    const quoteResponse=await zelnumApi(env,"/realtime/quote/"+series,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({identifier,country,product_ids:ids})
+    });
+    const quote=quoteResponse.quote||quoteResponse.data?.quote;
+    if(!quote||!quote.quote_token||quote.total==null)throw new Error("zelnum_quote_response_invalid");
+    const total=Number(quote.total);
+    const customerCharge=zelnumCustomerChargeCents(total);
+    if(!Number.isFinite(total)||total<=0||customerCharge<1)throw new Error("zelnum_quote_amount_invalid");
+    await ensureZelnumRealtimeCheckoutSchema(env);
+    const quoteId=crypto.randomUUID().replace(/-/g,"");
+    const expiresAt=new Date(Date.now()+60000).toISOString();
+    await env.DB.prepare(`INSERT INTO zelnum_realtime_quotes
+      (quote_id,user_id,series,product_ids_json,identifier_hash,country,quote_token,quoted_total,customer_charge_cents,expires_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(quoteId,user.id,series,JSON.stringify(ids),await sha256(identifier),country,
+      String(quote.quote_token),String(quote.total),customerCharge,expiresAt).run();
+    return json({ok:true,quote_id:quoteId,series,products:products.map(p=>({product_id:p.product_id,name:p.name})),
+      provider_total_usd:total,customer_total_cents:customerCharge,currency:"USDT",markup_percentage:200,
+      expires_at:expiresAt},200,origin);
+  }catch(error){
+    const status=error.message==="unauthorized"?401:
+      error.message==="realtime_product_unavailable"?403:
+      error.message==="zelnum_request_failed"?(error.providerStatus===429?429:502):400;
+    return json({ok:false,error:error.message||"realtime_quote_failed",provider_status:error.providerStatus||null},status,origin);
+  }
+}
+if(request.method==="POST"&&url.pathname==="/api/zelnum/realtime/check"){
+  let local=null;
+  try{
+    const user=await getSessionUser(request,env),body=await readBody(request);
+    const quoteId=String(body.quote_id||""),key=String(body.idempotency_key||"");
+    const series=String(body.series||"").toLowerCase(),identifier=String(body.identifier||"").trim();
+    const ids=Array.isArray(body.product_ids)?body.product_ids.map(Number):[];
+    const country=series==="phone"?String(body.country||"").trim().toUpperCase():null;
+    if(!/^[a-f0-9]{32}$/.test(quoteId)||!/^[A-Za-z0-9_-]{12,100}$/.test(key)||
+       !["phone","email"].includes(series)||!identifier||identifier.length>254||
+       body.consent_confirmed!==true)return json({ok:false,error:"invalid_realtime_check_request"},400,origin);
+    const requestHash=await sha256(JSON.stringify({series,identifier,ids,country,quoteId}));
+    await ensureZelnumRealtimeCheckoutSchema(env);
+    local=await env.DB.prepare("SELECT * FROM zelnum_realtime_orders WHERE user_id=? AND idempotency_key=? LIMIT 1")
+      .bind(user.id,key).first();
+    if(local&&local.request_hash!==requestHash)return json({ok:false,error:"idempotency_key_conflict"},409,origin);
+    if(local?.status==="completed"&&local.result_json){
+      return json({ok:true,replayed:true,order_id:local.order_id,result:JSON.parse(local.result_json),
+        customer_charge_cents:Number((await env.DB.prepare("SELECT customer_charge_cents FROM orders WHERE id=?").bind(local.order_id).first())?.customer_charge_cents||0)},200,origin);
+    }
+    if(local?.status==="sending")return json({ok:false,error:"request_in_progress",order_id:local.order_id},409,origin);
+    const quote=await env.DB.prepare("SELECT * FROM zelnum_realtime_quotes WHERE quote_id=? AND user_id=? LIMIT 1")
+      .bind(quoteId,user.id).first();
+    if(!quote||quote.series!==series||quote.product_ids_json!==JSON.stringify(ids)||
+       quote.identifier_hash!==await sha256(identifier)||String(quote.country||"")!==String(country||""))
+      return json({ok:false,error:"quote_not_found_or_mismatch"},409,origin);
+    if(!local&&Date.parse(quote.expires_at)<=Date.now())return json({ok:false,error:"quote_expired"},409,origin);
+    const products=await zelnumRealtimeProducts(env,series,ids);
+    if(!local){
+      const reserve=Number(quote.customer_charge_cents);
+      const providerKey="dv-"+key.slice(0,120);
+      const result=await env.DB.prepare(`INSERT OR IGNORE INTO zelnum_realtime_orders
+        (user_id,idempotency_key,request_hash,quote_id,provider_key,status)
+        VALUES(?,?,?,?,?,'reserved')`).bind(user.id,key,requestHash,quoteId,providerKey).run();
+      local=await env.DB.prepare("SELECT * FROM zelnum_realtime_orders WHERE user_id=? AND idempotency_key=? LIMIT 1")
+        .bind(user.id,key).first();
+      if(!local||!result.meta?.changes)return json({ok:false,error:"idempotency_key_conflict"},409,origin);
+      const localOrderKey="zrt_"+await sha256(String(user.id)+":"+key);
+      const resourceCode="zelnum_realtime_"+ids.join("_");
+      await env.DB.batch([
+        env.DB.prepare(`INSERT INTO orders(user_id,resource_code,idempotency_key,customer_charge_cents,
+          estimated_provider_cost_cents,status,result_reference,quantity,unit_price_cents,pricing_unit_quantity,
+          currency,markup_type,markup_value,minimum_order_quantity,provider_currency)
+          SELECT ?,?,?,?,?,'pending','zelnum-realtime:'||?,1,?,1,'USDT','percentage',200,1,'USD'
+          WHERE EXISTS(SELECT 1 FROM users WHERE id=? AND wallet_balance_cents>=?)`)
+          .bind(user.id,resourceCode,localOrderKey,reserve,Math.ceil(Number(quote.quoted_total)*100),local.id,reserve,user.id,reserve),
+        env.DB.prepare(`UPDATE users SET wallet_balance_cents=wallet_balance_cents-?
+          WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE idempotency_key=?)`).bind(reserve,user.id,localOrderKey),
+        env.DB.prepare(`INSERT INTO wallet_ledger(user_id,amount_cents,transaction_type,reference_id,description)
+          SELECT user_id,-customer_charge_cents,'order_charge','order:'||id,'Zelnum realtime order'
+          FROM orders WHERE idempotency_key=? AND NOT EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id='order:'||orders.id AND transaction_type='order_charge')`).bind(localOrderKey),
+        env.DB.prepare(`UPDATE zelnum_realtime_orders SET order_id=(SELECT id FROM orders WHERE idempotency_key=?),
+          status=CASE WHEN EXISTS(SELECT 1 FROM orders WHERE idempotency_key=?) THEN 'reserved' ELSE 'insufficient_balance' END,
+          updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(localOrderKey,localOrderKey,local.id)
+      ]);
+      local=await env.DB.prepare("SELECT * FROM zelnum_realtime_orders WHERE id=?").bind(local.id).first();
+      if(local.status==="insufficient_balance")return json({ok:false,error:"insufficient_wallet_balance"},402,origin);
+      const order=await env.DB.prepare("SELECT customer_charge_cents FROM orders WHERE id=?").bind(local.order_id).first();
+      local.customer_charge_cents=Number(order?.customer_charge_cents||reserve);
+    }else{
+      const order=await env.DB.prepare("SELECT customer_charge_cents FROM orders WHERE id=?").bind(local.order_id).first();
+      local.customer_charge_cents=Number(order?.customer_charge_cents||0);
+    }
+    const claim=await env.DB.prepare("UPDATE zelnum_realtime_orders SET status='sending',last_error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('reserved','unknown')")
+      .bind(local.id).run();
+    if(!claim.meta?.changes)return json({ok:false,error:"request_in_progress",order_id:local.order_id},409,origin);
+    const providerKey=String(local.provider_key);
+    let providerResult;
+    try{
+      providerResult=await zelnumApi(env,"/realtime/check/"+series,{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Idempotency-Key":providerKey,
+          "X-ZelNum-Quote":String(quote.quote_token),"X-ZelNum-Quote-Amount":String(quote.quoted_total)},
+        body:JSON.stringify({identifier,country,product_ids:ids})
+      });
+    }catch(providerError){
+      const code=Number(providerError.providerStatus||0);
+      const uncertain=code===0||code>=500||code===409;
+      if(uncertain){
+        await env.DB.prepare("UPDATE zelnum_realtime_orders SET status='unknown',last_error=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+          .bind(String(providerError.message||"provider_outcome_unknown").slice(0,200),local.id).run();
+        return json({ok:false,error:code===409?"provider_request_in_progress":"provider_outcome_unknown",
+          retry_with_same_idempotency_key:true,order_id:local.order_id},code===409?409:502,origin);
+      }
+      const orderId=Number(local.order_id),reserved=Number(local.customer_charge_cents)||0;
+      await env.DB.batch([
+        env.DB.prepare(`INSERT OR IGNORE INTO wallet_ledger(user_id,amount_cents,transaction_type,reference_id,description)
+          SELECT user_id,?,'order_refund','order_refund:'||id,'Zelnum realtime provider rejection refund' FROM orders WHERE id=?`).bind(reserved,orderId),
+        env.DB.prepare(`UPDATE users SET wallet_balance_cents=wallet_balance_cents+
+          (SELECT amount_cents FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')
+          WHERE id=? AND EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')`)
+          .bind("order_refund:"+orderId,user.id,"order_refund:"+orderId),
+        env.DB.prepare("UPDATE orders SET status='failed' WHERE id=?").bind(orderId),
+        env.DB.prepare("UPDATE zelnum_realtime_orders SET status='failed',last_error=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+          .bind(String(providerError.message||"provider_rejected").slice(0,200),local.id)
+      ]);
+      return json({ok:false,error:"provider_rejected_order_refunded",provider_status:code,order_id:orderId},502,origin);
+    }
+    const settlement=await settleZelnumRealtimeOrder(env,local,providerResult);
+    return json({ok:true,order_id:local.order_id,result:providerResult,settlement},200,origin);
+  }catch(error){
+    if(local?.id){
+      await env.DB.prepare("UPDATE zelnum_realtime_orders SET status='unknown',last_error=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='sending'")
+        .bind(String(error.message||"realtime_checkout_failed").slice(0,200),local.id).run().catch(()=>{});
+    }
+    const status=error.message==="unauthorized"?401:error.message==="insufficient_wallet_balance"?402:500;
+    return json({ok:false,error:error.message||"realtime_checkout_failed",retry_with_same_idempotency_key:!!local},status,origin);
+  }
+}
+if(request.method==="GET"&&url.pathname==="/api/admin/zelnum/realtime"){
+  try{await requireAdmin(request,env);await ensureZelnumRealtimeCatalogueSchema(env);
+    const rows=await env.DB.prepare("SELECT product_id,slug,name,series,enabled FROM zelnum_realtime_catalogue ORDER BY series,name").all();
+    return json({ok:true,products:rows.results||[]},200,origin);
+  }catch(error){const status=error.message==="unauthorized"?401:error.message==="admin_access_required"?403:500;return json({ok:false,error:error.message},status,origin);}
+}
+if(request.method==="POST"&&url.pathname==="/api/admin/zelnum/realtime/configure"){
+  try{await requireAdmin(request,env);const body=await readBody(request),id=Number(body.product_id),enabled=body.enabled===true?1:body.enabled===false?0:-1;
+    if(!Number.isSafeInteger(id)||id<1||enabled<0)return json({ok:false,error:"invalid_realtime_product_setting"},400,origin);
+    await ensureZelnumRealtimeCatalogueSchema(env);
+    const result=await env.DB.prepare("UPDATE zelnum_realtime_catalogue SET enabled=?,updated_at=CURRENT_TIMESTAMP WHERE product_id=?").bind(enabled,id).run();
+    if(!result.meta?.changes)return json({ok:false,error:"realtime_product_not_found"},404,origin);
+    return json({ok:true,product_id:id,enabled:!!enabled},200,origin);
+  }catch(error){const status=error.message==="unauthorized"?401:error.message==="admin_access_required"?403:500;return json({ok:false,error:error.message},status,origin);}
 }
 
 if(request.method==="GET"&&url.pathname==="/api/admin/zelnum/balance"){

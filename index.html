@@ -1011,7 +1011,7 @@ async function renderAdminWorkspace(){
     const restoredTab=document.querySelector('#admin .admin-page-tab[data-target="'+adminActivePage+'"]');
     if(restoredTab)restoredTab.click();
     window.scrollTo(0,previousScrollY);
-    wireAdmin();wireSupportAdmin();wireAdminNotifications();wireAdminReferralTiers();startAdminIdleLock();
+    wireAdmin();wireZelnumRealtimeAdmin();wireSupportAdmin();wireAdminNotifications();wireAdminReferralTiers();startAdminIdleLock();
   }catch(error){if(error.message==="admin_unlock_required"){adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderAdminGate(true);}else showError("Admin dashboard could not load: "+error.message);}
 }
 
@@ -1154,6 +1154,94 @@ async function wireSupportAdmin(){
   supportPollTimer=setInterval(()=>{loadInbox();if(selected)loadThread().catch(()=>{});},7000);
 }
 
+async function wireRealtimeQuickCheck(){
+  const select=document.getElementById("rt-product-select"),quoteButton=document.getElementById("rt-get-quote");
+  const confirmButton=document.getElementById("rt-confirm-check"),output=document.getElementById("rt-quote-result");
+  if(!select||!quoteButton||!confirmButton||!output)return;
+  let activeQuote=null,activeKey=null,activeInput=null;
+  const showError=error=>{output.textContent="Quick Check: "+(error?.message||String(error));};
+  async function load(){
+    select.innerHTML='<option value="">Loading realtime services…</option>';
+    try{
+      const data=await request("/api/zelnum/realtime/catalogue");
+      const products=data.products||[];
+      select.innerHTML='<option value="">Choose a realtime service</option>'+
+        products.map(p=>'<option value="'+Number(p.product_id)+'" data-series="'+esc(p.series)+'">'+esc(p.name)+'</option>').join("");
+      if(!products.length){select.innerHTML='<option value="">No realtime products are enabled yet</option>';output.textContent="Realtime checking is not available yet. An administrator must enable products first.";}
+    }catch(error){select.innerHTML='<option value="">Could not load services</option>';showError(error);}
+  }
+  function resetQuote(){activeQuote=null;activeKey=null;activeInput=null;confirmButton.classList.add("hidden");}
+  select.onchange=resetQuote;
+  quoteButton.onclick=async()=>{
+    resetQuote();
+    const option=select.selectedOptions[0],productId=Number(select.value),series=option?.dataset.series||"";
+    const identifier=document.getElementById("rt-identifier").value.trim();
+    const country=document.getElementById("rt-country").value.trim().toUpperCase();
+    if(!productId||!identifier){output.textContent="Choose a service and enter a phone number or email.";return;}
+    if(!document.getElementById("rt-consent").checked){output.textContent="Please confirm you are authorized to check this identifier.";return;}
+    if(series==="phone"&&country&&!/^[A-Z]{2}$/.test(country)){output.textContent="Enter a valid two-letter country code.";return;}
+    quoteButton.disabled=true;quoteButton.textContent="Getting quote…";output.textContent="Requesting a non-billable provider quote…";
+    try{
+      const data=await request("/api/zelnum/realtime/quote","POST",{
+        series,identifier,country:series==="phone"?country:null,product_ids:[productId],consent_confirmed:true
+      });
+      activeQuote={quote_id:data.quote_id,series,product_ids:[productId],identifier,country:series==="phone"?country:""};
+      activeKey=crypto.randomUUID().replace(/-/g,"");
+      activeInput={name:option.textContent,price:Number(data.customer_total_cents)};
+      output.textContent="Provider quote: "+Number(data.provider_total_usd).toFixed(6)+" USD · Your price: "+
+        money(data.customer_total_cents,"USDT")+" · Includes 200% markup. Quote expires shortly. No provider check has run yet.";
+      confirmButton.classList.remove("hidden");
+    }catch(error){showError(error);}
+    finally{quoteButton.disabled=false;quoteButton.textContent="Get price quote";}
+  };
+  confirmButton.onclick=async()=>{
+    if(!activeQuote||!activeKey||!activeInput)return;
+    if(!await appConfirm("Run "+activeInput.name+" for this identifier? "+money(activeInput.price,"USDT")+" will be reserved from your wallet. Unknown or unprocessed checks are refunded based on Zelnum's final billing result."))return;
+    confirmButton.disabled=true;confirmButton.textContent="Checking…";output.textContent="Submitting your confirmed check. Please do not close the Mini App.";
+    try{
+      const data=await request("/api/zelnum/realtime/check","POST",{
+        ...activeQuote,idempotency_key:activeKey,identifier:document.getElementById("rt-identifier").value.trim(),
+        consent_confirmed:true
+      });
+      const results=data.result?.results||[];
+      const lines=results.map(item=>(item.product||"Product")+" — "+String(item.result||"unknown").toUpperCase()+
+        (item.billing_status?" · "+item.billing_status:"")+(item.error_code?" · "+item.error_code:""));
+      output.textContent="Check completed. Order #"+data.order_id+
+        (data.settlement?.customer_charge_cents!=null?" · Charged "+money(data.settlement.customer_charge_cents,"USDT"):"")+
+        (data.settlement?.refund_cents>0?" · Refunded "+money(data.settlement.refund_cents,"USDT"):"")+
+        (lines.length?"\n"+lines.join("\n"):"\n"+JSON.stringify(data.result));
+      resetQuote();await refreshWalletBalance();await loadOrders();
+    }catch(error){
+      output.textContent="Check status: "+error.message+
+        (activeKey?"\nIf the result is uncertain, press Confirm again to retry safely with the same request key. Do not start a new quote.":"");
+    }finally{confirmButton.disabled=false;confirmButton.textContent="Confirm and run check";}
+  };
+  await load();
+}
+async function wireZelnumRealtimeAdmin(){
+  const list=document.getElementById("zelnum-realtime-admin-list"),refresh=document.getElementById("zelnum-realtime-refresh");
+  if(!list||!refresh)return;
+  async function load(){
+    list.textContent="Loading realtime products…";
+    try{
+      const data=await request("/api/admin/zelnum/realtime");
+      const rows=data.products||[];
+      list.innerHTML=rows.map(p=>'<div class="item"><div class="item-top"><strong>'+esc(p.name)+'</strong><span class="pill">'+esc(p.series)+'</span></div><div class="muted">Provider ID: '+Number(p.product_id)+' · '+esc(p.slug)+'</div><label class="field"><input type="checkbox" data-rt-product="'+Number(p.product_id)+'" '+(Number(p.enabled)===1?"checked":"")+'> Available to customers</label></div>').join("")||'<p class="muted">No realtime products imported.</p>';
+    }catch(error){list.textContent="Could not load realtime products: "+error.message;}
+  }
+  list.onchange=async event=>{
+    const checkbox=event.target.closest("[data-rt-product]");if(!checkbox)return;
+    checkbox.disabled=true;
+    try{
+      await request("/api/admin/zelnum/realtime/configure","POST",{product_id:Number(checkbox.dataset.rtProduct),enabled:checkbox.checked});
+      await load();
+    }catch(error){checkbox.checked=!checkbox.checked;appNotice("Could not update realtime product: "+error.message);}
+    finally{checkbox.disabled=false;}
+  };
+  refresh.onclick=load;
+  await load();
+}
+
 function renderDashboard(){
   const name=user.first_name||"Customer";
 
@@ -1192,6 +1280,7 @@ function renderDashboard(){
 <button class="back-button" id="customer-back" type="button">← Back</button>
 <nav class="nav">
   <a href="#services">Services</a>
+  <a href="#quick-check">Quick Check</a>
   <a href="#wallet">Wallet</a>
   <a href="#prepare">Prepare list</a>
   <a href="#toolbox">Toolbox</a>
@@ -1286,6 +1375,21 @@ function renderDashboard(){
       <div class="item-top"><h2>Service catalogue</h2><span class="pill">Database driven</span></div>
       <p id="catalogue-message">Services loaded from your database.</p>
       <div id="services-list"></div>
+    </section>
+
+    <section id="quick-check" class="panel">
+      <div class="item-top"><h2>Realtime Quick Check</h2><span class="pill">Live quote first</span></div>
+      <p>Check one phone number or email address against an enabled realtime service. You will see the final wallet price before confirming. Only submit identifiers you own or are authorized to check.</p>
+      <label class="field" for="rt-product-select">Realtime service</label>
+      <select id="rt-product-select"><option value="">Loading realtime services…</option></select>
+      <label class="field" for="rt-identifier">Phone number or email</label>
+      <input id="rt-identifier" type="text" maxlength="254" autocomplete="off" placeholder="Example: +97798XXXXXXXX or name@example.com">
+      <label class="field" for="rt-country">Country code (phone only)</label>
+      <input id="rt-country" type="text" maxlength="2" placeholder="NP · leave blank for full international + number">
+      <label class="field"><input type="checkbox" id="rt-consent"> I confirm I own this identifier or have permission to check it.</label>
+      <button class="btn" id="rt-get-quote" type="button">Get price quote</button>
+      <div id="rt-quote-result" class="note" role="status">Select an enabled service to begin.</div>
+      <button class="btn hidden" id="rt-confirm-check" type="button">Confirm and run check</button>
     </section>
 
     <section id="prepare" class="panel">
@@ -1512,6 +1616,7 @@ function renderDashboard(){
   const backButton=document.getElementById("customer-back");
   if(backButton)backButton.onclick=()=>{if(location.hash){history.back();}else{window.scrollTo({top:0,behavior:"smooth"});}};
   renderServices();
+  wireRealtimeQuickCheck();
   wireSupportCustomer();
 
   wireNotifications();
@@ -2517,6 +2622,12 @@ function adminMarkup(){
         <button class="btn secondary" id="zelnum-import-catalogue" type="button">Import Zelnum services</button>
         <button class="btn secondary" id="zelnum-configure-pricing" type="button">Apply 42 official bulk rates · 200% markup</button>
         <button class="btn secondary" id="zelnum-balance-refresh" type="button">Check Zelnum balance</button>
+      </div>
+      <div class="panel">
+        <h3>Zelnum Realtime Product Access</h3>
+        <p class="muted">Enable only realtime products you intend to offer. Every customer request receives a live provider quote before wallet checkout; no test check is run by this setting.</p>
+        <button class="btn secondary" id="zelnum-realtime-refresh" type="button">Refresh realtime products</button>
+        <div id="zelnum-realtime-admin-list" class="muted">Loading realtime products…</div>
       </div>
       <div class="actions"><button class="btn secondary" id="zelnum-copy-result" type="button">Copy result</button></div>
       <p id="zelnum-copy-status" aria-live="polite"></p>
