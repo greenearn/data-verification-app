@@ -2425,6 +2425,16 @@ function adminMarkup(){
     </div>
 
     <div class="panel">
+      <h3>Zelnum Provider</h3>
+      <p class="muted">Connect the Zelnum API from Cloudflare Worker secrets. Import the supported bulk catalogue, then set actual provider costs and enable only products confirmed in your Zelnum account.</p>
+      <div class="actions">
+        <button class="btn secondary" id="zelnum-import-catalogue" type="button">Import Zelnum services</button>
+        <button class="btn secondary" id="zelnum-balance-refresh" type="button">Check Zelnum balance</button>
+      </div>
+      <pre id="zelnum-admin-result" class="note muted" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+    </div>
+
+    <div class="panel">
       <h3>Provider Balance</h3>
       <p class="muted">Check the current CheckNumber.ai provider balance.</p>
       <button class="btn secondary" id="provider-balance-refresh" type="button">Check provider balance</button>
@@ -3212,6 +3222,27 @@ function wireAdmin(){
   if(adminOrdersRefresh)adminOrdersRefresh.onclick=loadAdminOrders;
   loadAdminOrders();
 
+  const zelnumAdminResult=document.getElementById("zelnum-admin-result");
+  const zelnumBalanceButton=document.getElementById("zelnum-balance-refresh");
+  if(zelnumBalanceButton){
+    zelnumBalanceButton.onclick=async()=>{
+      zelnumBalanceButton.disabled=true;zelnumAdminResult.textContent="Checking Zelnum balance…";
+      try{const data=await request("/api/admin/zelnum/balance");zelnumAdminResult.textContent=JSON.stringify(data,null,2);}
+      catch(error){zelnumAdminResult.textContent="Error: "+error.message;}
+      finally{zelnumBalanceButton.disabled=false;}
+    };
+  }
+  const zelnumImportButton=document.getElementById("zelnum-import-catalogue");
+  if(zelnumImportButton){
+    zelnumImportButton.onclick=async()=>{
+      if(!confirm("Import the documented Zelnum bulk products? Existing services and pricing will be preserved. New products will be pricing-disabled until you enter account-specific costs."))return;
+      zelnumImportButton.disabled=true;zelnumAdminResult.textContent="Importing Zelnum catalogue…";
+      try{const data=await request("/api/admin/zelnum/catalogue/import","POST",{});zelnumAdminResult.textContent=JSON.stringify(data,null,2);await reloadAdmin();}
+      catch(error){zelnumAdminResult.textContent="Error: "+error.message;}
+      finally{zelnumImportButton.disabled=false;}
+    };
+  }
+
   const providerBalanceButton=document.getElementById("provider-balance-refresh");
   const providerBalanceResult=document.getElementById("provider-balance-result");
   if(providerBalanceButton){
@@ -3824,7 +3855,8 @@ async function loadNumberRequests() {
             <button class="btn save-upload-status" type="button">
               Save Status
             </button>
-            ${upload.resource_code==="phoneCheck" && ["uploaded","reviewed"].includes(currentStatus) && Number(upload.provider_task_exists)!==1 ? '<button class="btn submit-provider-task" type="button">Submit to CheckNumber</button>' : Number(upload.provider_task_exists)===1 ? '<p class="muted">A provider task already exists for this upload. Check Provider Tasks for its status.</p>' : ''}
+            ${upload.resource_code==="phoneCheck" && ["uploaded","reviewed"].includes(currentStatus) && Number(upload.provider_task_exists)!==1 ? '<button class="btn submit-provider-task" type="button">Submit to CheckNumber</button>' : ''}
+            ${["uploaded","reviewed"].includes(currentStatus) && Number(upload.provider_task_exists)!==1 ? '<button class="btn secondary submit-zelnum-task" type="button">Submit to Zelnum</button>' : Number(upload.provider_task_exists)===1 ? '<p class="muted">A provider task already exists for this upload. Check Provider Tasks for its status.</p>' : ''}
           </div>
         `;
       }).join("");
@@ -3911,6 +3943,28 @@ async function loadNumberRequests() {
             alert("Could not save upload status: "+error.message);
             saveButton.disabled=false;
             saveButton.textContent="Save Status";
+          }
+        };
+      });
+
+      box.querySelectorAll(".submit-zelnum-task").forEach(button=>{
+        button.onclick=async()=>{
+          const item=button.closest("[data-upload-id]");
+          const uploadId=Number(item?.dataset.uploadId);
+          if(!uploadId)return;
+          const country=prompt("Enter the two-letter ISO country code for phone-number products (example: NP). Leave blank for email products:");
+          if(country===null)return;
+          if(!confirm("Submit upload #"+uploadId+" to Zelnum? This may deduct your Zelnum provider balance. No automatic retry will be made if the submission outcome is uncertain."))return;
+          button.disabled=true;button.textContent="Submitting to Zelnum…";
+          try{
+            const result=await request("/api/admin/provider-tasks/submit","POST",{
+              upload_id:uploadId,provider:"zelnum",country_code:country.trim().toUpperCase()
+            });
+            alert("Zelnum task submitted. Local task #"+result.task.id+" / Zelnum task ID: "+result.task.provider_task_id);
+            await loadProviderTasks();await loadAdminUploads();
+          }catch(error){
+            alert("Zelnum submission: "+error.message+". If the result is uncertain, check Zelnum task history before attempting anything again.");
+            button.disabled=false;button.textContent="Submit to Zelnum";
           }
         };
       });
