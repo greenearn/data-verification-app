@@ -2442,6 +2442,7 @@ function adminMarkup(){
       <p class="muted">Connect the Zelnum API from Cloudflare Worker secrets. Import the supported bulk catalogue, then set actual provider costs and enable only products confirmed in your Zelnum account.</p>
       <div class="actions">
         <button class="btn secondary" id="zelnum-import-catalogue" type="button">Import Zelnum services</button>
+        <button class="btn secondary" id="zelnum-configure-pricing" type="button">Apply verified USD costs · 200% markup</button>
         <button class="btn secondary" id="zelnum-balance-refresh" type="button">Check Zelnum balance</button>
       </div>
       <pre id="zelnum-admin-result" class="note muted" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
@@ -3755,6 +3756,25 @@ async function loadNumberRequests() {
   };
 
   document.getElementById("reload-admin").onclick=()=>adminAction(reloadAdmin);
+
+  const zelnumPricingButton=document.getElementById("zelnum-configure-pricing");
+  if(zelnumPricingButton){
+    zelnumPricingButton.onclick=async()=>{
+      if(!confirm("Apply the 34 verified Zelnum USD bulk costs with 200% markup? Existing non-Zelnum pricing and imported minimum quantities will be preserved. All Zelnum products will remain disabled."))return;
+      zelnumPricingButton.disabled=true;
+      const output=document.getElementById("zelnum-admin-result");
+      if(output)output.textContent="Applying verified Zelnum pricing…";
+      try{
+        const result=await request("/api/admin/zelnum/pricing/configure","POST",{});
+        if(output)output.textContent=JSON.stringify(result,null,2);
+        await reloadAdmin();
+      }catch(error){
+        if(output)output.textContent="Pricing configuration failed: "+error.message;
+      }finally{
+        zelnumPricingButton.disabled=false;
+      }
+    };
+  }
 
   const importCatalogueButton=document.getElementById("import-catalogue");
   if(importCatalogueButton){
