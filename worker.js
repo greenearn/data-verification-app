@@ -928,7 +928,7 @@ async function settleZelnumRealtimeOrder(env,local,providerResult){
         FROM orders WHERE id=?`).bind(refund,orderId),
       env.DB.prepare(`UPDATE users SET wallet_balance_cents=wallet_balance_cents+
         (SELECT amount_cents FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')
-        WHERE id=? AND EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')`)
+        WHERE id=? AND changes()>0 AND EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')`)
         .bind("order_refund:"+orderId,local.user_id,"order_refund:"+orderId),
       env.DB.prepare("UPDATE orders SET customer_charge_cents=?,status='completed',provider_task_id=? WHERE id=?")
         .bind(finalCents,String(providerResult.request_id||""),orderId)
@@ -4364,6 +4364,7 @@ if (request.method === "GET" && url.pathname === "/api/admin/provider-tasks") {
 // Customer-facing Zelnum realtime catalogue: only administrator-enabled products are visible.
 if(request.method==="GET"&&url.pathname==="/api/zelnum/realtime/catalogue"){
   try{
+    await getSessionUser(request,env);
     await ensureZelnumRealtimeCatalogueSchema(env);
     const rows=await env.DB.prepare("SELECT product_id,slug,name,series FROM zelnum_realtime_catalogue WHERE enabled=1 ORDER BY series,name").all();
     return json({ok:true,products:rows.results||[]},200,origin);
@@ -4376,7 +4377,7 @@ if(request.method==="POST"&&url.pathname==="/api/zelnum/realtime/quote"){
     const country=series==="phone"?String(body.country||"").trim().toUpperCase():null;
     if(!["phone","email"].includes(series)||!identifier||identifier.length>254||
        (series==="email"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier))||
-       (series==="phone"&&!/^\+?[1-9]\d{6,14}$/.test(identifier))||
+       (series==="phone"&&(!/^\+?[1-9]\d{6,14}$/.test(identifier)||(!identifier.startsWith("+")&&!country)))||
        (country&&!/^[A-Z]{2}$/.test(country))||body.consent_confirmed!==true)
       return json({ok:false,error:"invalid_realtime_quote_request"},400,origin);
     const ids=Array.isArray(body.product_ids)?body.product_ids.map(Number):[];
