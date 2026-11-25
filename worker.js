@@ -860,8 +860,10 @@ async function importZelnumCatalogue(env) {
         enabled=0,updated_at=CURRENT_TIMESTAMP`).bind(id,slug,name,series,minimum));
   }
   const result=await env.DB.batch(statements);
-  return {provider_products:products.length,bulk_products_available:bulk.length,realtime_products_available:realtime.length,
-    bulk_products_imported:items.length,realtime_products_imported:realtimeItems.length,categories:categories.size,database_operations:result.length,
+  return {provider_products:products.length,bulk_products_available:allBulk.length,bulk_products_supported:bulk.length,
+    unsupported_bulk_products:allBulk.filter(p=>!supportedBulkSlugs.has(String(p.slug||""))).map(p=>String(p.slug||"")),
+    realtime_products_available:realtime.length,realtime_products_imported:realtimeItems.length,
+    bulk_products_imported:items.length,categories:categories.size,database_operations:result.length,
     pricing_enabled:false,customer_ordering_enabled:false,
     note:"Every imported bulk product remains disabled until you enter its actual account price and explicitly enable it. Realtime products are detected but are not yet customer-orderable."};
 }
