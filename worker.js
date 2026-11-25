@@ -1380,6 +1380,8 @@ async function submitStagedProviderTask(env, uploadId, options = {}) {
   const taskType=String(upload.task_type||"");
   if(!taskType||["VERIFY_IN_DASHBOARD","tg_username"].includes(taskType)||!validTaskType(taskType))
     throw new Error("service_task_code_not_verified");
+  if(providerName==="zelnum"&&!ZELNUM_BULK_CATALOGUE.some(item=>item.task_type===taskType))
+    throw new Error("unsupported_zelnum_product");
   const countryCode=String(options.countryCode||"").trim().toUpperCase();
   if(providerName==="zelnum"&&(upload.input_type||"phone")==="phone"&&!/^[A-Z]{2}$/.test(countryCode))
     throw new Error("zelnum_country_required");
@@ -4109,7 +4111,7 @@ if (request.method === "POST" && url.pathname === "/api/admin/provider-tasks/sub
       error.message === "admin_access_required" ? 403 :
       error.message === "upload_not_found" ? 404 :
       ["upload_not_ready","provider_task_already_created"].includes(error.message) ? 409 :
-      ["invalid_json","invalid_upload_id","invalid_phone_numbers","provider_quantity_out_of_range","ambiguous_or_invalid_csv_row","invalid_csv_quotes","unsupported_file_type","zelnum_country_required","invalid_provider"].includes(error.message) ? 400 :
+      ["invalid_json","invalid_upload_id","invalid_phone_numbers","provider_quantity_out_of_range","ambiguous_or_invalid_csv_row","invalid_csv_quotes","unsupported_file_type","zelnum_country_required","invalid_provider","unsupported_zelnum_product"].includes(error.message) ? 400 :
       ["service_not_enabled_for_provider_submission","zelnum_configuration_missing"].includes(error.message) ? 403 : 502;
     return json({
       ok: false,
