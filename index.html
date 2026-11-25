@@ -363,11 +363,18 @@ function appConfirm(message,title="Please confirm"){
     dialog.innerHTML='<h3>'+esc(title)+'</h3><p>'+esc(message)+'</p><div class="app-dialog-actions"><button type="button" class="btn secondary" data-choice="cancel">Cancel</button><button type="button" class="btn" data-choice="confirm">Continue</button></div>';
     backdrop.appendChild(dialog);
     document.body.appendChild(backdrop);
-    const finish=value=>{backdrop.remove();resolve(value);};
+    let settled=false;
+    const onKey=event=>{if(event.key==="Escape")finish(false);};
+    const finish=value=>{
+      if(settled)return;
+      settled=true;
+      document.removeEventListener("keydown",onKey);
+      backdrop.remove();
+      resolve(value);
+    };
     dialog.querySelector('[data-choice="cancel"]').addEventListener("click",()=>finish(false));
     dialog.querySelector('[data-choice="confirm"]').addEventListener("click",()=>finish(true));
     backdrop.addEventListener("click",event=>{if(event.target===backdrop)finish(false);});
-    const onKey=event=>{if(event.key==="Escape"){document.removeEventListener("keydown",onKey);finish(false);}};
     document.addEventListener("keydown",onKey);
     dialog.querySelector('[data-choice="confirm"]').focus();
   });
