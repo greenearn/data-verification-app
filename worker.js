@@ -824,6 +824,64 @@ async function importZelnumCatalogue(env) {
 }
 
 // --------------------------------------------------
+
+// Apply verified Zelnum bulk costs supplied from the account Products page.
+// Values are provider USD cents per 10,000 checks. Existing non-Zelnum
+// services/pricing and each Zelnum product's imported minimum are preserved.
+async function configureZelnumBulkPricing(env) {
+  const costsCents = {
+    amazonValid:300, appleidValid:300, bandValid:500, binanceValid:800,
+    coinwValid:300, fbValid:100, htxValid:700, insValid:80,
+    kucoinValid:700, lineGender:1500, lineValid:700,
+    linkedinGender:2500, linkedinValid:500, microsoftValid:300,
+    rcsValid:150, snapchatValid:1500, tgGender:450, tgValid:150,
+    tgActive:350, tiktokUsername:1000, viberValid:150, viberActive:550,
+    waGender:450, waValid:50, waActive:200, twitterValid:200,
+    zaloGender:1400, zaloValid:450, imessageValid:250,
+    "live-activity-filter":300, "phone-status-check":600,
+    "phone-onoff-check":6500, "phone-model-detection":1000,
+    "hlr-lookup":400
+  };
+  const statements = [];
+  const missing = [];
+  for (const [slug, providerCostCents] of Object.entries(costsCents)) {
+    const resourceCode = "zelnum_" + slug.toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+    const service = await env.DB.prepare(
+      "SELECT resource_code FROM service_catalogue WHERE resource_code=? AND task_type=? LIMIT 1"
+    ).bind(resourceCode, slug).first();
+    if (!service) { missing.push(slug); continue; }
+    statements.push(env.DB.prepare(`
+      INSERT INTO resource_pricing
+        (resource_code,provider_cost_cents,markup_type,markup_value,final_price_cents,
+         enabled,pricing_unit_quantity,minimum_order_quantity,currency,updated_at)
+      SELECT ?,?,'percentage',200,NULL,0,10000,
+        COALESCE((SELECT minimum_order_quantity FROM resource_pricing WHERE resource_code=?),1),
+        'USD',CURRENT_TIMESTAMP
+      ON CONFLICT(resource_code) DO UPDATE SET
+        provider_cost_cents=excluded.provider_cost_cents,
+        markup_type='percentage',
+        markup_value=200,
+        final_price_cents=NULL,
+        enabled=0,
+        pricing_unit_quantity=10000,
+        currency='USD',
+        updated_at=CURRENT_TIMESTAMP
+    `).bind(resourceCode, providerCostCents, resourceCode));
+  }
+  if (statements.length) await env.DB.batch(statements);
+  return {
+    configured_products: statements.length,
+    expected_products: Object.keys(costsCents).length,
+    markup_percentage: 200,
+    currency: "USD",
+    pricing_unit_quantity: 10000,
+    customer_ordering_enabled: false,
+    pricing_enabled: false,
+    missing_products: missing,
+    note: "Only matched Zelnum bulk products were updated. All remain disabled; imported minimum quantities and all non-Zelnum pricing are preserved."
+  };
+}
+
 // ADMIN CATALOGUE DATA
 // --------------------------------------------------
 
@@ -4176,6 +4234,15 @@ if(request.method==="GET"&&url.pathname==="/api/admin/zelnum/balance"){
   }catch(error){
     const status=error.message==="unauthorized"?401:error.message==="admin_access_required"?403:502;
     return json({ok:false,error:error.message||"zelnum_balance_failed",provider_status:error.providerStatus||null},status,origin);
+  }
+}
+if(request.method==="POST"&&url.pathname==="/api/admin/zelnum/pricing/configure"){
+  try{
+    await requireAdmin(request,env);
+    return json({ok:true,...await configureZelnumBulkPricing(env)},200,origin);
+  }catch(error){
+    const status=error.message==="unauthorized"?401:error.message==="admin_access_required"?403:500;
+    return json({ok:false,error:error.message||"zelnum_pricing_configure_failed"},status,origin);
   }
 }
 if(request.method==="GET"&&url.pathname==="/api/admin/zelnum/products"){
