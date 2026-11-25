@@ -738,6 +738,46 @@ async function importCheckNumberCatalogue(env) {
 }
 
 // --------------------------------------------------
+// ZELNUM BULK CATALOGUE (documented products only)
+// Provider costs are intentionally zero/disabled until the account price is
+// entered by an administrator. Phone tasks require an ISO country code.
+// --------------------------------------------------
+const ZELNUM_BULK_CATALOGUE = [
+  {category:"Zelnum · Phone Intelligence",category_order:80,resource_code:"zelnum_hlr_lookup",name:"Zelnum HLR Lookup",description:"Bulk HLR and carrier lookup",input_type:"phone",task_type:"hlr-lookup",minimum:2000},
+  {category:"Zelnum · Phone Intelligence",category_order:80,resource_code:"zelnum_phone_model",name:"Zelnum Phone Model Detection",description:"Bulk phone model detection",input_type:"phone",task_type:"phone-model-detection",minimum:500},
+  {category:"Zelnum · Phone Intelligence",category_order:80,resource_code:"zelnum_phone_onoff",name:"Zelnum Phone On/Off Check",description:"Bulk phone reachability status check",input_type:"phone",task_type:"phone-onoff-check",minimum:1500},
+  {category:"Zelnum · Phone Intelligence",category_order:80,resource_code:"zelnum_phone_status",name:"Zelnum Phone Status Check",description:"Bulk phone status check",input_type:"phone",task_type:"phone-status-check",minimum:2000},
+  {category:"Zelnum · Phone Intelligence",category_order:80,resource_code:"zelnum_rcs_checker",name:"Zelnum RCS Support Check",description:"Check RCS support for phone numbers",input_type:"phone",task_type:"rcsValid",minimum:1000},
+  {category:"Zelnum · Messaging",category_order:81,resource_code:"zelnum_whatsapp_checker",name:"Zelnum WhatsApp Number Checker",description:"Check WhatsApp number registration",input_type:"phone",task_type:"waValid",minimum:1000},
+  {category:"Zelnum · Messaging",category_order:81,resource_code:"zelnum_telegram_checker",name:"Zelnum Telegram Number Checker",description:"Check Telegram number registration",input_type:"phone",task_type:"tgValid",minimum:1000},
+  {category:"Zelnum · Messaging",category_order:81,resource_code:"zelnum_viber_checker",name:"Zelnum Viber Number Checker",description:"Check Viber number registration",input_type:"phone",task_type:"viberValid",minimum:1000}
+];
+
+async function importZelnumCatalogue(env) {
+  await ensurePlatformSettingsSchema(env);
+  const markupRow=await env.DB.prepare("SELECT setting_value FROM platform_settings WHERE setting_key='global_markup_percentage' LIMIT 1").first();
+  const markup=Math.max(0,Math.min(10000,Number(markupRow?.setting_value??10)));
+  const categories=new Map();
+  for(const item of ZELNUM_BULK_CATALOGUE)categories.set(item.category,item.category_order);
+  const statements=[];
+  for(const [category,order] of categories){
+    statements.push(env.DB.prepare("INSERT OR IGNORE INTO service_categories(category,display_order,is_listed) VALUES(?,?,1)").bind(category,order));
+  }
+  for(const item of ZELNUM_BULK_CATALOGUE){
+    statements.push(env.DB.prepare(`INSERT OR IGNORE INTO service_catalogue
+      (resource_code,name,description,category,input_type,task_type,display_order,is_listed)
+      VALUES(?,?,?,?,?,?,?,1)`).bind(item.resource_code,item.name,item.description,item.category,item.input_type,item.task_type,1));
+    statements.push(env.DB.prepare(`INSERT OR IGNORE INTO resource_pricing
+      (resource_code,provider_cost_cents,markup_type,markup_value,final_price_cents,enabled,pricing_unit_quantity,minimum_order_quantity,currency,updated_at)
+      VALUES (?,0,'percentage',?,NULL,0,10000,?,'USDT',CURRENT_TIMESTAMP)`).bind(item.resource_code,markup,item.minimum));
+  }
+  const result=await env.DB.batch(statements);
+  return {catalogue_entries:ZELNUM_BULK_CATALOGUE.length,categories:categories.size,database_operations:result.length,
+    pricing_enabled:false,customer_ordering_enabled:false,
+    note:"Set each product's actual Zelnum provider cost and customer markup in Admin before enabling pricing."};
+}
+
+// --------------------------------------------------
 // ADMIN CATALOGUE DATA
 // --------------------------------------------------
 
@@ -4016,6 +4056,36 @@ if (request.method === "GET" && url.pathname === "/api/admin/provider-tasks") {
     const status = error.message === "unauthorized" ? 401 :
       error.message === "admin_access_required" ? 403 : 500;
     return json({ ok: false, error: error.message || "provider_tasks_failed" }, status, origin);
+  }
+}
+
+if(request.method==="GET"&&url.pathname==="/api/admin/zelnum/balance"){
+  try{
+    await requireAdmin(request,env);
+    const data=await zelnumApi(env,"/balance");
+    return json({ok:true,provider:"zelnum",balance:data.balance??data.available_balance??null,currency:data.currency??null,raw:data},200,origin);
+  }catch(error){
+    const status=error.message==="unauthorized"?401:error.message==="admin_access_required"?403:502;
+    return json({ok:false,error:error.message||"zelnum_balance_failed",provider_status:error.providerStatus||null},status,origin);
+  }
+}
+if(request.method==="GET"&&url.pathname==="/api/admin/zelnum/products"){
+  try{
+    await requireAdmin(request,env);
+    const data=await zelnumApi(env,"/products");
+    return json({ok:true,products:data.products||data},200,origin);
+  }catch(error){
+    const status=error.message==="unauthorized"?401:error.message==="admin_access_required"?403:502;
+    return json({ok:false,error:error.message||"zelnum_products_failed"},status,origin);
+  }
+}
+if(request.method==="POST"&&url.pathname==="/api/admin/zelnum/catalogue/import"){
+  try{
+    await requireAdmin(request,env);
+    return json({ok:true,...await importZelnumCatalogue(env)},200,origin);
+  }catch(error){
+    const status=error.message==="unauthorized"?401:error.message==="admin_access_required"?403:500;
+    return json({ok:false,error:error.message||"zelnum_catalogue_import_failed"},status,origin);
   }
 }
 
