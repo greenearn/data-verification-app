@@ -56,3 +56,22 @@ The Worker saves the provider name and country code with each local task. Existi
 ## Current scope and limitations
 
 This PR supports admin-triggered bulk TXT/CSV tasks across the live bulk catalogue, polling, result download, and Telegram delivery. It does not yet add customer-facing realtime checks, automatic provider failover, or automatic product price synchronization. Realtime products are listed by the provider API but require a separate wallet-priced single-check workflow before being exposed to customers.
+
+
+## Shared website and Telegram Mini App access
+
+The same frontend can now be opened in a normal browser or inside Telegram:
+- Telegram Mini App sessions continue to use the signed WebApp `initData` flow.
+- Browser sessions use the Telegram Login Widget and the same Telegram account identity.
+- Both sign-in methods call the existing session creator, so they share the same user record, wallet, orders, referrals and admin permissions.
+
+### One-time BotFather setup for browser login
+
+Configure the website domain for the bot's Telegram Login Widget in BotFather:
+- Use `/setdomain`.
+- Select `@dataverificationnbot`.
+- Set the domain to `greenearn.github.io` (without https:// or a path).
+
+The browser login widget cannot complete authentication until Telegram has approved the website domain. The production GitHub Pages site remains the canonical browser URL. The Vercel production origin is also allowed by the Worker CORS policy.
+
+This browser login uses Telegram identity. It does not yet provide email/password accounts for people without Telegram.
