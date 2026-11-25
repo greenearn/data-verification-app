@@ -240,6 +240,18 @@ footer{border-top-color:#e2e8f1;color:#77849b}
   letter-spacing:-.035em;
   text-shadow:0 2px 14px rgba(91,255,166,.22);
 }
+
+/* Stable Telegram Mini App dialogs and selectable provider output */
+.app-notice{position:fixed;top:calc(env(safe-area-inset-top,0px) + 12px);left:12px;right:12px;z-index:100001;max-width:680px;margin:0 auto;padding:14px 48px 14px 16px;background:#172b49;color:#fff;border:1px solid #ffffff35;border-radius:14px;box-shadow:0 14px 36px #0f172a44;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
+.app-notice button{position:absolute;right:9px;top:8px;background:#ffffff20;color:#fff;border:0;border-radius:8px;padding:7px 10px}
+
+.app-dialog-backdrop{position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.48);display:flex;align-items:center;justify-content:center;padding:18px;overscroll-behavior:contain}
+.app-dialog{width:min(460px,100%);max-height:min(82dvh,680px);overflow:auto;background:#fff;color:#18243b;border:1px solid #dce4f0;border-radius:20px;padding:20px;box-shadow:0 24px 70px rgba(15,23,42,.28)}
+.app-dialog h3{margin:0 0 10px;font-size:17px}.app-dialog p{color:#53627a;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+.app-dialog-actions{display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap;margin-top:18px}
+.app-dialog-actions button{min-width:100px}
+#zelnum-admin-result{user-select:text!important;-webkit-user-select:text!important;cursor:text;max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;touch-action:pan-y}
+#zelnum-copy-status{font-size:11px;color:#16804a;min-height:16px}
 </style>
 </head>
 <body>
@@ -262,6 +274,7 @@ let categories=[];
 let selectedCode="";
 let uploadedFileId=null;
 let adminMode=false;
+let adminActivePage="overview";
 let adminRole=null;
 let adminPermissions=[];
 let adminUnlockToken=sessionStorage.getItem('dv_admin_unlock')||'';
@@ -338,6 +351,88 @@ async function request(path,method="GET",body=null){
   }
 
   return data;
+}
+
+function appConfirm(message,title="Please confirm"){
+  return new Promise(resolve=>{
+    const backdrop=document.createElement("div");
+    backdrop.className="app-dialog-backdrop";
+    backdrop.setAttribute("role","presentation");
+    const dialog=document.createElement("section");
+    dialog.className="app-dialog";
+    dialog.setAttribute("role","dialog");
+    dialog.setAttribute("aria-modal","true");
+    dialog.setAttribute("aria-label",title);
+    dialog.innerHTML='<h3>'+esc(title)+'</h3><p>'+esc(message)+'</p><div class="app-dialog-actions"><button type="button" class="btn secondary" data-choice="cancel">Cancel</button><button type="button" class="btn" data-choice="confirm">Continue</button></div>';
+    backdrop.appendChild(dialog);
+    document.body.appendChild(backdrop);
+    let settled=false;
+    const onKey=event=>{if(event.key==="Escape")finish(false);};
+    const finish=value=>{
+      if(settled)return;
+      settled=true;
+      document.removeEventListener("keydown",onKey);
+      backdrop.remove();
+      resolve(value);
+    };
+    dialog.querySelector('[data-choice="cancel"]').addEventListener("click",()=>finish(false));
+    dialog.querySelector('[data-choice="confirm"]').addEventListener("click",()=>finish(true));
+    backdrop.addEventListener("click",event=>{if(event.target===backdrop)finish(false);});
+    document.addEventListener("keydown",onKey);
+    dialog.querySelector('[data-choice="confirm"]').focus();
+  });
+}
+function appNotice(message){
+  const notice=document.createElement("div");
+  notice.className="app-notice";
+  notice.setAttribute("role","status");
+  const content=document.createElement("span");
+  content.textContent=String(message??"");
+  const close=document.createElement("button");
+  close.type="button";close.textContent="Close";close.setAttribute("aria-label","Close message");
+  close.onclick=()=>notice.remove();
+  notice.append(content,close);
+  document.body.appendChild(notice);
+}
+function appPrompt(message,defaultValue=""){
+  return new Promise(resolve=>{
+    const backdrop=document.createElement("div");
+    backdrop.className="app-dialog-backdrop";
+    const dialog=document.createElement("section");
+    dialog.className="app-dialog";
+    dialog.setAttribute("role","dialog");dialog.setAttribute("aria-modal","true");
+    const heading=document.createElement("h3");heading.textContent="Enter information";
+    const label=document.createElement("p");label.textContent=String(message??"");
+    const input=document.createElement("input");input.type="text";input.value=String(defaultValue??"");input.autocomplete="off";
+    const actions=document.createElement("div");actions.className="app-dialog-actions";
+    const cancel=document.createElement("button");cancel.type="button";cancel.className="btn secondary";cancel.textContent="Cancel";
+    const submit=document.createElement("button");submit.type="button";submit.className="btn";submit.textContent="Continue";
+    actions.append(cancel,submit);dialog.append(heading,label,input,actions);backdrop.appendChild(dialog);document.body.appendChild(backdrop);
+    let settled=false;
+    const finish=value=>{if(settled)return;settled=true;document.removeEventListener("keydown",onKey);backdrop.remove();resolve(value);};
+    const onKey=event=>{if(event.key==="Escape")finish(null);else if(event.key==="Enter"&&backdrop.isConnected)finish(input.value);};
+    cancel.onclick=()=>finish(null);submit.onclick=()=>finish(input.value);
+    backdrop.addEventListener("click",event=>{if(event.target===backdrop)finish(null);});
+    document.addEventListener("keydown",onKey);input.focus();input.select();
+  });
+}
+async function copyTextToClipboard(value){
+  const textValue=String(value||"");
+  if(!textValue)return false;
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(textValue);
+      return true;
+    }
+  }catch(_){}
+  const field=document.createElement("textarea");
+  field.value=textValue;field.setAttribute("readonly","");
+  field.style.position="fixed";field.style.opacity="0";field.style.pointerEvents="none";
+  document.body.appendChild(field);field.select();field.setSelectionRange(0,field.value.length);
+  let copied=false;
+  try{copied=document.execCommand("copy");}catch(_){}
+  field.remove();
+  return copied;
 }
 
 function showError(message){
@@ -662,7 +757,7 @@ function wireNotifications(){
       });
       await loadNotifications();
     }catch(error){
-      alert("Could not mark notification as read: "+error.message);
+      appNotice("Could not mark notification as read: "+error.message);
     }
   };
 
@@ -686,7 +781,7 @@ function wireNotifications(){
       }
       await loadNotifications();
     }catch(error){
-      alert("Could not mark all notifications as read: "+error.message);
+      appNotice("Could not mark all notifications as read: "+error.message);
     }finally{
       markAll.disabled=false;
     }
@@ -752,7 +847,7 @@ function wireNotifications(){
         if(!response.ok){let detail="Download failed ("+response.status+")";try{const data=await response.json();detail=data.error||detail;}catch(e){}throw new Error(detail);}
         const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="number-file-request-"+id;document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
         button.textContent="Downloaded";
-      }catch(error){alert(error.message);button.disabled=false;button.textContent="Download file";}
+      }catch(error){appNotice(error.message);button.disabled=false;button.textContent="Download file";}
     });
   }catch(error){
     message.textContent="Could not load file requests: "+error.message;
@@ -776,7 +871,7 @@ async function wireWallet(){
   const referenceInput=document.getElementById("wallet-deposit-reference");
   const screenshotInput=document.getElementById("wallet-deposit-screenshot");
   const copyAddressButton=document.getElementById("copy-deposit-address");
-  if(copyAddressButton)copyAddressButton.onclick=async()=>{try{await navigator.clipboard.writeText("TNQDzC5mxe9CZiu5Tn8uabP9E1eGXQSwRH");copyAddressButton.textContent="Copied";}catch(e){alert("Please copy the address manually.");}};
+  if(copyAddressButton)copyAddressButton.onclick=async()=>{try{await navigator.clipboard.writeText("TNQDzC5mxe9CZiu5Tn8uabP9E1eGXQSwRH");copyAddressButton.textContent="Copied";}catch(e){appNotice("Please copy the address manually.");}};
   const submitButton=document.getElementById("wallet-deposit-submit");
   const message=document.getElementById("wallet-deposit-message");
   const historyBox=document.getElementById("wallet-deposit-history");
@@ -837,7 +932,7 @@ ${d.admin_note?`<div class="muted">Admin note: ${esc(d.admin_note)}</div>`:""}
       message.textContent="Enter a valid transaction ID/hash (3–200 letters, numbers or . _ : / -).";
       return;
     }
-    if(!confirm("Submit this USDT deposit for manual verification? Do not submit unless you have completed a transfer using the administrator's official payment instructions."))return;
+    if(!await appConfirm("Submit this USDT deposit for manual verification? Do not submit unless you have completed a transfer using the administrator's official payment instructions."))return;
 
     submitButton.disabled=true;
     submitButton.textContent="Submitting…";
@@ -898,6 +993,9 @@ async function lockAdminDashboard(){
   renderAdminGate(true);
 }
 async function renderAdminWorkspace(){
+  const previousTab=document.querySelector("#admin .admin-page-tab.active")?.dataset.target;
+  if(previousTab)adminActivePage=previousTab;
+  const previousScrollY=window.scrollY||0;
   try{
     const canManageCatalogue=adminRole==="main_admin"||adminRole==="full_admin"||adminPermissions.includes("catalogue_manage");
     if(canManageCatalogue){
@@ -910,6 +1008,9 @@ async function renderAdminWorkspace(){
     const lockNow=document.getElementById("admin-lock-now");if(lockNow)lockNow.onclick=lockAdminDashboard;
     setupAdminPageNavigation();
     applyAdminUiPermissions();
+    const restoredTab=document.querySelector('#admin .admin-page-tab[data-target="'+adminActivePage+'"]');
+    if(restoredTab)restoredTab.click();
+    window.scrollTo(0,previousScrollY);
     wireAdmin();wireSupportAdmin();wireAdminNotifications();wireAdminReferralTiers();startAdminIdleLock();
   }catch(error){if(error.message==="admin_unlock_required"){adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderAdminGate(true);}else showError("Admin dashboard could not load: "+error.message);}
 }
@@ -944,7 +1045,7 @@ async function wireAdminReferralTiers(){
       const t=(list._tiers||[]).find(x=>Number(x.id)===Number(edit.dataset.editTier));if(!t)return;
       idInput.value=t.id;minimum.value=(Number(t.min_deposit_cents)/100).toFixed(2);rate.value=(Number(t.percentage_basis_points)/100).toFixed(2);save.textContent="Save changes";minimum.focus();
     }else if(del){
-      const id=Number(del.dataset.deleteTier);if(!confirm("Delete this commission tier? Existing paid commissions will not change."))return;
+      const id=Number(del.dataset.deleteTier);if(!await appConfirm("Delete this commission tier? Existing paid commissions will not change."))return;
       try{await request("/api/admin/referral-tiers","POST",{action:"delete",id});await load();message.textContent="Tier deleted.";}catch(error){message.textContent="Could not delete tier: "+error.message;}
     }
   };
@@ -976,8 +1077,8 @@ async function wireAdminNotifications(){
   }
   toggle.onclick=()=>{const open=panel.classList.toggle("open");toggle.setAttribute("aria-expanded",String(open));if(open)load();};
   refresh.onclick=load;
-  list.onclick=async event=>{const row=event.target.closest("[data-id]");if(!row||!row.classList.contains("unread"))return;try{await request("/api/admin/notifications/read","POST",{notification_id:Number(row.dataset.id)});await load();}catch(error){alert("Could not mark notification read: "+error.message);}};
-  markAll.onclick=async()=>{try{await request("/api/admin/notifications/read-all","POST",{});await load();}catch(error){alert("Could not mark notifications read: "+error.message);}};
+  list.onclick=async event=>{const row=event.target.closest("[data-id]");if(!row||!row.classList.contains("unread"))return;try{await request("/api/admin/notifications/read","POST",{notification_id:Number(row.dataset.id)});await load();}catch(error){appNotice("Could not mark notification read: "+error.message);}};
+  markAll.onclick=async()=>{try{await request("/api/admin/notifications/read-all","POST",{});await load();}catch(error){appNotice("Could not mark notifications read: "+error.message);}};
   await load();
   if(window.adminNotificationTimer)clearInterval(window.adminNotificationTimer);
   window.adminNotificationTimer=setInterval(load,15000);
@@ -1044,7 +1145,7 @@ async function wireSupportAdmin(){
   document.getElementById("support-admin-send").onclick=async()=>{
     const input=document.getElementById("support-admin-reply"),message=input.value.trim();if(!selected||!message)return;
     const button=document.getElementById("support-admin-send");button.disabled=true;
-    try{const result=await request("/api/admin/support/chats/reply","POST",{conversation_id:selected,message});input.value="";await loadThread();await loadInbox();if(!result.telegram_delivered){alert("Reply saved and the customer has an in-app notification, but Telegram delivery failed: "+(result.telegram_error||"unknown error")+". The customer can still read the reply in the Support chat inside the app.");}}
+    try{const result=await request("/api/admin/support/chats/reply","POST",{conversation_id:selected,message});input.value="";await loadThread();await loadInbox();if(!result.telegram_delivered){appNotice("Reply saved and the customer has an in-app notification, but Telegram delivery failed: "+(result.telegram_error||"unknown error")+". The customer can still read the reply in the Support chat inside the app.");}}
     catch(e){document.getElementById("support-admin-thread-title").textContent="Reply failed: "+e.message;}finally{button.disabled=false;}
   };
   document.getElementById("support-inbox-refresh").onclick=loadInbox;
@@ -1754,7 +1855,7 @@ form.append("consent_version", selectedCode === "phoneCheck" ? "phone-validation
       resultBox.textContent="Upload a file for an enabled service first.";
       return;
     }
-    if(!confirm("Place this "+selectedService.name+" order? The final price will be calculated from your uploaded file and deducted from your USDT wallet."))return;
+    if(!await appConfirm("Place this "+selectedService.name+" order? The final price will be calculated from your uploaded file and deducted from your USDT wallet."))return;
     button.disabled=true;
     button.textContent="Placing order…";
     try{
@@ -1840,7 +1941,7 @@ updateEstimate();
   const logoutButton = document.getElementById("account-logout");
   if(logoutButton){
     logoutButton.onclick = async () => {
-      if(!confirm("Log out of this Telegram Mini App session?")) return;
+      if(!await appConfirm("Log out of this Telegram Mini App session?")) return;
       logoutButton.disabled=true;
       logoutButton.textContent="Logging out…";
       const message=document.getElementById("account-auth-message");
@@ -2445,7 +2546,9 @@ function adminMarkup(){
         <button class="btn secondary" id="zelnum-configure-pricing" type="button">Apply verified USD costs · 200% markup</button>
         <button class="btn secondary" id="zelnum-balance-refresh" type="button">Check Zelnum balance</button>
       </div>
-      <pre id="zelnum-admin-result" class="note muted" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+      <div class="actions"><button class="btn secondary" id="zelnum-copy-result" type="button">Copy result</button></div>
+      <p id="zelnum-copy-status" aria-live="polite"></p>
+      <pre id="zelnum-admin-result" class="note muted" tabindex="0" style="white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text"></pre>
     </div>
 
     <div class="panel">
@@ -2586,17 +2689,18 @@ function setupAdminPageNavigation(){
     const section=document.createElement("section");
     section.className="admin-page";
     section.dataset.adminPage=p.id;
-    section.hidden=index!==0;
+    section.hidden=p.id!==adminActivePage;
     containers[p.id]=section;
     const btn=document.createElement("button");
-    btn.type="button";btn.className="admin-page-tab"+(index===0?" active":"");
-    btn.setAttribute("role","tab");btn.setAttribute("aria-selected",index===0?"true":"false");
+    btn.type="button";btn.className="admin-page-tab"+(p.id===adminActivePage?" active":"");
+    btn.setAttribute("role","tab");btn.setAttribute("aria-selected",p.id===adminActivePage?"true":"false");
     btn.dataset.target=p.id;btn.innerHTML='<span class="admin-tab-icon">'+p.icon+'</span><span>'+p.label+'</span>';
     btn.addEventListener("click",()=>{
       Object.values(containers).forEach(el=>el.hidden=true);
       Object.values(nav.querySelectorAll(".admin-page-tab")).forEach(el=>{el.classList.remove("active");el.setAttribute("aria-selected","false");});
-      section.hidden=false;btn.classList.add("active");btn.setAttribute("aria-selected","true");
-      section.scrollIntoView({behavior:"smooth",block:"start"});
+      section.hidden=false;adminActivePage=p.id;btn.classList.add("active");btn.setAttribute("aria-selected","true");
+      // Keep the Telegram WebView viewport stable when switching Admin sections.
+      // The previous smooth scroll could move the viewport away from the tapped control.
     });
     nav.appendChild(btn);
   });
@@ -2686,9 +2790,9 @@ function renderAdminCategories(){
     item.querySelector(".rename-button").onclick=async()=>{
       const newName=item.querySelector(".rename-value").value.trim();
 
-      if(!newName)return alert("Enter a category name.");
-      if(newName===category)return alert("The category name is unchanged.");
-      if(!confirm("Rename "+category+" to "+newName+"?"))return;
+      if(!newName)return appNotice("Enter a category name.");
+      if(newName===category)return appNotice("The category name is unchanged.");
+      if(!await appConfirm("Rename "+category+" to "+newName+"?"))return;
 
       await adminAction(async()=>{
         await request("/api/admin/categories","POST",{
@@ -2710,7 +2814,7 @@ function renderAdminCategories(){
       }));
 
       if(ordered.some(x=>!Number.isSafeInteger(x.order)||x.order<0)){
-        return alert("Enter valid display orders.");
+        return appNotice("Enter valid display orders.");
       }
 
       ordered.sort((a,b)=>a.order-b.order);
@@ -2987,7 +3091,7 @@ function wireAdminManagement(){
     }
     if(toggleButton){
       const action=toggleButton.dataset.action;
-      if(!confirm((action==="revoke"?"Restrict and revoke":"Restore")+" admin access for Telegram ID "+targetId+"?"))return;
+      if(!await appConfirm((action==="revoke"?"Restrict and revoke":"Restore")+" admin access for Telegram ID "+targetId+"?"))return;
       toggleButton.disabled=true;
       try{
         await request("/api/admin/management","POST",{action,telegram_id:targetId});
@@ -3075,36 +3179,36 @@ function wireAdminActivityAndUsers(){
     const customer=adminCustomers.find(x=>Number(x.id)===Number(item.dataset.managedUserId));
     if(!customer)return;
     if(event.target.closest(".adjust-customer-balance")){
-      const direction=prompt("Enter CREDIT to add funds or DEBIT to deduct funds:","CREDIT");
+      const direction=await appPrompt("Enter CREDIT to add funds or DEBIT to deduct funds:","CREDIT");
       if(direction===null)return;
       const normalized=direction.trim().toLowerCase();
-      if(!["credit","debit"].includes(normalized)){alert("Enter CREDIT or DEBIT.");return;}
-      const amount=Number(prompt("Enter amount in USDT (example: 10.00):",""));
+      if(!["credit","debit"].includes(normalized)){appNotice("Enter CREDIT or DEBIT.");return;}
+      const amount=Number(await appPrompt("Enter amount in USDT (example: 10.00):",""));
       const amountCents=Math.round(amount*100);
-      if(!Number.isFinite(amount)||amount<=0||!Number.isSafeInteger(amountCents)||amountCents>100000000){alert("Enter a valid amount up to 1,000,000 USDT.");return;}
-      const reason=prompt("Reason for this wallet adjustment (at least 8 characters):","");
+      if(!Number.isFinite(amount)||amount<=0||!Number.isSafeInteger(amountCents)||amountCents>100000000){appNotice("Enter a valid amount up to 1,000,000 USDT.");return;}
+      const reason=await appPrompt("Reason for this wallet adjustment (at least 8 characters):","");
       if(reason===null)return;
-      if(reason.trim().length<8){alert("Please enter a clear reason of at least 8 characters.");return;}
-      if(!confirm((normalized==="credit"?"Add ":"Deduct ")+amount.toFixed(2)+" USDT "+(normalized==="credit"?"to ":"from ")+(customer.first_name||"this customer")+"'s wallet? This will be recorded in the wallet ledger."))return;
+      if(reason.trim().length<8){appNotice("Please enter a clear reason of at least 8 characters.");return;}
+      if(!await appConfirm((normalized==="credit"?"Add ":"Deduct ")+amount.toFixed(2)+" USDT "+(normalized==="credit"?"to ":"from ")+(customer.first_name||"this customer")+"'s wallet? This will be recorded in the wallet ledger."))return;
       const button=event.target.closest(".adjust-customer-balance");button.disabled=true;
       try{
         const result=await request("/api/admin/users/balance","POST",{user_id:Number(customer.id),direction:normalized,amount_cents:amountCents,reason:reason.trim()});
-        alert("Wallet updated. New balance: "+money(result.wallet_balance_cents,"USDT"));
+        appNotice("Wallet updated. New balance: "+money(result.wallet_balance_cents,"USDT"));
         await loadUsers();
-      }catch(error){alert("Wallet adjustment failed: "+error.message);button.disabled=false;}
+      }catch(error){appNotice("Wallet adjustment failed: "+error.message);button.disabled=false;}
       return;
     }
     if(event.target.closest(".message-customer")){
-      const message=prompt("Write a private Telegram bot message for "+(customer.username?"@"+customer.username:(customer.first_name||"this customer"))+":","");
+      const message=await appPrompt("Write a private Telegram bot message for "+(customer.username?"@"+customer.username:(customer.first_name||"this customer"))+":","");
       if(message===null||!message.trim())return;
-      if(message.trim().length>4096){alert("Telegram messages can contain up to 4,096 characters.");return;}
-      if(!confirm("Send this private message to the selected customer through your bot?"))return;
+      if(message.trim().length>4096){appNotice("Telegram messages can contain up to 4,096 characters.");return;}
+      if(!await appConfirm("Send this private message to the selected customer through your bot?"))return;
       const button=event.target.closest(".message-customer");button.disabled=true;
       try{
         const result=await request("/api/admin/users/message","POST",{user_id:Number(customer.id),message:message.trim()});
-        if(result.telegram_delivered){alert("Telegram message sent successfully.");}
-        else{alert("The message was saved as an in-app notification, but Telegram delivery failed: "+(result.telegram_error||"unknown error")+". The customer can read it in the Notifications section when they open the app.");}
-      }catch(error){alert("Message could not be sent: "+error.message);button.disabled=false;}
+        if(result.telegram_delivered){appNotice("Telegram message sent successfully.");}
+        else{appNotice("The message was saved as an in-app notification, but Telegram delivery failed: "+(result.telegram_error||"unknown error")+". The customer can read it in the Notifications section when they open the app.");}
+      }catch(error){appNotice("Message could not be sent: "+error.message);button.disabled=false;}
     }
   });
 
@@ -3133,7 +3237,7 @@ function wireAdminActivityAndUsers(){
     if(file&&file.size>20*1024*1024){broadcastStatus.textContent="File is too large. Maximum size is 20 MB.";return;}
     if(file&&message.length>1024){broadcastStatus.textContent="Caption must be 1,024 characters or fewer when an attachment is selected.";return;}
     if(!file&&message.length>4096){broadcastStatus.textContent="Message must be 4,096 characters or fewer.";return;}
-    if(!confirm("Create a broadcast for ALL active registered users? Messages will be sent by the Telegram bot in queued batches."))return;
+    if(!await appConfirm("Create a broadcast for ALL active registered users? Messages will be sent by the Telegram bot in queued batches."))return;
     broadcastSend.disabled=true;broadcastStatus.textContent="Preparing broadcast and uploading attachment…";
     try{
       const form=new FormData();form.append("message",message);if(file)form.append("file",file,file.name);
@@ -3193,17 +3297,17 @@ function wireAdmin(){
       adminOrdersList.querySelectorAll(".admin-submit-order").forEach(button=>{
         button.onclick=async()=>{
           const uploadId=Number(button.dataset.uploadId);
-          if(!uploadId||!confirm("Submit this paid customer order to CheckNumber? This uses your provider balance."))return;
+          if(!uploadId||!await appConfirm("Submit this paid customer order to CheckNumber? This uses your provider balance."))return;
           button.disabled=true;
           button.textContent="Submitting…";
           try{
             const result=await request("/api/admin/provider-tasks/submit","POST",{upload_id:uploadId});
-            alert("Paid order submitted. Provider task #"+result.task.id+".");
+            appNotice("Paid order submitted. Provider task #"+result.task.id+".");
             await loadAdminOrders();
             await loadProviderTasks();
             await loadAdminUploads();
           }catch(error){
-            alert("Submission result: "+error.message+". If uncertain, check the provider dashboard before retrying.");
+            appNotice("Submission result: "+error.message+". If uncertain, check the provider dashboard before retrying.");
             await loadAdminOrders();
             button.disabled=false;
             button.textContent="Submit paid order to CheckNumber";
@@ -3213,17 +3317,17 @@ function wireAdmin(){
       adminOrdersList.querySelectorAll(".manual-order-refund").forEach(button=>{
         button.onclick=async()=>{
           const orderId=Number(button.dataset.orderId);
-          if(!confirm("Refund the full amount for failed order #"+orderId+" to the customer's wallet?"))return;
-          const reason=prompt("Enter the refund reason (at least 8 characters):");
+          if(!await appConfirm("Refund the full amount for failed order #"+orderId+" to the customer's wallet?"))return;
+          const reason=await appPrompt("Enter the refund reason (at least 8 characters):");
           if(reason===null)return;
-          if(reason.trim().length<8){alert("Please enter a clear refund reason.");return;}
+          if(reason.trim().length<8){appNotice("Please enter a clear refund reason.");return;}
           button.disabled=true;
           try{
             const result=await request("/api/admin/orders/refund","POST",{order_id:orderId,reason:reason.trim()});
-            alert("Refund credited: "+money(result.refunded_cents,"USDT"));
+            appNotice("Refund credited: "+money(result.refunded_cents,"USDT"));
             await loadAdminOrders();
           }catch(error){
-            alert("Refund failed: "+error.message);
+            appNotice("Refund failed: "+error.message);
             button.disabled=false;
           }
         };
@@ -3237,6 +3341,12 @@ function wireAdmin(){
   loadAdminOrders();
 
   const zelnumAdminResult=document.getElementById("zelnum-admin-result");
+  const zelnumCopyButton=document.getElementById("zelnum-copy-result");
+  const zelnumCopyStatus=document.getElementById("zelnum-copy-status");
+  if(zelnumCopyButton)zelnumCopyButton.onclick=async()=>{
+    const copied=await copyTextToClipboard(zelnumAdminResult?.textContent||"");
+    if(zelnumCopyStatus)zelnumCopyStatus.textContent=copied?"Result copied to clipboard.":"Copy was blocked. Long-press the result text and choose Copy.";
+  };
   const zelnumBalanceButton=document.getElementById("zelnum-balance-refresh");
   if(zelnumBalanceButton){
     zelnumBalanceButton.onclick=async()=>{
@@ -3249,10 +3359,13 @@ function wireAdmin(){
   const zelnumImportButton=document.getElementById("zelnum-import-catalogue");
   if(zelnumImportButton){
     zelnumImportButton.onclick=async()=>{
-      if(!confirm("Import the documented Zelnum bulk products? Existing services and pricing will be preserved. New products will be pricing-disabled until you enter account-specific costs."))return;
+      if(!(await appConfirm("Import the documented Zelnum bulk products? Existing services and pricing will be preserved. New products will be pricing-disabled until you enter account-specific costs.","Import Zelnum services")))return;
       zelnumImportButton.disabled=true;zelnumAdminResult.textContent="Importing Zelnum catalogue…";
-      try{const data=await request("/api/admin/zelnum/catalogue/import","POST",{});zelnumAdminResult.textContent=JSON.stringify(data,null,2);await reloadAdmin();}
-      catch(error){zelnumAdminResult.textContent="Error: "+error.message;}
+      if(zelnumCopyStatus)zelnumCopyStatus.textContent="";
+      try{
+        const data=await request("/api/admin/zelnum/catalogue/import","POST",{});
+        zelnumAdminResult.textContent=JSON.stringify(data,null,2)+"\n\nRefresh the Admin Catalogue when you are ready to view newly imported services.";
+      }catch(error){zelnumAdminResult.textContent="Import failed: "+error.message;}
       finally{zelnumImportButton.disabled=false;}
     };
   }
@@ -3394,7 +3507,7 @@ function wireAdmin(){
            document.body.appendChild(overlay);
          }catch(error){
            if(objectUrl)URL.revokeObjectURL(objectUrl);
-           alert(error.message||"Could not open payment screenshot.");
+           appNotice(error.message||"Could not open payment screenshot.");
          }finally{proofButton.disabled=false;}
          return;
        }
@@ -3407,9 +3520,9 @@ function wireAdmin(){
       const action=approveButton?"approve":"reject";
       const actualAmount=Number(document.getElementById("deposit-actual-"+id)?.value);
        const actualAmountCents=Math.round(actualAmount*100);
-       if(action==="approve"&&(!Number.isFinite(actualAmount)||actualAmount<=0||!Number.isSafeInteger(actualAmountCents)))return alert("Enter the actual amount received.");
-       if(action==="approve"&&!confirm("Have you checked your receiving wallet? This will credit "+money(actualAmountCents,"USDT")+" to the customer."))return;
-      if(action==="reject"&&!confirm("Reject deposit request #"+id+"?"))return;
+       if(action==="approve"&&(!Number.isFinite(actualAmount)||actualAmount<=0||!Number.isSafeInteger(actualAmountCents)))return appNotice("Enter the actual amount received.");
+       if(action==="approve"&&!await appConfirm("Have you checked your receiving wallet? This will credit "+money(actualAmountCents,"USDT")+" to the customer."))return;
+      if(action==="reject"&&!await appConfirm("Reject deposit request #"+id+"?"))return;
       button.disabled=true;
       button.textContent=action==="approve"?"Approving…":"Rejecting…";
       try{
@@ -3422,7 +3535,7 @@ function wireAdmin(){
         depositsMessage.textContent="Deposit #"+id+" "+(action==="approve"?"approved and credited.":"rejected.");
         await loadAdminDeposits();
       }catch(error){
-        alert("Could not "+action+" deposit: "+error.message);
+        appNotice("Could not "+action+" deposit: "+error.message);
         button.disabled=false;
         button.textContent=action==="approve"?"Approve & credit":"Reject";
       }
@@ -3533,11 +3646,11 @@ async function loadNumberRequests() {
       const reason = reasonInput.value.trim();
 
       if (!reason) {
-        alert("Please enter a rejection reason.");
+        appNotice("Please enter a rejection reason.");
         return;
       }
 
-      if (!confirm("Reject request #" + id + "?")) return;
+      if (!await appConfirm("Reject request #" + id + "?")) return;
 
       rejectButton.disabled = true;
       rejectButton.textContent = "Rejecting...";
@@ -3552,12 +3665,12 @@ async function loadNumberRequests() {
           }
         );
 
-        alert("Request rejected successfully.");
+        appNotice("Request rejected successfully.");
         await loadNumberRequests();
         await loadNotifications();
 
       } catch (error) {
-        alert("Rejection failed: " + error.message);
+        appNotice("Rejection failed: " + error.message);
         rejectButton.disabled = false;
         rejectButton.textContent = "Reject request";
       }
@@ -3574,19 +3687,19 @@ async function loadNumberRequests() {
     const noteInput = document.getElementById("request-note-" + id);
 
     if (!fileInput.files.length) {
-      alert("Please select a TXT or CSV file first.");
+      appNotice("Please select a TXT or CSV file first.");
       return;
     }
 
     const file = fileInput.files[0];
 
     if (!/\.(txt|csv)$/i.test(file.name)) {
-      alert("Only TXT and CSV files are allowed.");
+      appNotice("Only TXT and CSV files are allowed.");
       return;
     }
 
     if (file.size > 20 * 1024 * 1024) {
-      alert("File must be 20 MB or smaller.");
+      appNotice("File must be 20 MB or smaller.");
       return;
     }
 
@@ -3605,11 +3718,11 @@ async function loadNumberRequests() {
         form
       );
 
-      alert("File uploaded and sent to the user's Telegram chat.");
+      appNotice("File uploaded and sent to the user's Telegram chat.");
       await loadNumberRequests();
 
     } catch (error) {
-      alert("Upload failed: " + error.message);
+      appNotice("Upload failed: " + error.message);
       button.disabled = false;
       button.textContent = "Upload and send to user";
     }
@@ -3640,9 +3753,9 @@ async function loadNumberRequests() {
     const category=document.getElementById("new-category").value.trim();
     const display_order=Number(document.getElementById("new-category-order").value);
 
-    if(!category)return alert("Enter a category name.");
+    if(!category)return appNotice("Enter a category name.");
     if(!Number.isSafeInteger(display_order)||display_order<0){
-      return alert("Enter a valid display order.");
+      return appNotice("Enter a valid display order.");
     }
 
     await adminAction(async()=>{
@@ -3669,7 +3782,7 @@ async function loadNumberRequests() {
     };
 
     if(!body.resource_code||!body.name||!body.category||!body.task_type){
-      alert("Complete resource code, service name, category and provider task code.");
+      appNotice("Complete resource code, service name, category and provider task code.");
       return;
     }
 
@@ -3688,8 +3801,8 @@ async function loadNumberRequests() {
   document.getElementById("apply-global-markup").onclick=async()=>{
     const percentage=Number(document.getElementById("global-markup").value);
     if(!Number.isSafeInteger(percentage)||percentage<0||percentage>10000)
-      return alert("Enter a whole percentage from 0 to 10000.");
-    if(!confirm("Apply "+percentage+"% markup to every product? This clears individual final-price overrides. You can edit individual product pricing afterwards."))return;
+      return appNotice("Enter a whole percentage from 0 to 10000.");
+    if(!await appConfirm("Apply "+percentage+"% markup to every product? This clears individual final-price overrides. You can edit individual product pricing afterwards."))return;
     await adminAction(async()=>{
       const result=await request("/api/admin/pricing/global","POST",{markup_percentage:percentage});
       document.getElementById("global-markup-message").textContent=
@@ -3701,7 +3814,7 @@ async function loadNumberRequests() {
   document.getElementById("save-pricing").onclick=async()=>{
     const resource_code=document.getElementById("price-service").value;
 
-    if(!resource_code)return alert("Select a service first.");
+    if(!resource_code)return appNotice("Select a service first.");
 
     const finalValue=document.getElementById("final-price").value;
 
@@ -3732,7 +3845,7 @@ async function loadNumberRequests() {
   document.getElementById("save-visibility").onclick=async()=>{
     const resource_code=document.getElementById("visibility-service").value;
 
-    if(!resource_code)return alert("Select a service.");
+    if(!resource_code)return appNotice("Select a service.");
 
     const is_listed=document.getElementById("service-listed").checked?1:0;
 
@@ -3760,10 +3873,11 @@ async function loadNumberRequests() {
   const zelnumPricingButton=document.getElementById("zelnum-configure-pricing");
   if(zelnumPricingButton){
     zelnumPricingButton.onclick=async()=>{
-      if(!confirm("Apply the 34 verified Zelnum USD bulk costs with 200% markup? Existing non-Zelnum pricing and imported minimum quantities will be preserved. All Zelnum products will remain disabled."))return;
+      if(!(await appConfirm("Apply the 34 verified Zelnum USD bulk costs with 200% markup? Existing non-Zelnum pricing and imported minimum quantities will be preserved. All Zelnum products will remain disabled.","Configure Zelnum pricing")))return;
       zelnumPricingButton.disabled=true;
       const output=document.getElementById("zelnum-admin-result");
       if(output)output.textContent="Applying verified Zelnum pricing…";
+      if(zelnumCopyStatus)zelnumCopyStatus.textContent="";
       try{
         const result=await request("/api/admin/zelnum/pricing/configure","POST",{});
         // Do not reload or rebuild the dashboard here. This action only updates
@@ -3791,7 +3905,7 @@ async function loadNumberRequests() {
   const importCatalogueButton=document.getElementById("import-catalogue");
   if(importCatalogueButton){
     importCatalogueButton.onclick=()=>adminAction(async()=>{
-      if(!confirm("Import the safe CheckNumber catalogue? Existing services and pricing will be preserved. Customer ordering will remain disabled."))return;
+      if(!await appConfirm("Import the safe CheckNumber catalogue? Existing services and pricing will be preserved. Customer ordering will remain disabled."))return;
       importCatalogueButton.disabled=true;
       const message=document.getElementById("catalogue-import-message");
       message.textContent="Importing catalogue…";
@@ -3985,7 +4099,7 @@ async function loadNumberRequests() {
             message.textContent="Upload #"+uploadId+" status saved successfully.";
 
           }catch(error){
-            alert("Could not save upload status: "+error.message);
+            appNotice("Could not save upload status: "+error.message);
             saveButton.disabled=false;
             saveButton.textContent="Save Status";
           }
@@ -3997,18 +4111,18 @@ async function loadNumberRequests() {
           const item=button.closest("[data-upload-id]");
           const uploadId=Number(item?.dataset.uploadId);
           if(!uploadId)return;
-          const country=prompt("Enter the two-letter ISO country code for phone-number products (example: NP). Leave blank for email products:");
+          const country=await appPrompt("Enter the two-letter ISO country code for phone-number products (example: NP). Leave blank for email products:");
           if(country===null)return;
-          if(!confirm("Submit upload #"+uploadId+" to Zelnum? This may deduct your Zelnum provider balance. No automatic retry will be made if the submission outcome is uncertain."))return;
+          if(!await appConfirm("Submit upload #"+uploadId+" to Zelnum? This may deduct your Zelnum provider balance. No automatic retry will be made if the submission outcome is uncertain."))return;
           button.disabled=true;button.textContent="Submitting to Zelnum…";
           try{
             const result=await request("/api/admin/provider-tasks/submit","POST",{
               upload_id:uploadId,provider:"zelnum",country_code:country.trim().toUpperCase()
             });
-            alert("Zelnum task submitted. Local task #"+result.task.id+" / Zelnum task ID: "+result.task.provider_task_id);
+            appNotice("Zelnum task submitted. Local task #"+result.task.id+" / Zelnum task ID: "+result.task.provider_task_id);
             await loadProviderTasks();await loadAdminUploads();
           }catch(error){
-            alert("Zelnum submission: "+error.message+". If the result is uncertain, check Zelnum task history before attempting anything again.");
+            appNotice("Zelnum submission: "+error.message+". If the result is uncertain, check Zelnum task history before attempting anything again.");
             button.disabled=false;button.textContent="Submit to Zelnum";
           }
         };
@@ -4018,16 +4132,16 @@ async function loadNumberRequests() {
         button.onclick=async()=>{
           const item=button.closest("[data-upload-id]");
           const uploadId=Number(item?.dataset.uploadId);
-          if(!uploadId || !confirm("Submit upload #"+uploadId+" to CheckNumber? This may consume provider balance and cannot be automatically reversed.")) return;
+          if(!uploadId || !await appConfirm("Submit upload #"+uploadId+" to CheckNumber? This may consume provider balance and cannot be automatically reversed.")) return;
           button.disabled=true;
           button.textContent="Submitting…";
           try{
             const result=await request("/api/admin/provider-tasks/submit","POST",{upload_id:uploadId});
-            alert("Provider task submitted. Local task #"+result.task.id+" / Provider ID: "+result.task.provider_task_id);
+            appNotice("Provider task submitted. Local task #"+result.task.id+" / Provider ID: "+result.task.provider_task_id);
             await loadProviderTasks();
             await loadAdminUploads();
           }catch(error){
-            alert("Submission result: "+error.message+". If the result is uncertain, do not submit again; check provider dashboard first.");
+            appNotice("Submission result: "+error.message+". If the result is uncertain, do not submit again; check provider dashboard first.");
             button.disabled=false;
             button.textContent="Submit to CheckNumber";
           }
@@ -4068,7 +4182,7 @@ async function loadNumberRequests() {
             await request("/api/admin/provider-tasks/poll","POST",{task_id:Number(button.dataset.taskId)});
             await loadProviderTasks();
           }catch(error){
-            alert("Could not refresh task: "+error.message);
+            appNotice("Could not refresh task: "+error.message);
             button.disabled=false;
             button.textContent="Check status now";
           }
@@ -4081,13 +4195,13 @@ async function loadNumberRequests() {
           const warning=retry
             ? "Only continue if you have independently confirmed the customer did NOT receive the result file. Retrying may send a duplicate if that check is wrong."
             : "Only continue if you have independently confirmed the result file is visible in the customer's Telegram chat. This marks the task completed without sending another file.";
-          if(!confirm(warning)) return;
-          const note=prompt(retry
+          if(!await appConfirm(warning)) return;
+          const note=await appPrompt(retry
             ? "Record how you confirmed the customer did not receive the file (minimum 8 characters):"
             : "Record how you confirmed the file was delivered (minimum 8 characters):");
           if(note===null) return;
           if(note.trim().length<8){
-            alert("Please enter a review note of at least 8 characters.");
+            appNotice("Please enter a review note of at least 8 characters.");
             return;
           }
           button.disabled=true;
@@ -4100,13 +4214,13 @@ async function loadNumberRequests() {
             });
             if(retry){
               const outcome=(result.outcomes||[])[0];
-              alert("Delivery review recorded. Current outcome: "+(outcome?.status||"pending")+". Refresh the task list to confirm its status.");
+              appNotice("Delivery review recorded. Current outcome: "+(outcome?.status||"pending")+". Refresh the task list to confirm its status.");
             }else{
-              alert("Task marked completed based on your delivery confirmation.");
+              appNotice("Task marked completed based on your delivery confirmation.");
             }
             await loadProviderTasks();
           }catch(error){
-            alert("Delivery review failed: "+error.message);
+            appNotice("Delivery review failed: "+error.message);
             button.disabled=false;
             button.textContent=retry?"Retry delivery (may duplicate)":"Confirm file was delivered";
           }
