@@ -3766,8 +3766,11 @@ async function loadNumberRequests() {
       if(output)output.textContent="Applying verified Zelnum pricing…";
       try{
         const result=await request("/api/admin/zelnum/pricing/configure","POST",{});
-        if(output)output.textContent=JSON.stringify(result,null,2);
         await reloadAdmin();
+        // reloadAdmin rebuilds the admin DOM, so write the response into the
+        // refreshed result panel after the workspace has finished rendering.
+        const refreshedOutput=document.getElementById("zelnum-admin-result");
+        if(refreshedOutput)refreshedOutput.textContent=JSON.stringify(result,null,2);
       }catch(error){
         if(output)output.textContent="Pricing configuration failed: "+error.message;
       }finally{
@@ -4193,7 +4196,13 @@ async function reloadAdmin(){
   adminServices=data.services||[];
   globalMarkupPercentage=Number(data.global_markup_percentage??globalMarkupPercentage);
 
-  renderDashboard();
+  // Refresh the admin workspace in place. Rendering the customer dashboard here
+  // unexpectedly exits Admin after every successful admin save/action.
+  if(adminUnlockToken){
+    await renderAdminWorkspace();
+  }else{
+    renderDashboard();
+  }
 }
 
 login();
