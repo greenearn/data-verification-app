@@ -1,5 +1,5 @@
 
-const ALLOWED_ORIGINS = new Set(["https://greenearn.github.io","https://data-verification-app-git-manual-a72ddf-shrestharaj980888-6433.vercel.app"]);
+const ALLOWED_ORIGINS = new Set(["https://greenearn.github.io","https://data-verification-app.vercel.app","https://data-verification-app-git-manual-a72ddf-shrestharaj980888-6433.vercel.app"]);
 const DEFAULT_ALLOWED_ORIGIN = "https://greenearn.github.io";
 const WORKER_ORIGIN = "https://manual-customer-orders-launch-data-verification-api.shrestharaj980888.workers.dev";
 const SESSION_DAYS = 7;
@@ -268,6 +268,31 @@ async function verifyTelegram(initData, botToken) {
 // --------------------------------------------------
 // USER SESSIONS
 // --------------------------------------------------
+
+async function verifyTelegramLoginWidget(payload, botToken) {
+  if(!payload||typeof payload!=="object"||Array.isArray(payload))throw new Error("invalid_telegram_login");
+  const receivedHash=String(payload.hash||"");
+  const authDate=Number(payload.auth_date);
+  const telegramId=String(payload.id||"");
+  if(!/^[a-f0-9]{64}$/i.test(receivedHash)||!/^\\d{1,24}$/.test(telegramId))
+    throw new Error("invalid_telegram_login");
+  const now=Math.floor(Date.now()/1000);
+  if(!Number.isSafeInteger(authDate)||authDate>now+30||now-authDate>86400)
+    throw new Error("telegram_login_expired");
+  const fields=Object.entries(payload).filter(([key,value])=>key!=="hash"&&value!==undefined&&value!==null)
+    .map(([key,value])=>[key,String(value)]);
+  fields.sort((a,b)=>a[0].localeCompare(b[0]));
+  const checkString=fields.map(([key,value])=>key+"="+value).join("\\n");
+  const secretKey=new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(botToken)));
+  const calculatedHash=hex(await hmac(secretKey,checkString));
+  if(!safeEqual(calculatedHash,receivedHash.toLowerCase()))throw new Error("telegram_signature_invalid");
+  return {
+    id:telegramId,
+    username:typeof payload.username==="string"?payload.username:null,
+    first_name:typeof payload.first_name==="string"?payload.first_name:"Customer",
+    last_name:typeof payload.last_name==="string"?payload.last_name:null
+  };
+}
 
 async function createSession(env, telegramUser, referralCode = null) {
   await ensureReferralSchema(env);
@@ -2236,6 +2261,23 @@ document.getElementById("importCatalogue").onclick=async()=>{
     // ------------------------------------------------
     // CUSTOMER LOGIN
     // ------------------------------------------------
+
+    if (request.method === "POST" && url.pathname === "/api/auth/web") {
+      try {
+        if (!env.TELEGRAM_BOT_TOKEN || !env.DB) {
+          return json({ok:false,error:"server_configuration_missing"},500,origin);
+        }
+        const body=await readBody(request);
+        const telegramUser=await verifyTelegramLoginWidget(body,env.TELEGRAM_BOT_TOKEN);
+        const session=await createSession(env,telegramUser,null);
+        return json({ok:true,...session,login_method:"telegram_web"},200,origin);
+      } catch(error) {
+        const known=["invalid_telegram_login","telegram_login_expired","telegram_signature_invalid","account_unavailable","invalid_json","request_too_large"];
+        const message=known.includes(error.message)?error.message:"request_failed";
+        const status=message==="account_unavailable"?403:400;
+        return json({ok:false,error:message},status,origin);
+      }
+    }
 
     if (request.method === "POST" && url.pathname === "/api/auth") {
       try {
