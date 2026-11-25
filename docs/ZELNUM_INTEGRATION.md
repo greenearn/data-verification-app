@@ -29,12 +29,13 @@ The API key is sent only by the Worker in the `X-API-Key` header.
 
 ## Imported bulk products
 
-The initial safe catalogue includes HLR lookup, phone model detection, phone on/off, phone status, RCS support, WhatsApp number, Telegram number, and Viber number checks. Product slugs and minimum quantities follow the public Zelnum bulk product documentation. The importer creates new `zelnum_*` service codes and does not overwrite existing CheckNumber service rows or pricing.
+The importer now reads the live `GET /v1/products` catalogue and imports every product marked for bulk/async processing, using its exact product slug, series and minimum quantity. It does not rely on a short hardcoded product list. New `zelnum_*` service codes are created without overwriting existing CheckNumber service rows or pricing. Realtime products are detected separately; they are not yet customer-orderable in this bulk workflow.
 
 Imported products are hidden from paid ordering until an admin explicitly enables pricing. Provider cost defaults to zero and pricing is disabled.
 
 ## API lifecycle
 
+- Catalogue: `GET /api/v1/products` (product metadata and minimums; no prices).
 - Submit: `POST /api/v1/detect/file` with `product`, `file`, and `country` for phone products.
 - Poll: `GET /api/v1/tasks/{task_id}`.
 - Result metadata: `GET /api/v1/tasks/{task_id}/result`.
@@ -46,7 +47,7 @@ The Worker saves the provider name and country code with each local task. Existi
 
 - Provider submission is admin-triggered. No provider task is submitted by importing the catalogue or checking the balance.
 - Existing customer wallet charging, deposit records, ledger entries, referral rewards and refunds are unchanged.
-- Customer pricing must be configured separately from Zelnum's provider cost.
+- Customer pricing must be configured separately from Zelnum's provider cost. Zelnum does not expose prices through the product catalogue; copy the actual account prices from the Zelnum website into Admin Pricing. Imported services remain disabled until configured.
 - Zelnum's bulk API pre-deducts estimated cost and refunds rows it does not process. The current customer order charge is not automatically recalculated from provider refunds; review the provider's final counts and billing before enabling customer-facing orders.
 - The Worker does not retry uncertain submissions, to avoid duplicate provider charges.
 - Result files are downloaded and sent to Telegram immediately after Zelnum marks the result available. Zelnum's documented default retention is seven days.
@@ -54,4 +55,4 @@ The Worker saves the provider name and country code with each local task. Existi
 
 ## Current scope and limitations
 
-This PR supports admin-triggered bulk TXT/CSV tasks, polling, result download, and Telegram delivery. It does not add realtime checks, automatic provider failover, or automatic product price synchronization. The imported catalogue is intentionally limited to the initial supported service set; other documented Zelnum products can be added after their use case and account availability are confirmed.
+This PR supports admin-triggered bulk TXT/CSV tasks across the live bulk catalogue, polling, result download, and Telegram delivery. It does not yet add customer-facing realtime checks, automatic provider failover, or automatic product price synchronization. Realtime products are listed by the provider API but require a separate wallet-priced single-check workflow before being exposed to customers.
