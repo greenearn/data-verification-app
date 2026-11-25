@@ -344,7 +344,8 @@ function showError(message){
   app.innerHTML='<main class="wrap"><div class="panel"><h2>Connection problem</h2><p class="error">'+esc(message)+'</p><button class="btn" onclick="location.reload()">Try again</button></div></main>';
 }
 
-function renderLoginScreen(messageText="Open the Mini App using Telegram to continue."){
+function renderLoginScreen(messageText="Sign in with Telegram to access your account."){
+  const inMiniApp=!!(tg&&tg.initData);
   app.innerHTML=`
     <main class="wrap">
       <header>
@@ -354,54 +355,66 @@ function renderLoginScreen(messageText="Open the Mini App using Telegram to cont
       <section class="panel" style="margin-top:28px">
         <h2>Sign up / Log in</h2>
         <p>${esc(messageText)}</p>
-        <p>Continue with Telegram. Your account is created automatically if this is your first visit.</p>
-        <button class="btn" id="telegram-login-button" type="button">Continue with Telegram</button>
+        <p>${inMiniApp?"Continue securely with your Telegram Mini App session.":"Use the same Telegram account on the website and inside the Mini App. Your existing wallet and account are shared."}</p>
+        ${inMiniApp ? '<button class="btn" id="telegram-login-button" type="button">Continue with Telegram</button>' : '<div id="telegram-web-login" style="display:flex;justify-content:center;min-height:52px;margin-top:18px"></div><p class="muted" style="font-size:12px;margin-top:12px">First-time visitors are registered automatically.</p>'}
       </section>
     </main>`;
   const button=document.getElementById("telegram-login-button");
   if(button)button.onclick=login;
+  if(!inMiniApp){
+    window.onTelegramAuth=function(authData){loginWithTelegramWeb(authData);};
+    const host=document.getElementById("telegram-web-login");
+    if(host){
+      const script=document.createElement("script");
+      script.async=true;
+      script.src="https://telegram.org/js/telegram-widget.js?22";
+      script.setAttribute("data-telegram-login","dataverificationnbot");
+      script.setAttribute("data-size","large");
+      script.setAttribute("data-userpic","false");
+      script.setAttribute("data-request-access","write");
+      script.setAttribute("data-onauth","onTelegramAuth(user)");
+      host.appendChild(script);
+    }
+  }
+}
+
+async function finishLogin(data){
+  if(!data||!data.ok||!data.token)throw new Error(data?.error||"Login failed");
+  token=data.token;
+  const me=await request("/api/me");
+  user=me.user||data.user||{};
+  adminMode=!!user.is_admin;
+  adminRole=user.admin_role||null;
+  adminPermissions=Array.isArray(user.admin_permissions)?user.admin_permissions:[];
+  await loadCustomerServices();
+  if(adminMode){
+    try{const security=await request("/api/admin/security/status");renderAdminGate(!!security.configured);}
+    catch(error){showError("Could not verify administrator access: "+error.message);}
+    return;
+  }
+  renderDashboard();
+}
+
+async function loginWithTelegramWeb(authData){
+  app.innerHTML='<main class="wrap"><div class="loader"></div><p>Verifying your Telegram account…</p></main>';
+  try{
+    const response=await fetch(API+"/api/auth/web",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(authData)});
+    const data=await response.json();
+    if(!response.ok||!data.ok)throw new Error(data.error||"Website login failed");
+    await finishLogin(data);
+  }catch(error){renderLoginScreen("Website login could not be completed: "+(error.message||"Please try again."));}
 }
 
 async function login(){
-  if(!tg||!tg.initData){
-    showError("Please open this Mini App from your Telegram bot.");
-    return;
-  }
-
+  if(!tg||!tg.initData){renderLoginScreen("Open the website in your browser and sign in securely with Telegram.");return;}
   app.innerHTML='<main class="wrap"><div class="loader"></div><p>Verifying Telegram account…</p></main>';
-
   try{
-    const response=await fetch(API+"/api/auth",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({initData:tg.initData})
-    });
-
+    const response=await fetch(API+"/api/auth",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({initData:tg.initData})});
     const data=await response.json();
-
     if(!response.ok||!data.ok)throw new Error(data.error||"Login failed");
-
-    token=data.token;
-
-    const me=await request("/api/me");
-    user=me.user||data.user||{};
-
-    adminMode=!!user.is_admin;
-    adminRole=user.admin_role||null;
-    adminPermissions=Array.isArray(user.admin_permissions)?user.admin_permissions:[];
-    await loadCustomerServices();
-    if(adminMode){
-      try{const security=await request("/api/admin/security/status");renderAdminGate(!!security.configured);}
-      catch(error){showError("Could not verify administrator access: "+error.message);}
-      return;
-    }
-    renderDashboard();
-
-  }catch(error){
-    showError(error.message||"Secure login failed.");
-  }
+    await finishLogin(data);
+  }catch(error){showError(error.message||"Secure login failed.");}
 }
-
 async function loadCustomerServices(){
   const data=await request("/api/services");
   services=data.services||[];
