@@ -411,6 +411,9 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "POST /api/admin/pricing": "catalogue_manage",
   "POST /api/admin/pricing/global": "catalogue_manage",
   "GET /api/admin/provider-balance": "provider_balance",
+  "GET /api/admin/zelnum/balance": "provider_balance",
+  "GET /api/admin/zelnum/products": "catalogue_manage",
+  "POST /api/admin/zelnum/catalogue/import": "catalogue_manage",
   "GET /api/admin/provider-tasks": "checknumber_validate",
   "POST /api/admin/provider-tasks/submit": "checknumber_validate",
   "POST /api/admin/provider-tasks/poll": "checknumber_validate",
@@ -2041,7 +2044,8 @@ if (request.method === "GET" && url.pathname === "/health") {
       status: "running",
       database: result?.connected === 1 ? "connected" : "error",
       telegram_secret: !!env.TELEGRAM_BOT_TOKEN,
-      checknumber_secret: !!env.CN_API_KEY
+      checknumber_secret: !!env.CN_API_KEY,
+      zelnum_secret: !!env.ZELNUM_API_KEY
     }, 200, origin);
 
   } catch (error) {
