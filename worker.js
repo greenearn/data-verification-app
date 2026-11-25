@@ -896,7 +896,7 @@ function zelnumCustomerChargeCents(usd){
   const value=Number(usd);
   if(!Number.isFinite(value)||value<0||value>1000000)throw new Error("invalid_zelnum_quote_amount");
   // 200% markup means customer pays provider cost plus 200% (3x), USD:USDT 1:1.
-  return Math.ceil(value*30000-1e-8);
+  return Math.ceil(value*300-1e-8);
 }
 async function zelnumRealtimeProducts(env,series,ids){
   await ensureZelnumRealtimeCatalogueSchema(env);
