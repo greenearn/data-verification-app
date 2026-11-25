@@ -1118,7 +1118,9 @@ async function saveServicePricing(body, env) {
 // Admin-triggered only. Customer ordering/wallet charging remain disabled.
 // --------------------------------------------------
 
+let providerTasksSchemaReady = false;
 async function ensureProviderTasksSchema(env) {
+  if (providerTasksSchemaReady) return;
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS provider_tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1127,6 +1129,8 @@ async function ensureProviderTasksSchema(env) {
       telegram_id TEXT NOT NULL,
       resource_code TEXT NOT NULL,
       task_type TEXT NOT NULL,
+      provider TEXT NOT NULL DEFAULT 'checknumber',
+      country_code TEXT,
       provider_task_id TEXT UNIQUE,
       status TEXT NOT NULL DEFAULT 'submitting',
       provider_status TEXT,
@@ -1140,6 +1144,17 @@ async function ensureProviderTasksSchema(env) {
       completed_at TEXT
     )
   `).run();
+  // Backward-compatible D1 migration for tasks created before provider selection.
+  for (const sql of [
+    "ALTER TABLE provider_tasks ADD COLUMN provider TEXT NOT NULL DEFAULT 'checknumber'",
+    "ALTER TABLE provider_tasks ADD COLUMN country_code TEXT"
+  ]) {
+    try { await env.DB.prepare(sql).run(); }
+    catch (error) {
+      if (!/duplicate column name/i.test(String(error.message || error))) throw error;
+    }
+  }
+  providerTasksSchemaReady = true;
 }
 
 function safeProviderResultUrl(value, env) {
@@ -1261,6 +1276,24 @@ function parseProviderEntries(content, extension, inputType) {
   return [...new Set(values)];
 }
 
+async function zelnumApi(env,path,options={}) {
+  if(!env.ZELNUM_API_KEY)throw new Error("zelnum_configuration_missing");
+  const base=String(env.ZELNUM_BASE_URL||"https://api.zelnum.com/api/v1").replace(/\/+$/,"");
+  const response=await fetch(base+path,{...options,headers:{...(options.headers||{}),"X-API-Key":env.ZELNUM_API_KEY}});
+  const raw=await response.text();let data;
+  try{data=JSON.parse(raw);}catch{data={};}
+  if(!response.ok){const error=new Error("zelnum_request_failed");error.providerStatus=response.status;throw error;}
+  if(data&&data.data&&typeof data.data==="object"&&!Array.isArray(data.data))data={...data,...data.data};
+  return data;
+}
+async function zelnumApiDownload(env,path){
+  if(!env.ZELNUM_API_KEY)throw new Error("zelnum_configuration_missing");
+  const base=String(env.ZELNUM_BASE_URL||"https://api.zelnum.com/api/v1").replace(/\/+$/,"");
+  const response=await fetch(base+path,{headers:{"X-API-Key":env.ZELNUM_API_KEY}});
+  if(!response.ok){const error=new Error("zelnum_download_failed");error.providerStatus=response.status;throw error;}
+  return response;
+}
+
 async function providerApi(env, path, options = {}) {
   if (!env.CN_API_KEY || !env.CN_BASE_URL) throw new Error("provider_configuration_missing");
   let base = String(env.CN_BASE_URL).replace(/\/+$/, "");
@@ -1289,7 +1322,7 @@ async function providerApi(env, path, options = {}) {
   return data;
 }
 
-async function submitStagedProviderTask(env, uploadId) {
+async function submitStagedProviderTask(env, uploadId, options = {}) {
   await ensureProviderTasksSchema(env);
   const upload=await env.DB.prepare(`
     SELECT s.id,s.user_id,s.telegram_file_id,s.file_name,s.file_size,s.resource_code,s.status,
@@ -1299,15 +1332,21 @@ async function submitStagedProviderTask(env, uploadId) {
   `).bind(uploadId).first();
   if(!upload)throw new Error("upload_not_found");
   if(!["uploaded","reviewed"].includes(upload.status))throw new Error("upload_not_ready");
+  const providerName=String(options.provider||"checknumber").toLowerCase();
+  if(!["checknumber","zelnum"].includes(providerName))throw new Error("invalid_provider");
   const taskType=String(upload.task_type||"");
   if(!taskType||["VERIFY_IN_DASHBOARD","tg_username"].includes(taskType)||!validTaskType(taskType))
     throw new Error("service_task_code_not_verified");
+  const countryCode=String(options.countryCode||"").trim().toUpperCase();
+  if(providerName==="zelnum"&&(upload.input_type||"phone")==="phone"&&!/^[A-Z]{2}$/.test(countryCode))
+    throw new Error("zelnum_country_required");
   const existing=await env.DB.prepare("SELECT id FROM provider_tasks WHERE upload_id=? LIMIT 1").bind(uploadId).first();
   if(existing)throw new Error("provider_task_already_created");
   const claim=await env.DB.prepare(`
-    INSERT INTO provider_tasks(upload_id,user_id,telegram_id,resource_code,task_type,status)
-    VALUES(?,?,?,?,?,'submitting')
-  `).bind(upload.id,upload.user_id,String(upload.telegram_id),upload.resource_code,taskType).run();
+    INSERT INTO provider_tasks(upload_id,user_id,telegram_id,resource_code,task_type,provider,country_code,status)
+    VALUES(?,?,?,?,?,?,?,'submitting')
+  `).bind(upload.id,upload.user_id,String(upload.telegram_id),upload.resource_code,taskType,providerName,
+    providerName==="zelnum"&&upload.input_type==="phone"?countryCode:null).run();
   const localId=Number(claim.meta.last_row_id);let providerSubmissionStarted=false;
   try{
     if(!env.TELEGRAM_BOT_TOKEN)throw new Error("telegram_storage_configuration_missing");
@@ -1344,28 +1383,39 @@ async function submitStagedProviderTask(env, uploadId) {
     if(paidOrder&&estimatedProviderCostCents>Number(paidOrder.estimated_provider_cost_cents))
       throw new Error("provider_cost_now_exceeds_paid_order_estimate");
     if(!paidOrder&&estimatedProviderCostCents>30)throw new Error("provider_cost_exceeds_approved_30_cent_limit");
-    const form=new FormData();form.append("file",new Blob([entries.join("\n")+"\n"],{type:"text/plain"}),
-      String(upload.file_name||"input.txt").replace(/\.(csv|txt)$/i,"")+".txt");
-    form.append("task_type",taskType);
-    providerSubmissionStarted=true;
-    const providerResult=await providerApi(env,"/v1/tasks",{method:"POST",body:form});
+    let providerResult;
+    if(providerName==="zelnum"){
+      const form=new FormData();
+      form.append("product",taskType);
+      if(upload.input_type==="phone")form.append("country",countryCode);
+      form.append("file",new Blob([entries.join("\n")+"\n"],{type:"text/plain"}),
+        String(upload.file_name||"input.txt").replace(/\.(csv|txt)$/i,"")+".txt");
+      providerSubmissionStarted=true;
+      providerResult=await zelnumApi(env,"/detect/file",{method:"POST",body:form});
+    }else{
+      const form=new FormData();form.append("file",new Blob([entries.join("\n")+"\n"],{type:"text/plain"}),
+        String(upload.file_name||"input.txt").replace(/\.(csv|txt)$/i,"")+".txt");
+      form.append("task_type",taskType);
+      providerSubmissionStarted=true;
+      providerResult=await providerApi(env,"/v1/tasks",{method:"POST",body:form});
+    }
     const providerTaskId=String(providerResult.task_id||"");
     if(!providerTaskId||providerTaskId.length>200)throw new Error("provider_task_id_missing");
     await env.DB.prepare(`
       UPDATE provider_tasks SET provider_task_id=?,status='submitted',provider_status=?,total=?,
         updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='submitting'
     `).bind(providerTaskId,String(providerResult.status||"pending"),
-      Number.isSafeInteger(Number(providerResult.total))?Number(providerResult.total):entries.length,localId).run();
+      Number.isSafeInteger(Number(providerResult.total??providerResult.summary?.total))?Number(providerResult.total??providerResult.summary.total):entries.length,localId).run();
     await env.DB.prepare(`
-      UPDATE upload_staging SET status='reviewed',admin_note='Submitted to CheckNumber provider task '||?,
+      UPDATE upload_staging SET status='reviewed',admin_note='Submitted to '||?||' provider task '||?,
         reviewed_at=CURRENT_TIMESTAMP WHERE id=?
-    `).bind(providerTaskId,uploadId).run();
+    `).bind(providerName,providerTaskId,uploadId).run();
     if(paidOrder)await env.DB.prepare(`
       UPDATE orders SET provider_task_id=?,status='processing'
       WHERE id=? AND status='pending' AND result_reference=?
     `).bind(providerTaskId,paidOrder.id,"upload:"+uploadId).run();
-    return {id:localId,provider_task_id:providerTaskId,status:"submitted",quantity:entries.length,
-      resource_code:upload.resource_code,task_type:taskType,paid_order_id:paidOrder?.id||null};
+    return {id:localId,provider:providerName,provider_task_id:providerTaskId,status:"submitted",quantity:entries.length,
+      resource_code:upload.resource_code,task_type:taskType,country_code:countryCode||null,paid_order_id:paidOrder?.id||null};
   }catch(error){
     const rejected=[400,401,402,403,404,413].includes(Number(error.providerStatus));
     const finalStatus=providerSubmissionStarted&&!rejected?"submission_unknown":"failed";
@@ -1385,7 +1435,65 @@ async function sendProviderTaskNotice(env, telegramId, message) {
   });
 }
 
+async function processZelnumTask(env, task) {
+  const provider=await zelnumApi(env,"/tasks/"+encodeURIComponent(task.provider_task_id));
+  const status=String(provider.status||"").toLowerCase();
+  if(status==="failed"){
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE provider_tasks SET status='failed',provider_status=?,total=?,success=?,failure=?,last_error=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+        .bind(status,Number(provider.total||0),Number(provider.valid||0),Number(provider.invalid||0),
+          String(provider.failure_message||"zelnum_task_failed").slice(0,200),task.id),
+      env.DB.prepare("UPDATE orders SET status='failed' WHERE result_reference=? AND provider_task_id=? AND status='processing'")
+        .bind("upload:"+task.upload_id,task.provider_task_id)
+    ]);
+    await sendProviderTaskNotice(env,task.telegram_id,"Your Zelnum verification task #"+task.id+" failed. Please contact support before resubmitting.");
+    return "failed";
+  }
+  if(status!=="completed"||provider.result_available!==true){
+    await env.DB.prepare(`UPDATE provider_tasks SET status='processing',provider_status=?,total=?,success=?,failure=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .bind(status||"unknown",Number(provider.total||0),Number(provider.valid||0),Number(provider.invalid||0),task.id).run();
+    return "processing";
+  }
+  const result=await zelnumApi(env,"/tasks/"+encodeURIComponent(task.provider_task_id)+"/result");
+  const downloadUrl=new URL(String(result.download_url||""));
+  const apiBase=new URL(String(env.ZELNUM_BASE_URL||"https://api.zelnum.com/api/v1"));
+  if(downloadUrl.protocol!=="https:"||downloadUrl.origin!==apiBase.origin||
+    downloadUrl.pathname!==apiBase.pathname.replace(/\/$/,"")+"/tasks/"+encodeURIComponent(task.provider_task_id)+"/download")
+    throw new Error("zelnum_download_url_invalid");
+  const resultResponse=await zelnumApiDownload(env,"/tasks/"+encodeURIComponent(task.provider_task_id)+"/download");
+  const resultBytes=await resultResponse.arrayBuffer();
+  if(!resultBytes.byteLength||resultBytes.byteLength>20*1024*1024)throw new Error("provider_result_size_invalid");
+  if(!env.TELEGRAM_BOT_TOKEN)throw new Error("telegram_storage_configuration_missing");
+  const deliveryClaim=await env.DB.prepare(`
+    UPDATE provider_tasks SET status='delivery_sending',result_url=?,updated_at=CURRENT_TIMESTAMP
+    WHERE id=? AND status IN ('submitted','processing','delivery_pending')
+  `).bind(String(result.download_url),task.id).run();
+  if(!deliveryClaim.meta?.changes)throw new Error("provider_delivery_already_claimed");
+  const mime=resultResponse.headers.get("Content-Type")||"application/zip";
+  const isCsv=/text\/csv/i.test(mime);
+  const deliveryForm=new FormData();
+  deliveryForm.append("chat_id",String(task.telegram_id));
+  deliveryForm.append("document",new Blob([resultBytes],{type:mime}),"zelnum-result-"+task.id+(isCsv?".csv":".zip"));
+  deliveryForm.append("caption","Your Zelnum verification result is ready. Task #"+task.id);
+  const deliveryResponse=await fetch("https://api.telegram.org/bot"+env.TELEGRAM_BOT_TOKEN+"/sendDocument",{method:"POST",body:deliveryForm});
+  const delivery=await deliveryResponse.json();
+  if(!deliveryResponse.ok||!delivery.ok){
+    await env.DB.prepare(`UPDATE provider_tasks SET status='delivery_pending',provider_status='completed',total=?,success=?,failure=?,last_error='telegram_delivery_failed',updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .bind(Number(provider.total||0),Number(provider.valid||0),Number(provider.invalid||0),task.id).run();
+    throw new Error("telegram_result_delivery_failed");
+  }
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE provider_tasks SET status='completed',provider_status='completed',result_url=NULL,total=?,success=?,failure=?,last_error=NULL,completed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .bind(Number(provider.total||0),Number(provider.valid||0),Number(provider.invalid||0),task.id),
+    env.DB.prepare("UPDATE orders SET status='completed' WHERE result_reference=? AND provider_task_id=? AND status='processing'")
+      .bind("upload:"+task.upload_id,task.provider_task_id)
+  ]);
+  await sendProviderTaskNotice(env,task.telegram_id,"Your Zelnum verification result for task #"+task.id+" has been delivered in this Telegram chat.");
+  return "completed";
+}
+
 async function processProviderTask(env, task) {
+  if(task.provider==="zelnum")return await processZelnumTask(env,task);
   const statusForm = new FormData();
   statusForm.append("task_id", task.provider_task_id);
   const provider = await providerApi(env, "/v1/gettasks", { method: "POST", body: statusForm });
@@ -3919,18 +4027,19 @@ if (request.method === "POST" && url.pathname === "/api/admin/provider-tasks/sub
     if (!Number.isSafeInteger(uploadId) || uploadId < 1) {
       return json({ ok: false, error: "invalid_upload_id" }, 400, origin);
     }
-    const task = await submitStagedProviderTask(env, uploadId);
+    const providerName=String(body.provider||"checknumber").toLowerCase();
+    const task = await submitStagedProviderTask(env, uploadId,{provider:providerName,countryCode:body.country_code||""});
     return json({ ok: true, task, customer_charging: false }, 201, origin);
   } catch (error) {
     const status = error.message === "unauthorized" ? 401 :
       error.message === "admin_access_required" ? 403 :
       error.message === "upload_not_found" ? 404 :
       ["upload_not_ready","provider_task_already_created"].includes(error.message) ? 409 :
-      ["invalid_json","invalid_upload_id","invalid_phone_numbers","provider_quantity_out_of_range","ambiguous_or_invalid_csv_row","invalid_csv_quotes","unsupported_file_type"].includes(error.message) ? 400 :
-      error.message === "service_not_enabled_for_provider_submission" ? 403 : 502;
+      ["invalid_json","invalid_upload_id","invalid_phone_numbers","provider_quantity_out_of_range","ambiguous_or_invalid_csv_row","invalid_csv_quotes","unsupported_file_type","zelnum_country_required","invalid_provider"].includes(error.message) ? 400 :
+      ["service_not_enabled_for_provider_submission","zelnum_configuration_missing"].includes(error.message) ? 403 : 502;
     return json({
       ok: false,
-      error: error.message === "provider_request_failed" ? "provider_submission_outcome_uncertain" : error.message || "provider_submission_failed",
+      error: ["provider_request_failed","zelnum_request_failed"].includes(error.message) ? "provider_submission_outcome_uncertain" : error.message || "provider_submission_failed",
       provider_status: error.providerStatus || null
     }, status, origin);
   }
