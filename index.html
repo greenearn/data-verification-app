@@ -3771,8 +3771,8 @@ async function loadNumberRequests() {
         // back to the customer catalogue and erase the result message.
         const summary=[
           "Pricing configuration completed.",
-          "Updated products: "+Number(result.updated_products||0),
-          "Missing products: "+Number(result.missing_products||0),
+          "Configured products: "+Number(result.configured_products||0)+" / "+Number(result.expected_products||34),
+          "Missing products: "+(Array.isArray(result.missing_products)?result.missing_products.length:0),
           "Markup: 200%",
           "Status: all Zelnum products remain disabled.",
           "",
