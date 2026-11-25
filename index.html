@@ -271,6 +271,7 @@ let categories=[];
 let selectedCode="";
 let uploadedFileId=null;
 let adminMode=false;
+let adminActivePage="overview";
 let adminRole=null;
 let adminPermissions=[];
 let adminUnlockToken=sessionStorage.getItem('dv_admin_unlock')||'';
@@ -948,6 +949,9 @@ async function lockAdminDashboard(){
   renderAdminGate(true);
 }
 async function renderAdminWorkspace(){
+  const previousTab=document.querySelector("#admin .admin-page-tab.active")?.dataset.target;
+  if(previousTab)adminActivePage=previousTab;
+  const previousScrollY=window.scrollY||0;
   try{
     const canManageCatalogue=adminRole==="main_admin"||adminRole==="full_admin"||adminPermissions.includes("catalogue_manage");
     if(canManageCatalogue){
@@ -960,6 +964,9 @@ async function renderAdminWorkspace(){
     const lockNow=document.getElementById("admin-lock-now");if(lockNow)lockNow.onclick=lockAdminDashboard;
     setupAdminPageNavigation();
     applyAdminUiPermissions();
+    const restoredTab=document.querySelector('#admin .admin-page-tab[data-target="'+adminActivePage+'"]');
+    if(restoredTab)restoredTab.click();
+    window.scrollTo(0,previousScrollY);
     wireAdmin();wireSupportAdmin();wireAdminNotifications();wireAdminReferralTiers();startAdminIdleLock();
   }catch(error){if(error.message==="admin_unlock_required"){adminUnlockToken="";sessionStorage.removeItem("dv_admin_unlock");renderAdminGate(true);}else showError("Admin dashboard could not load: "+error.message);}
 }
@@ -2638,16 +2645,16 @@ function setupAdminPageNavigation(){
     const section=document.createElement("section");
     section.className="admin-page";
     section.dataset.adminPage=p.id;
-    section.hidden=index!==0;
+    section.hidden=p.id!==adminActivePage;
     containers[p.id]=section;
     const btn=document.createElement("button");
-    btn.type="button";btn.className="admin-page-tab"+(index===0?" active":"");
-    btn.setAttribute("role","tab");btn.setAttribute("aria-selected",index===0?"true":"false");
+    btn.type="button";btn.className="admin-page-tab"+(p.id===adminActivePage?" active":"");
+    btn.setAttribute("role","tab");btn.setAttribute("aria-selected",p.id===adminActivePage?"true":"false");
     btn.dataset.target=p.id;btn.innerHTML='<span class="admin-tab-icon">'+p.icon+'</span><span>'+p.label+'</span>';
     btn.addEventListener("click",()=>{
       Object.values(containers).forEach(el=>el.hidden=true);
       Object.values(nav.querySelectorAll(".admin-page-tab")).forEach(el=>{el.classList.remove("active");el.setAttribute("aria-selected","false");});
-      section.hidden=false;btn.classList.add("active");btn.setAttribute("aria-selected","true");
+      section.hidden=false;adminActivePage=p.id;btn.classList.add("active");btn.setAttribute("aria-selected","true");
       // Keep the Telegram WebView viewport stable when switching Admin sections.
       // The previous smooth scroll could move the viewport away from the tapped control.
     });
