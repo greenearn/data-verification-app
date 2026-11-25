@@ -21,8 +21,10 @@ jobs:
           node - <<'NODE'
           const fs = require('fs');
           const html = fs.readFileSync('index.html', 'utf8');
-          const scripts = [...html.matchAll(/<script\\b(?![^>]*\\bsrc=)[^>]*>([\\s\\S]*?)<\\/script>/gi)];
+          const scripts = html.split('<script').slice(1)
+            .map(part => part.slice(part.indexOf('>') + 1, part.indexOf('</script>')))
+            .filter(source => source.trim());
           if (!scripts.length) throw new Error('No inline frontend script found');
-          scripts.forEach((match, index) => new Function(match[1]));
+          scripts.forEach(source => new Function(source));
           console.log('Validated ' + scripts.length + ' inline script(s).');
           NODE
