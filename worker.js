@@ -798,8 +798,19 @@ async function importZelnumCatalogue(env) {
     Array.isArray(response)?response:[];
   if(!products.length)throw new Error("zelnum_product_catalogue_empty");
   await ensureZelnumRealtimeCatalogueSchema(env);
-  const bulk=products.filter(p=>/^(bulk|async)$/i.test(String(p.mode||"").trim())||
+  const supportedBulkSlugs=new Set([
+    "amazonValid","amazonEmailValid","appleidValid","appleidEmailValid","bandValid",
+    "binanceValid","coinwValid","coinwEmailValid","fbValid","fbEmailValid","htxValid",
+    "htxEmailValid","insValid","insEmailValid","kucoinValid","kucoinEmailValid",
+    "lineGender","lineValid","linkedinGender","linkedinValid","microsoftValid","rcsValid",
+    "snapchatValid","tgGender","tgValid","tgActive","tiktokUsername","viberValid",
+    "viberActive","waGender","waValid","waActive","twitterValid","twitterEmailValid",
+    "zaloGender","zaloValid","imessageValid","live-activity-filter","phone-status-check",
+    "phone-onoff-check","phone-model-detection","hlr-lookup"
+  ]);
+  const allBulk=products.filter(p=>/^(bulk|async)$/i.test(String(p.mode||"").trim())||
     /bulk|async/i.test(String(p.mode||"")));
+  const bulk=allBulk.filter(p=>supportedBulkSlugs.has(String(p.slug||"")));
   const realtime=products.filter(p=>/realtime|real-time|single/i.test(String(p.mode||"")));
   if(!bulk.length&&!realtime.length)throw new Error("zelnum_product_catalogue_format_unrecognized");
   const markupRow=await env.DB.prepare("SELECT setting_value FROM platform_settings WHERE setting_key='global_markup_percentage' LIMIT 1").first();
@@ -4291,7 +4302,18 @@ if(request.method==="GET"&&url.pathname==="/api/admin/zelnum/preflight"){
     const products=Array.isArray(catalogue.data)?catalogue.data:
       Array.isArray(catalogue.products)?catalogue.products:
       Array.isArray(catalogue.data?.products)?catalogue.data.products:[];
-    const bulk=products.filter(p=>String(p.mode||"").toLowerCase()==="async"||String(p.mode||"").toLowerCase()==="bulk");
+    const allBulk=products.filter(p=>String(p.mode||"").toLowerCase()==="async"||String(p.mode||"").toLowerCase()==="bulk");
+    const supportedBulkSlugs=new Set([
+      "amazonValid","amazonEmailValid","appleidValid","appleidEmailValid","bandValid",
+      "binanceValid","coinwValid","coinwEmailValid","fbValid","fbEmailValid","htxValid",
+      "htxEmailValid","insValid","insEmailValid","kucoinValid","kucoinEmailValid",
+      "lineGender","lineValid","linkedinGender","linkedinValid","microsoftValid","rcsValid",
+      "snapchatValid","tgGender","tgValid","tgActive","tiktokUsername","viberValid",
+      "viberActive","waGender","waValid","waActive","twitterValid","twitterEmailValid",
+      "zaloGender","zaloValid","imessageValid","live-activity-filter","phone-status-check",
+      "phone-onoff-check","phone-model-detection","hlr-lookup"
+    ]);
+    const bulk=allBulk.filter(p=>supportedBulkSlugs.has(String(p.slug||"")));
     const realtime=products.filter(p=>String(p.mode||"").toLowerCase()==="realtime");
     const rows=await env.DB.prepare(`SELECT c.resource_code,c.task_type,c.is_listed,
       p.provider_cost_cents,p.pricing_unit_quantity,p.minimum_order_quantity,p.enabled
@@ -4317,7 +4339,7 @@ if(request.method==="GET"&&url.pathname==="/api/admin/zelnum/preflight"){
     return json({ok:true,provider:"zelnum",connection:"connected",
       api_key:{active:!!keyInfo.api_key_id,masked_key:keyInfo.masked_key||null,last_used:keyInfo.last_used||null},
       balance:{amount:balanceValue,currency:"USD",sufficient_for_any_paid_test:balanceNumber>0},
-      catalogue:{total:products.length,bulk_available:bulk.length,realtime_available:realtime.length,
+      catalogue:{total:products.length,bulk_available:allBulk.length,bulk_supported:bulk.length,unsupported_bulk:allBulk.filter(p=>!supportedBulkSlugs.has(String(p.slug||""))).map(p=>String(p.slug||"")),realtime_available:realtime.length,
         bulk_imported:bulkAudit.filter(p=>p.imported).length,realtime_imported:(realtimeRows.results||[]).length,
         missing_bulk:missingBulk,missing_bulk_costs:missingCosts,minimum_mismatches:minimumMismatches,
         bulk:bulkAudit,realtime:realtimeRows.results||[]},
