@@ -2381,13 +2381,8 @@ function adminMarkup(){
       <div id="admin-deposits-list"></div>
     </div>
 
-    <div class="item-top"><h3>Categories</h3><span class="pill">D1 database</span></div>
-    <div class="panel">
-      <h3>Import safe CheckNumber catalogue</h3>
-      <p class="muted">Adds the available catalogue categories and service records. Services remain hidden and customer ordering stays disabled until you configure and publish them.</p>
-      <button class="btn secondary" id="import-catalogue" type="button">Import safe CheckNumber catalogue</button>
-      <p class="muted" id="catalogue-import-message">No catalogue import has been run.</p>
-    </div>
+    <div class="item-top"><h3>Zelnum Service Catalogue</h3><span class="pill">Zelnum only</span></div>
+    <p class="muted">The active service list contains Zelnum products only. Legacy CheckNumber products are hidden; existing orders and wallet history are retained.</p>
     <div id="admin-categories"></div>
 
     <div class="panel">
@@ -2515,47 +2510,16 @@ function adminMarkup(){
     </div>
 
     <div class="panel">
-      <h3>CheckNumber.ai File Upload</h3>
-      <p class="muted">
-        Upload TXT or CSV files for validation.
-        No provider submission or payment will occur.
-      </p>
-
-      <label class="field" for="cn-task-type">Select validation service</label>
-      <select id="cn-task-type">
-        <option value="phoneCheck">Phone Number Validation</option>
-        <option value="email_check">Email Deliverability</option>
-        <option value="tg_username">Telegram Username Availability</option>
-      </select>
-
-      <label class="field" for="cn-upload-file">Choose TXT or CSV file</label>
-      <input id="cn-upload-file" type="file" accept=".txt,.csv,text/plain,text/csv">
-
-      <div class="actions">
-        <button class="btn" id="cn-validate-upload" type="button">Validate File</button>
-      </div>
-
-      <pre id="cn-upload-result" class="note muted" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
-    </div>
-
-    <div class="panel">
       <h3>Zelnum Provider</h3>
-      <p class="muted">Connect the Zelnum API from Cloudflare Worker secrets. Import the supported bulk catalogue, then set actual provider costs and enable only products confirmed in your Zelnum account.</p>
+      <p class="muted">Connected through the Zelnum API key in Cloudflare Worker secrets. Import the official catalogue, configure the supplied official bulk rates, and enable products only after testing.</p>
       <div class="actions">
         <button class="btn secondary" id="zelnum-import-catalogue" type="button">Import Zelnum services</button>
-        <button class="btn secondary" id="zelnum-configure-pricing" type="button">Apply verified USD costs · 200% markup</button>
+        <button class="btn secondary" id="zelnum-configure-pricing" type="button">Apply 42 official bulk rates · 200% markup</button>
         <button class="btn secondary" id="zelnum-balance-refresh" type="button">Check Zelnum balance</button>
       </div>
       <div class="actions"><button class="btn secondary" id="zelnum-copy-result" type="button">Copy result</button></div>
       <p id="zelnum-copy-status" aria-live="polite"></p>
       <pre id="zelnum-admin-result" class="note muted" tabindex="0" style="white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text"></pre>
-    </div>
-
-    <div class="panel">
-      <h3>Provider Balance</h3>
-      <p class="muted">Check the current CheckNumber.ai provider balance.</p>
-      <button class="btn secondary" id="provider-balance-refresh" type="button">Check provider balance</button>
-      <pre id="provider-balance-result" class="note muted" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
     </div>
 
     <div class="panel">
@@ -3873,7 +3837,7 @@ async function loadNumberRequests() {
   const zelnumPricingButton=document.getElementById("zelnum-configure-pricing");
   if(zelnumPricingButton){
     zelnumPricingButton.onclick=async()=>{
-      if(!(await appConfirm("Apply the 34 verified Zelnum USD bulk costs with 200% markup? Existing non-Zelnum pricing and imported minimum quantities will be preserved. All Zelnum products will remain disabled.","Configure Zelnum pricing")))return;
+      if(!(await appConfirm("Apply all 42 supplied official Zelnum bulk USD rates with 200% markup? Customer wallet prices use USDT at a 1:1 USD reference. All Zelnum products will remain disabled.","Configure Zelnum pricing")))return;
       zelnumPricingButton.disabled=true;
       const output=document.getElementById("zelnum-admin-result");
       if(output)output.textContent="Applying verified Zelnum pricing…";
@@ -3885,9 +3849,10 @@ async function loadNumberRequests() {
         // back to the customer catalogue and erase the result message.
         const summary=[
           "Pricing configuration completed.",
-          "Configured products: "+Number(result.configured_products||0)+" / "+Number(result.expected_products||34),
+          "Configured products: "+Number(result.configured_products||0)+" / "+Number(result.expected_products||42),
           "Missing products: "+(Array.isArray(result.missing_products)?result.missing_products.length:0),
           "Markup: 200%",
+          "Customer currency: USDT (USD reference 1:1)",
           "Status: all Zelnum products remain disabled.",
           "",
           JSON.stringify(result,null,2)
@@ -3902,27 +3867,6 @@ async function loadNumberRequests() {
     };
   }
 
-  const importCatalogueButton=document.getElementById("import-catalogue");
-  if(importCatalogueButton){
-    importCatalogueButton.onclick=()=>adminAction(async()=>{
-      if(!await appConfirm("Import the safe CheckNumber catalogue? Existing services and pricing will be preserved. Customer ordering will remain disabled."))return;
-      importCatalogueButton.disabled=true;
-      const message=document.getElementById("catalogue-import-message");
-      message.textContent="Importing catalogue…";
-      try{
-        const result=await request("/api/admin/catalogue/import","POST");
-        message.textContent="Import complete: "+Number(result.imported_categories||0)+" categories and "+Number(result.catalogue_entries_processed||0)+" catalogue entries processed. Services remain hidden; ordering remains disabled.";
-        await reloadAdmin();
-      }catch(error){
-        message.textContent="Import failed: "+(error.message||"Unknown error");
-        throw error;
-      }finally{
-        importCatalogueButton.disabled=false;
-      }
-    });
-  }
-
-  
   // Load admin upload history and manage review status
   async function loadAdminUploads(){
     const message=document.getElementById("admin-uploads-message");
@@ -4243,62 +4187,6 @@ async function loadNumberRequests() {
   }
 
   loadAdminUploads();
-
-  document.getElementById("cn-validate-upload").onclick=async()=>{
-    const fileInput=document.getElementById("cn-upload-file");
-    const taskType=document.getElementById("cn-task-type").value;
-    const resultBox=document.getElementById("cn-upload-result");
-    const button=document.getElementById("cn-validate-upload");
-    const file=fileInput.files&&fileInput.files[0];
-
-    if(!file){
-      resultBox.textContent="Please select a TXT or CSV file.";
-      return;
-    }
-
-    if(!/\.(txt|csv)$/i.test(file.name)){
-      resultBox.textContent="Only .txt and .csv files are allowed.";
-      return;
-    }
-
-    if(file.size>2*1024*1024){
-      resultBox.textContent="File is too large. Maximum size is 2 MB.";
-      return;
-    }
-
-    const formData=new FormData();
-    formData.append("file",file);
-    formData.append("task_type",taskType);
-
-    button.disabled=true;
-    button.textContent="Validating…";
-    resultBox.textContent="Uploading file for validation only…";
-
-    try{
-      const response=await fetch(API+"/api/admin/checknumber/validate-upload",{
-        method:"POST",
-        headers:{
-          "Authorization":"Bearer "+token,
-          "Accept":"application/json",
-          ...(adminUnlockToken?{"X-Admin-Unlock":adminUnlockToken}:{})
-        },
-        body:formData
-      });
-
-      const data=await response.json();
-
-      if(!response.ok||!data.ok){
-        throw new Error(data.error||"Upload validation failed ("+response.status+")");
-      }
-
-      resultBox.textContent=JSON.stringify(data,null,2);
-    }catch(error){
-      resultBox.textContent="Error: "+error.message;
-    }finally{
-      button.disabled=false;
-      button.textContent="Validate File";
-    }
-  };
 
   if(adminServices.length){
     document.getElementById("price-service").value=adminServices[0].resource_code;
