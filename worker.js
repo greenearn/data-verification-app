@@ -274,7 +274,7 @@ async function verifyTelegramLoginWidget(payload, botToken) {
   const receivedHash=String(payload.hash||"");
   const authDate=Number(payload.auth_date);
   const telegramId=String(payload.id||"");
-  if(!/^[a-f0-9]{64}$/i.test(receivedHash)||!/^\\d{1,24}$/.test(telegramId))
+  if(!/^[a-f0-9]{64}$/i.test(receivedHash)||!/^\d{1,24}$/.test(telegramId))
     throw new Error("invalid_telegram_login");
   const now=Math.floor(Date.now()/1000);
   if(!Number.isSafeInteger(authDate)||authDate>now+30||now-authDate>86400)
@@ -282,7 +282,7 @@ async function verifyTelegramLoginWidget(payload, botToken) {
   const fields=Object.entries(payload).filter(([key,value])=>key!=="hash"&&value!==undefined&&value!==null)
     .map(([key,value])=>[key,String(value)]);
   fields.sort((a,b)=>a[0].localeCompare(b[0]));
-  const checkString=fields.map(([key,value])=>key+"="+value).join("\\n");
+  const checkString=fields.map(([key,value])=>key+"="+value).join("\n");
   const secretKey=new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(botToken)));
   const calculatedHash=hex(await hmac(secretKey,checkString));
   if(!safeEqual(calculatedHash,receivedHash.toLowerCase()))throw new Error("telegram_signature_invalid");
