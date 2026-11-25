@@ -1232,12 +1232,16 @@ async function wireRealtimeQuickCheck(){
 async function wireZelnumRealtimeAdmin(){
   const list=document.getElementById("zelnum-realtime-admin-list"),refresh=document.getElementById("zelnum-realtime-refresh");
   if(!list||!refresh)return;
+  const phaseOneIds=new Set([47,48,49,50,51,52]);
   async function load(){
-    list.textContent="Loading realtime products…";
+    list.textContent="Loading phase-one realtime products…";
     try{
       const data=await request("/api/admin/zelnum/realtime");
-      const rows=data.products||[];
-      list.innerHTML=rows.map(p=>'<div class="item"><div class="item-top"><strong>'+esc(p.name)+'</strong><span class="pill">'+esc(p.series)+'</span></div><div class="muted">Provider ID: '+Number(p.product_id)+' · '+esc(p.slug)+'</div><label class="field"><input type="checkbox" data-rt-product="'+Number(p.product_id)+'" '+(Number(p.enabled)===1?"checked":"")+'> Available to customers</label></div>').join("")||'<p class="muted">No realtime products imported.</p>';
+      const allRows=data.products||[];
+      const rows=allRows.filter(p=>phaseOneIds.has(Number(p.product_id)));
+      const withheld=allRows.length-rows.length;
+      list.innerHTML=(rows.map(p=>'<div class="item"><div class="item-top"><strong>'+esc(p.name)+'</strong><span class="pill">'+esc(p.series)+'</span></div><div class="muted">Provider ID: '+Number(p.product_id)+' · '+esc(p.slug)+'</div><label class="field"><input type="checkbox" data-rt-product="'+Number(p.product_id)+'" '+(Number(p.enabled)===1?"checked":"")+'> Available to customers</label></div>').join("")||'<p class="muted">The six phase-one products are not present in the imported catalogue. Refresh the provider catalogue before proceeding.</p>')+
+        '<p class="muted">Phase one: WhatsApp, Telegram, Facebook phone/email, and Instagram phone/email. '+withheld+' other realtime products are held back. All switches remain unchanged until you enable them individually.</p>';
     }catch(error){list.textContent="Could not load realtime products: "+error.message;}
   }
   list.onchange=async event=>{
