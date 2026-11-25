@@ -2513,6 +2513,7 @@ function adminMarkup(){
       <h3>Zelnum Provider</h3>
       <p class="muted">Connected through the Zelnum API key in Cloudflare Worker secrets. Import the official catalogue, configure the supplied official bulk rates, and enable products only after testing.</p>
       <div class="actions">
+        <button class="btn secondary" id="zelnum-preflight" type="button">Run read-only launch checks</button>
         <button class="btn secondary" id="zelnum-import-catalogue" type="button">Import Zelnum services</button>
         <button class="btn secondary" id="zelnum-configure-pricing" type="button">Apply 42 official bulk rates · 200% markup</button>
         <button class="btn secondary" id="zelnum-balance-refresh" type="button">Check Zelnum balance</button>
@@ -3311,6 +3312,18 @@ function wireAdmin(){
     const copied=await copyTextToClipboard(zelnumAdminResult?.textContent||"");
     if(zelnumCopyStatus)zelnumCopyStatus.textContent=copied?"Result copied to clipboard.":"Copy was blocked. Long-press the result text and choose Copy.";
   };
+  const zelnumPreflightButton=document.getElementById("zelnum-preflight");
+  if(zelnumPreflightButton){
+    zelnumPreflightButton.onclick=async()=>{
+      zelnumPreflightButton.disabled=true;zelnumAdminResult.textContent="Running read-only Zelnum launch checks…";
+      if(zelnumCopyStatus)zelnumCopyStatus.textContent="";
+      try{
+        const data=await request("/api/admin/zelnum/preflight");
+        zelnumAdminResult.textContent=JSON.stringify(data,null,2);
+      }catch(error){zelnumAdminResult.textContent="Preflight failed: "+error.message;}
+      finally{zelnumPreflightButton.disabled=false;}
+    };
+  }
   const zelnumBalanceButton=document.getElementById("zelnum-balance-refresh");
   if(zelnumBalanceButton){
     zelnumBalanceButton.onclick=async()=>{
