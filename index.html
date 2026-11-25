@@ -4009,7 +4009,7 @@ async function loadNumberRequests() {
       box.innerHTML=tasks.map(task=>{
         const canPoll=["submitted","processing","delivery_pending"].includes(task.status);
         return '<div class="item"><div class="item-top"><strong>Task #'+esc(task.id)+'</strong><span class="pill">'+esc(task.status)+'</span></div>'+
-          '<div class="muted">Upload #'+esc(task.upload_id)+' · '+esc(task.resource_code)+' · Provider ID: '+esc(task.provider_task_id||"not assigned")+'</div>'+
+          '<div class="muted">Upload #'+esc(task.upload_id)+' · '+esc(task.resource_code)+' · Provider: '+esc(task.provider||"checknumber")+' · Provider ID: '+esc(task.provider_task_id||"not assigned")+'</div>'+
           '<div class="muted">Total: '+esc(task.total??"—")+' · Success: '+esc(task.success??"—")+' · Failed: '+esc(task.failure??"—")+'</div>'+
           (task.last_error?'<div class="error">'+esc(task.last_error)+'</div>':'')+
           (task.status==="delivery_sending"?'<div class="error">Delivery outcome is uncertain. Main Admin must check the customer chat before choosing an action.</div><div class="actions"><button class="btn secondary confirm-provider-delivered" data-task-id="'+Number(task.id)+'" type="button">Confirm file was delivered</button><button class="btn secondary retry-provider-delivery" data-task-id="'+Number(task.id)+'" type="button">Retry delivery (may duplicate)</button></div>':'')+(canPoll?'<button class="btn secondary poll-provider-task" data-task-id="'+Number(task.id)+'" type="button">Check status now</button>':'')+
