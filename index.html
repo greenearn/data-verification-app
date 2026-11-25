@@ -240,6 +240,15 @@ footer{border-top-color:#e2e8f1;color:#77849b}
   letter-spacing:-.035em;
   text-shadow:0 2px 14px rgba(91,255,166,.22);
 }
+
+/* Stable Telegram Mini App dialogs and selectable provider output */
+.app-dialog-backdrop{position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.48);display:flex;align-items:center;justify-content:center;padding:18px;overscroll-behavior:contain}
+.app-dialog{width:min(460px,100%);max-height:min(82dvh,680px);overflow:auto;background:#fff;color:#18243b;border:1px solid #dce4f0;border-radius:20px;padding:20px;box-shadow:0 24px 70px rgba(15,23,42,.28)}
+.app-dialog h3{margin:0 0 10px;font-size:17px}.app-dialog p{color:#53627a;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+.app-dialog-actions{display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap;margin-top:18px}
+.app-dialog-actions button{min-width:100px}
+#zelnum-admin-result{user-select:text!important;-webkit-user-select:text!important;cursor:text;max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;touch-action:pan-y}
+#zelnum-copy-status{font-size:11px;color:#16804a;min-height:16px}
 </style>
 </head>
 <body>
@@ -338,6 +347,47 @@ async function request(path,method="GET",body=null){
   }
 
   return data;
+}
+
+function appConfirm(message,title="Please confirm"){
+  return new Promise(resolve=>{
+    const backdrop=document.createElement("div");
+    backdrop.className="app-dialog-backdrop";
+    backdrop.setAttribute("role","presentation");
+    const dialog=document.createElement("section");
+    dialog.className="app-dialog";
+    dialog.setAttribute("role","dialog");
+    dialog.setAttribute("aria-modal","true");
+    dialog.setAttribute("aria-label",title);
+    dialog.innerHTML='<h3>'+esc(title)+'</h3><p>'+esc(message)+'</p><div class="app-dialog-actions"><button type="button" class="btn secondary" data-choice="cancel">Cancel</button><button type="button" class="btn" data-choice="confirm">Continue</button></div>';
+    backdrop.appendChild(dialog);
+    document.body.appendChild(backdrop);
+    const finish=value=>{backdrop.remove();resolve(value);};
+    dialog.querySelector('[data-choice="cancel"]').addEventListener("click",()=>finish(false));
+    dialog.querySelector('[data-choice="confirm"]').addEventListener("click",()=>finish(true));
+    backdrop.addEventListener("click",event=>{if(event.target===backdrop)finish(false);});
+    const onKey=event=>{if(event.key==="Escape"){document.removeEventListener("keydown",onKey);finish(false);}};
+    document.addEventListener("keydown",onKey);
+    dialog.querySelector('[data-choice="confirm"]').focus();
+  });
+}
+async function copyTextToClipboard(value){
+  const textValue=String(value||"");
+  if(!textValue)return false;
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(textValue);
+      return true;
+    }
+  }catch(_){}
+  const field=document.createElement("textarea");
+  field.value=textValue;field.setAttribute("readonly","");
+  field.style.position="fixed";field.style.opacity="0";field.style.pointerEvents="none";
+  document.body.appendChild(field);field.select();field.setSelectionRange(0,field.value.length);
+  let copied=false;
+  try{copied=document.execCommand("copy");}catch(_){}
+  field.remove();
+  return copied;
 }
 
 function showError(message){
@@ -2445,7 +2495,9 @@ function adminMarkup(){
         <button class="btn secondary" id="zelnum-configure-pricing" type="button">Apply verified USD costs · 200% markup</button>
         <button class="btn secondary" id="zelnum-balance-refresh" type="button">Check Zelnum balance</button>
       </div>
-      <pre id="zelnum-admin-result" class="note muted" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+      <div class="actions"><button class="btn secondary" id="zelnum-copy-result" type="button">Copy result</button></div>
+      <p id="zelnum-copy-status" aria-live="polite"></p>
+      <pre id="zelnum-admin-result" class="note muted" tabindex="0" style="white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text"></pre>
     </div>
 
     <div class="panel">
@@ -2596,7 +2648,8 @@ function setupAdminPageNavigation(){
       Object.values(containers).forEach(el=>el.hidden=true);
       Object.values(nav.querySelectorAll(".admin-page-tab")).forEach(el=>{el.classList.remove("active");el.setAttribute("aria-selected","false");});
       section.hidden=false;btn.classList.add("active");btn.setAttribute("aria-selected","true");
-      section.scrollIntoView({behavior:"smooth",block:"start"});
+      // Keep the Telegram WebView viewport stable when switching Admin sections.
+      // The previous smooth scroll could move the viewport away from the tapped control.
     });
     nav.appendChild(btn);
   });
@@ -3237,6 +3290,12 @@ function wireAdmin(){
   loadAdminOrders();
 
   const zelnumAdminResult=document.getElementById("zelnum-admin-result");
+  const zelnumCopyButton=document.getElementById("zelnum-copy-result");
+  const zelnumCopyStatus=document.getElementById("zelnum-copy-status");
+  if(zelnumCopyButton)zelnumCopyButton.onclick=async()=>{
+    const copied=await copyTextToClipboard(zelnumAdminResult?.textContent||"");
+    if(zelnumCopyStatus)zelnumCopyStatus.textContent=copied?"Result copied to clipboard.":"Copy was blocked. Long-press the result text and choose Copy.";
+  };
   const zelnumBalanceButton=document.getElementById("zelnum-balance-refresh");
   if(zelnumBalanceButton){
     zelnumBalanceButton.onclick=async()=>{
@@ -3249,10 +3308,13 @@ function wireAdmin(){
   const zelnumImportButton=document.getElementById("zelnum-import-catalogue");
   if(zelnumImportButton){
     zelnumImportButton.onclick=async()=>{
-      if(!confirm("Import the documented Zelnum bulk products? Existing services and pricing will be preserved. New products will be pricing-disabled until you enter account-specific costs."))return;
+      if(!(await appConfirm("Import the documented Zelnum bulk products? Existing services and pricing will be preserved. New products will be pricing-disabled until you enter account-specific costs.","Import Zelnum services")))return;
       zelnumImportButton.disabled=true;zelnumAdminResult.textContent="Importing Zelnum catalogue…";
-      try{const data=await request("/api/admin/zelnum/catalogue/import","POST",{});zelnumAdminResult.textContent=JSON.stringify(data,null,2);await reloadAdmin();}
-      catch(error){zelnumAdminResult.textContent="Error: "+error.message;}
+      if(zelnumCopyStatus)zelnumCopyStatus.textContent="";
+      try{
+        const data=await request("/api/admin/zelnum/catalogue/import","POST",{});
+        zelnumAdminResult.textContent=JSON.stringify(data,null,2)+"\n\nRefresh the Admin Catalogue when you are ready to view newly imported services.";
+      }catch(error){zelnumAdminResult.textContent="Import failed: "+error.message;}
       finally{zelnumImportButton.disabled=false;}
     };
   }
@@ -3760,10 +3822,11 @@ async function loadNumberRequests() {
   const zelnumPricingButton=document.getElementById("zelnum-configure-pricing");
   if(zelnumPricingButton){
     zelnumPricingButton.onclick=async()=>{
-      if(!confirm("Apply the 34 verified Zelnum USD bulk costs with 200% markup? Existing non-Zelnum pricing and imported minimum quantities will be preserved. All Zelnum products will remain disabled."))return;
+      if(!(await appConfirm("Apply the 34 verified Zelnum USD bulk costs with 200% markup? Existing non-Zelnum pricing and imported minimum quantities will be preserved. All Zelnum products will remain disabled.","Configure Zelnum pricing")))return;
       zelnumPricingButton.disabled=true;
       const output=document.getElementById("zelnum-admin-result");
       if(output)output.textContent="Applying verified Zelnum pricing…";
+      if(zelnumCopyStatus)zelnumCopyStatus.textContent="";
       try{
         const result=await request("/api/admin/zelnum/pricing/configure","POST",{});
         // Do not reload or rebuild the dashboard here. This action only updates
