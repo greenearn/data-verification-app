@@ -1523,6 +1523,24 @@ async function sendProviderTaskNotice(env, telegramId, message) {
   });
 }
 
+async function refundZelnumFailedOrder(env,task) {
+  await ensureCustomerOrderSchema(env);
+  const order=await env.DB.prepare("SELECT id,user_id,customer_charge_cents,result_reference FROM orders WHERE result_reference=? AND provider_task_id=? LIMIT 1").bind("upload:"+task.upload_id,task.provider_task_id).first();
+  if(!order||String(order.result_reference||"").endsWith("|refunded"))return 0;
+  const amount=Math.max(0,Number(order.customer_charge_cents)||0);if(!amount)return 0;
+  const ref="order_refund:"+order.id;
+  try{
+    const result=await env.DB.batch([
+      env.DB.prepare("INSERT INTO wallet_ledger(user_id,amount_cents,transaction_type,reference_id,description) SELECT user_id,?,'order_refund',?,'Automatic full refund: Zelnum task failed' FROM orders WHERE id=? AND NOT EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')").bind(amount,ref,order.id,ref),
+      env.DB.prepare("UPDATE users SET wallet_balance_cents=wallet_balance_cents+(SELECT amount_cents FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund') WHERE id=? AND EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund') AND EXISTS(SELECT 1 FROM orders WHERE id=? AND result_reference NOT LIKE '%|refunded')").bind(ref,order.user_id,ref,order.id),
+      env.DB.prepare("UPDATE orders SET result_reference=COALESCE(result_reference,'')||'|refunded' WHERE id=? AND result_reference NOT LIKE '%|refunded' AND EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')").bind(order.id,ref)
+    ]);
+    if(!result[0]?.meta?.changes)return 0;
+  }catch(error){if(String(error.message||"").includes("UNIQUE constraint failed"))return 0;throw error;}
+  await sendProviderTaskNotice(env,task.telegram_id,"Your Zelnum task failed. The full order charge of "+(amount/100).toFixed(2)+" USDT has been returned to your wallet.");
+  return amount;
+}
+
 async function processZelnumTask(env, task) {
   const provider=await zelnumApi(env,"/tasks/"+encodeURIComponent(task.provider_task_id));
   const status=String(provider.status||"").toLowerCase();
@@ -1534,7 +1552,7 @@ async function processZelnumTask(env, task) {
       env.DB.prepare("UPDATE orders SET status='failed' WHERE result_reference=? AND provider_task_id=? AND status='processing'")
         .bind("upload:"+task.upload_id,task.provider_task_id)
     ]);
-    await sendProviderTaskNotice(env,task.telegram_id,"Your Zelnum verification task #"+task.id+" failed. Please contact support before resubmitting.");
+    await refundZelnumFailedOrder(env,task);
     return "failed";
   }
   if(status!=="completed"||provider.result_available!==true){
