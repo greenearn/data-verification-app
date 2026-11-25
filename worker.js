@@ -1523,21 +1523,36 @@ async function sendProviderTaskNotice(env, telegramId, message) {
   });
 }
 
-async function refundZelnumFailedOrder(env,task) {
+async function refundZelnumOrder(env,task,refundCents,reason) {
   await ensureCustomerOrderSchema(env);
-  const order=await env.DB.prepare("SELECT id,user_id,customer_charge_cents,result_reference FROM orders WHERE result_reference=? AND provider_task_id=? LIMIT 1").bind("upload:"+task.upload_id,task.provider_task_id).first();
+  const order=await env.DB.prepare("SELECT id,user_id,customer_charge_cents,result_reference FROM orders WHERE result_reference=? AND provider_task_id=? LIMIT 1")
+    .bind("upload:"+task.upload_id,task.provider_task_id).first();
   if(!order||String(order.result_reference||"").endsWith("|refunded"))return 0;
-  const amount=Math.max(0,Number(order.customer_charge_cents)||0);if(!amount)return 0;
+  const charge=Math.max(0,Number(order.customer_charge_cents)||0);
+  const amount=Math.min(charge,Math.max(0,Math.round(Number(refundCents)||0)));
+  if(!amount)return 0;
   const ref="order_refund:"+order.id;
   try{
     const result=await env.DB.batch([
-      env.DB.prepare("INSERT INTO wallet_ledger(user_id,amount_cents,transaction_type,reference_id,description) SELECT user_id,?,'order_refund',?,'Automatic full refund: Zelnum task failed' FROM orders WHERE id=? AND NOT EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')").bind(amount,ref,order.id,ref),
-      env.DB.prepare("UPDATE users SET wallet_balance_cents=wallet_balance_cents+(SELECT amount_cents FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund') WHERE id=? AND EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund') AND EXISTS(SELECT 1 FROM orders WHERE id=? AND result_reference NOT LIKE '%|refunded')").bind(ref,order.user_id,ref,order.id),
-      env.DB.prepare("UPDATE orders SET result_reference=COALESCE(result_reference,'')||'|refunded' WHERE id=? AND result_reference NOT LIKE '%|refunded' AND EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')").bind(order.id,ref)
+      env.DB.prepare("INSERT INTO wallet_ledger(user_id,amount_cents,transaction_type,reference_id,description) SELECT user_id,?,'order_refund',?,? FROM orders WHERE id=? AND NOT EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')")
+        .bind(amount,ref,"Automatic Zelnum refund: "+String(reason||"provider refund").slice(0,150),order.id,ref),
+      env.DB.prepare("UPDATE users SET wallet_balance_cents=wallet_balance_cents+(SELECT amount_cents FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund') WHERE id=? AND EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund') AND EXISTS(SELECT 1 FROM orders WHERE id=? AND result_reference NOT LIKE '%|refunded')")
+        .bind(ref,order.user_id,ref,order.id),
+      env.DB.prepare("UPDATE orders SET result_reference=COALESCE(result_reference,'')||'|refunded' WHERE id=? AND result_reference NOT LIKE '%|refunded' AND EXISTS(SELECT 1 FROM wallet_ledger WHERE reference_id=? AND transaction_type='order_refund')")
+        .bind(order.id,ref)
     ]);
     if(!result[0]?.meta?.changes)return 0;
-  }catch(error){if(String(error.message||"").includes("UNIQUE constraint failed"))return 0;throw error;}
-  await sendProviderTaskNotice(env,task.telegram_id,"Your Zelnum task failed. The full order charge of "+(amount/100).toFixed(2)+" USDT has been returned to your wallet.");
+  }catch(error){
+    if(String(error.message||"").includes("UNIQUE constraint failed"))return 0;
+    throw error;
+  }
+  try{
+    await createUserNotification(env,Number(order.user_id),"Zelnum refund credited",
+      (amount/100).toFixed(2)+" USDT was returned to your wallet. "+String(reason||"Some submitted entries were not processed."),
+      "order_refund",Number(order.user_id));
+  }catch(error){console.error("Zelnum refund notification failed:",error.message);}
+  await sendProviderTaskNotice(env,task.telegram_id,
+    "Zelnum refund credited: "+(amount/100).toFixed(2)+" USDT returned to your wallet for order #"+order.id+".");
   return amount;
 }
 
@@ -1552,7 +1567,7 @@ async function processZelnumTask(env, task) {
       env.DB.prepare("UPDATE orders SET status='failed' WHERE result_reference=? AND provider_task_id=? AND status='processing'")
         .bind("upload:"+task.upload_id,task.provider_task_id)
     ]);
-    await refundZelnumFailedOrder(env,task);
+    await refundZelnumOrder(env,task,Number((await env.DB.prepare("SELECT customer_charge_cents FROM orders WHERE result_reference=? AND provider_task_id=? LIMIT 1").bind("upload:"+task.upload_id,task.provider_task_id).first())?.customer_charge_cents)||0,"the entire Zelnum task failed");
     return "failed";
   }
   if(status!=="completed"||provider.result_available!==true){
@@ -1594,6 +1609,16 @@ async function processZelnumTask(env, task) {
     env.DB.prepare("UPDATE orders SET status='completed' WHERE result_reference=? AND provider_task_id=? AND status='processing'")
       .bind("upload:"+task.upload_id,task.provider_task_id)
   ]);
+  const providerDeducted=Number(provider.cost_deducted||0);
+  const providerRefunded=Number(provider.cost_refunded||0);
+  if(Number.isFinite(providerDeducted)&&providerDeducted>0&&Number.isFinite(providerRefunded)&&providerRefunded>0){
+    const refundRatio=Math.min(1,providerRefunded/providerDeducted);
+    const customerOrder=await env.DB.prepare("SELECT customer_charge_cents FROM orders WHERE result_reference=? AND provider_task_id=? LIMIT 1")
+      .bind("upload:"+task.upload_id,task.provider_task_id).first();
+    const customerCharge=Math.max(0,Number(customerOrder?.customer_charge_cents)||0);
+    const customerRefund=Math.min(customerCharge,Math.round(customerCharge*refundRatio));
+    if(customerRefund>0)await refundZelnumOrder(env,task,customerRefund,"Zelnum automatically refunded unchecked, duplicate, or unresolved rows");
+  }
   await sendProviderTaskNotice(env,task.telegram_id,"Your Zelnum verification result for task #"+task.id+" has been delivered in this Telegram chat.");
   return "completed";
 }
