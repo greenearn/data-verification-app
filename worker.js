@@ -6,6 +6,9 @@ const SESSION_DAYS = 7;
 const MAX_INIT_DATA_AGE = 3600;
 const MAX_BODY_SIZE = 20000;
 let adminAccessSchemaReady = false;
+// First rollout phase: only basic phone/email identity checks can be configured.
+// All other realtime products remain unavailable until a separately reviewed rollout.
+const ZELNUM_PHASE_ONE_REALTIME_PRODUCT_IDS = new Set([47, 48, 49, 50, 51, 52]);
 let customerOrderSchemaReady = false;
 
 async function ensureCustomerOrderSchema(env) {
@@ -4526,6 +4529,7 @@ if(request.method==="GET"&&url.pathname==="/api/admin/zelnum/realtime"){
 if(request.method==="POST"&&url.pathname==="/api/admin/zelnum/realtime/configure"){
   try{await requireAdmin(request,env);const body=await readBody(request),id=Number(body.product_id),enabled=body.enabled===true?1:body.enabled===false?0:-1;
     if(!Number.isSafeInteger(id)||id<1||enabled<0)return json({ok:false,error:"invalid_realtime_product_setting"},400,origin);
+    if(!ZELNUM_PHASE_ONE_REALTIME_PRODUCT_IDS.has(id))return json({ok:false,error:"realtime_product_held_for_later_phase"},403,origin);
     await ensureZelnumRealtimeCatalogueSchema(env);
     const result=await env.DB.prepare("UPDATE zelnum_realtime_catalogue SET enabled=?,updated_at=CURRENT_TIMESTAMP WHERE product_id=?").bind(enabled,id).run();
     if(!result.meta?.changes)return json({ok:false,error:"realtime_product_not_found"},404,origin);
