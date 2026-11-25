@@ -2635,15 +2635,16 @@ function adminMarkup(){
         <button class="btn secondary" id="zelnum-configure-pricing" type="button">Apply 42 official bulk rates · 200% markup</button>
         <button class="btn secondary" id="zelnum-balance-refresh" type="button">Check Zelnum balance</button>
       </div>
-      <div class="panel">
-        <h3>Zelnum Realtime Product Access</h3>
-        <p class="muted">Enable only realtime products you intend to offer. Every customer request receives a live provider quote before wallet checkout; no test check is run by this setting.</p>
-        <button class="btn secondary" id="zelnum-realtime-refresh" type="button">Refresh realtime products</button>
-        <div id="zelnum-realtime-admin-list" class="muted">Loading realtime products…</div>
-      </div>
       <div class="actions"><button class="btn secondary" id="zelnum-copy-result" type="button">Copy result</button></div>
       <p id="zelnum-copy-status" aria-live="polite"></p>
       <pre id="zelnum-admin-result" class="note muted" tabindex="0" style="white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text"></pre>
+    </div>
+
+    <div class="panel" id="zelnum-realtime-admin-panel">
+      <h3>Zelnum Realtime Product Access</h3>
+      <p class="muted">Enable only realtime products you intend to offer. Every customer request receives a live provider quote before wallet checkout; no test check is run by this setting. All products remain disabled until you turn them on here.</p>
+      <button class="btn secondary" id="zelnum-realtime-refresh" type="button">Refresh realtime products</button>
+      <div id="zelnum-realtime-admin-list" class="muted">Loading realtime products…</div>
     </div>
 
     <div class="panel">
@@ -2767,6 +2768,7 @@ function setupAdminPageNavigation(){
     {id:"wallets",label:"Wallets",icon:"◉"},
     {id:"orders",label:"Orders & Requests",icon:"▤"},
     {id:"catalogue",label:"Services & Catalogue",icon:"◇"},
+    {id:"realtime",label:"Realtime Products",icon:"✓"},
     {id:"support",label:"Support",icon:"✉"},
     {id:"referrals",label:"Referrals",icon:"↗"},
     {id:"broadcast",label:"Broadcast",icon:"◎"},
@@ -2803,6 +2805,7 @@ function setupAdminPageNavigation(){
     if(id.includes("support"))return "support";
     if(id.includes("number")||id.includes("request")||id.includes("order")||/manual number|number file|customer orders|order management/.test(t))return "orders";
     if(id.includes("deposit")||id.includes("wallet")||/wallet deposit review|wallet transactions|deposit requests/.test(t))return "wallets";
+    if(id.includes("zelnum-realtime"))return "realtime";
     if(id.includes("catalog")||id.includes("category")||id.includes("service")||/categories|add a category|add or edit a service|pricing|checknumber catalogue/.test(t))return "catalogue";
     if(id.includes("management")||/administrator management|platform configuration|admin permissions/.test(t))return "settings";
     if(id.includes("activity")||id.includes("notification")||/platform activity notifications/.test(t))return "overview";
