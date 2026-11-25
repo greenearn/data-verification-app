@@ -478,6 +478,9 @@ async function finishLogin(data){
   token=data.token;
   const me=await request("/api/me");
   user=me.user||data.user||{};
+  // Keep the verified session for this Mini App tab so transient Telegram
+  // WebApp initData delays/reloads do not flash the user back to login.
+  try{sessionStorage.setItem("dv_session_token",token);}catch(_){}
   adminMode=!!user.is_admin;
   adminRole=user.admin_role||null;
   adminPermissions=Array.isArray(user.admin_permissions)?user.admin_permissions:[];
@@ -501,6 +504,14 @@ async function loginWithTelegramWeb(authData){
 }
 
 async function login(){
+  // Restore and verify the existing short-lived browser-tab session first.
+  // Only request fresh Telegram initData if the saved session is no longer valid.
+  const savedToken=(()=>{try{return sessionStorage.getItem("dv_session_token")||"";}catch(_){return "";}})();
+  if(savedToken){
+    app.innerHTML='<main class="wrap"><div class="loader"></div><p>Restoring your secure session…</p></main>';
+    try{await finishLogin({ok:true,token:savedToken});return;}
+    catch(error){token="";try{sessionStorage.removeItem("dv_session_token");}catch(_){}}
+  }
   if(!tg||!tg.initData){renderLoginScreen("Open the website in your browser and sign in securely with Telegram.");return;}
   app.innerHTML='<main class="wrap"><div class="loader"></div><p>Verifying Telegram account…</p></main>';
   try{
@@ -2053,6 +2064,7 @@ updateEstimate();
       try{
         await request("/api/auth/logout","POST",{});
         token="";
+        try{sessionStorage.removeItem("dv_session_token");}catch(_){}
         user={};
         adminMode=false;
         adminRole=null;
