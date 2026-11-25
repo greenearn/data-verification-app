@@ -437,6 +437,7 @@ const ADMIN_ROUTE_PERMISSIONS = {
   "POST /api/admin/pricing/global": "catalogue_manage",
   "GET /api/admin/provider-balance": "provider_balance",
   "GET /api/admin/zelnum/balance": "provider_balance",
+  "GET /api/admin/zelnum/preflight": "catalogue_manage",
   "GET /api/admin/zelnum/products": "catalogue_manage",
   "POST /api/admin/zelnum/catalogue/import": "catalogue_manage",
   "GET /api/admin/provider-tasks": "checknumber_validate",
@@ -770,6 +771,21 @@ async function importCheckNumberCatalogue(env) {
 // Provider costs are intentionally zero/disabled until the account price is
 // entered by an administrator. Phone tasks require an ISO country code.
 // --------------------------------------------------
+let zelnumRealtimeCatalogueSchemaReady=false;
+async function ensureZelnumRealtimeCatalogueSchema(env){
+  if(zelnumRealtimeCatalogueSchemaReady)return;
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS zelnum_realtime_catalogue(
+    product_id INTEGER PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    series TEXT NOT NULL CHECK(series IN ('phone','email')),
+    minimum_order_quantity INTEGER NOT NULL DEFAULT 1,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`).run();
+  zelnumRealtimeCatalogueSchemaReady=true;
+}
+
 async function importZelnumCatalogue(env) {
   await ensurePlatformSettingsSchema(env);
   // The provider catalogue is the source of truth: it contains current bulk
@@ -781,8 +797,20 @@ async function importZelnumCatalogue(env) {
     Array.isArray(response.data)?response.data:
     Array.isArray(response)?response:[];
   if(!products.length)throw new Error("zelnum_product_catalogue_empty");
-  const bulk=products.filter(p=>/^(bulk|async)$/i.test(String(p.mode||"").trim())||
+  await ensureZelnumRealtimeCatalogueSchema(env);
+  const supportedBulkSlugs=new Set([
+    "amazonValid","amazonEmailValid","appleidValid","appleidEmailValid","bandValid",
+    "binanceValid","coinwValid","coinwEmailValid","fbValid","fbEmailValid","htxValid",
+    "htxEmailValid","insValid","insEmailValid","kucoinValid","kucoinEmailValid",
+    "lineGender","lineValid","linkedinGender","linkedinValid","microsoftValid","rcsValid",
+    "snapchatValid","tgGender","tgValid","tgActive","tiktokUsername","viberValid",
+    "viberActive","waGender","waValid","waActive","twitterValid","twitterEmailValid",
+    "zaloGender","zaloValid","imessageValid","live-activity-filter","phone-status-check",
+    "phone-onoff-check","phone-model-detection","hlr-lookup"
+  ]);
+  const allBulk=products.filter(p=>/^(bulk|async)$/i.test(String(p.mode||"").trim())||
     /bulk|async/i.test(String(p.mode||"")));
+  const bulk=allBulk.filter(p=>supportedBulkSlugs.has(String(p.slug||"")));
   const realtime=products.filter(p=>/realtime|real-time|single/i.test(String(p.mode||"")));
   if(!bulk.length&&!realtime.length)throw new Error("zelnum_product_catalogue_format_unrecognized");
   const markupRow=await env.DB.prepare("SELECT setting_value FROM platform_settings WHERE setting_key='global_markup_percentage' LIMIT 1").first();
@@ -816,8 +844,25 @@ async function importZelnumCatalogue(env) {
       (resource_code,provider_cost_cents,markup_type,markup_value,final_price_cents,enabled,pricing_unit_quantity,minimum_order_quantity,currency,updated_at)
       VALUES (?,0,'percentage',?,NULL,0,10000,?,'USDT',CURRENT_TIMESTAMP)`).bind(item.resource_code,markup,item.minimum));
   }
+  const realtimeItems=[];
+  for(const p of realtime){
+    const id=Number(p.id),slug=String(p.slug||"").trim(),name=String(p.name||slug).trim();
+    const series=String(p.series||"").toLowerCase();
+    const minimum=Number(p.min_phones??1);
+    if(!Number.isSafeInteger(id)||id<1||!slug||slug.length>120||!name||
+       !["phone","email"].includes(series)||!Number.isSafeInteger(minimum)||minimum<1)continue;
+    realtimeItems.push({id,slug,name,series,minimum});
+    statements.push(env.DB.prepare(`INSERT INTO zelnum_realtime_catalogue
+      (product_id,slug,name,series,minimum_order_quantity,enabled,updated_at)
+      VALUES(?,?,?,?,?,0,CURRENT_TIMESTAMP)
+      ON CONFLICT(product_id) DO UPDATE SET slug=excluded.slug,name=excluded.name,
+        series=excluded.series,minimum_order_quantity=excluded.minimum_order_quantity,
+        enabled=0,updated_at=CURRENT_TIMESTAMP`).bind(id,slug,name,series,minimum));
+  }
   const result=await env.DB.batch(statements);
-  return {provider_products:products.length,bulk_products_available:bulk.length,realtime_products_available:realtime.length,
+  return {provider_products:products.length,bulk_products_available:allBulk.length,bulk_products_supported:bulk.length,
+    unsupported_bulk_products:allBulk.filter(p=>!supportedBulkSlugs.has(String(p.slug||""))).map(p=>String(p.slug||"")),
+    realtime_products_available:realtime.length,realtime_products_imported:realtimeItems.length,
     bulk_products_imported:items.length,categories:categories.size,database_operations:result.length,
     pricing_enabled:false,customer_ordering_enabled:false,
     note:"Every imported bulk product remains disabled until you enter its actual account price and explicitly enable it. Realtime products are detected but are not yet customer-orderable."};
@@ -1547,7 +1592,7 @@ async function submitStagedProviderTask(env, uploadId, options = {}) {
       form.append("file",new Blob([entries.join("\n")+"\n"],{type:"text/plain"}),
         String(upload.file_name||"input.txt").replace(/\.(csv|txt)$/i,"")+".txt");
       providerSubmissionStarted=true;
-      providerResult=await zelnumApi(env,"/detect/file",{method:"POST",body:form});
+      providerResult=await zelnumApi(env,"/detect/file",{method:"POST",body:form,headers:{"Idempotency-Key":"zelnum-upload-"+upload.id}});
     }else{
       const form=new FormData();form.append("file",new Blob([entries.join("\n")+"\n"],{type:"text/plain"}),
         String(upload.file_name||"input.txt").replace(/\.(csv|txt)$/i,"")+".txt");
@@ -4246,6 +4291,70 @@ if(request.method==="GET"&&url.pathname==="/api/admin/zelnum/balance"){
   }catch(error){
     const status=error.message==="unauthorized"?401:error.message==="admin_access_required"?403:502;
     return json({ok:false,error:error.message||"zelnum_balance_failed",provider_status:error.providerStatus||null},status,origin);
+  }
+}
+if(request.method==="GET"&&url.pathname==="/api/admin/zelnum/preflight"){
+  try{
+    await requireAdmin(request,env);
+    const [catalogue,balance,keyInfo]=await Promise.all([
+      zelnumApi(env,"/products"),
+      zelnumApi(env,"/balance"),
+      zelnumApi(env,"/api-key")
+    ]);
+    const products=Array.isArray(catalogue.data)?catalogue.data:
+      Array.isArray(catalogue.products)?catalogue.products:
+      Array.isArray(catalogue.data?.products)?catalogue.data.products:[];
+    const allBulk=products.filter(p=>String(p.mode||"").toLowerCase()==="async"||String(p.mode||"").toLowerCase()==="bulk");
+    const supportedBulkSlugs=new Set([
+      "amazonValid","amazonEmailValid","appleidValid","appleidEmailValid","bandValid",
+      "binanceValid","coinwValid","coinwEmailValid","fbValid","fbEmailValid","htxValid",
+      "htxEmailValid","insValid","insEmailValid","kucoinValid","kucoinEmailValid",
+      "lineGender","lineValid","linkedinGender","linkedinValid","microsoftValid","rcsValid",
+      "snapchatValid","tgGender","tgValid","tgActive","tiktokUsername","viberValid",
+      "viberActive","waGender","waValid","waActive","twitterValid","twitterEmailValid",
+      "zaloGender","zaloValid","imessageValid","live-activity-filter","phone-status-check",
+      "phone-onoff-check","phone-model-detection","hlr-lookup"
+    ]);
+    const bulk=allBulk.filter(p=>supportedBulkSlugs.has(String(p.slug||"")));
+    const realtime=products.filter(p=>String(p.mode||"").toLowerCase()==="realtime");
+    const rows=await env.DB.prepare(`SELECT c.resource_code,c.task_type,c.is_listed,
+      p.provider_cost_cents,p.pricing_unit_quantity,p.minimum_order_quantity,p.enabled
+      FROM service_catalogue c LEFT JOIN resource_pricing p ON p.resource_code=c.resource_code
+      WHERE c.resource_code LIKE 'zelnum_%'`).all();
+    const bySlug=new Map((rows.results||[]).map(row=>[String(row.task_type),row]));
+    const bulkAudit=bulk.map(p=>{
+      const slug=String(p.slug||"");
+      const row=bySlug.get(slug);
+      const minimum=Number(p.min_phones??1);
+      const imported=!!row;
+      const costConfigured=!!row&&Number(row.provider_cost_cents)>0&&Number(row.pricing_unit_quantity)>0;
+      const minimumMatches=!!row&&Number(row.minimum_order_quantity)===minimum;
+      return {slug,name:p.name||slug,minimum,imported,cost_configured:costConfigured,
+        minimum_matches:minimumMatches,customer_enabled:!!row&&Number(row.enabled)===1&&Number(row.is_listed)===1};
+    });
+    const realtimeRows=await env.DB.prepare("SELECT product_id,slug,name,series,minimum_order_quantity,enabled FROM zelnum_realtime_catalogue ORDER BY series,name").all().catch(()=>({results:[]}));
+    const balanceValue=balance.balance??balance.available_balance??null;
+    const balanceNumber=Number(balanceValue);
+    const missingBulk=bulkAudit.filter(p=>!p.imported).map(p=>p.slug);
+    const missingCosts=bulkAudit.filter(p=>!p.cost_configured).map(p=>p.slug);
+    const minimumMismatches=bulkAudit.filter(p=>p.imported&&!p.minimum_matches).map(p=>p.slug);
+    return json({ok:true,provider:"zelnum",connection:"connected",
+      api_key:{active:!!keyInfo.api_key_id,masked_key:keyInfo.masked_key||null,last_used:keyInfo.last_used||null},
+      balance:{amount:balanceValue,currency:"USD",sufficient_for_any_paid_test:balanceNumber>0},
+      catalogue:{total:products.length,bulk_available:allBulk.length,bulk_supported:bulk.length,unsupported_bulk:allBulk.filter(p=>!supportedBulkSlugs.has(String(p.slug||""))).map(p=>String(p.slug||"")),realtime_available:realtime.length,
+        bulk_imported:bulkAudit.filter(p=>p.imported).length,realtime_imported:(realtimeRows.results||[]).length,
+        missing_bulk:missingBulk,missing_bulk_costs:missingCosts,minimum_mismatches:minimumMismatches,
+        bulk:bulkAudit,realtime:realtimeRows.results||[]},
+      launch_readiness:{api_connected:true,all_bulk_imported:missingBulk.length===0,
+        all_bulk_costs_configured:missingCosts.length===0,bulk_minimums_match:minimumMismatches.length===0,
+        realtime_catalogue_imported:(realtimeRows.results||[]).length===realtime.length,
+        customer_products_enabled:bulkAudit.filter(p=>p.customer_enabled).length,
+        note:"Read-only provider checks only. No phone/email verification request was submitted and no provider credits were spent."}
+    },200,origin);
+  }catch(error){
+    const status=error.message==="unauthorized"?401:error.message==="admin_access_required"?403:502;
+    return json({ok:false,error:"zelnum_preflight_failed",provider_status:error.providerStatus||null,
+      detail:error.message||"unknown_error"},status,origin);
   }
 }
 if(request.method==="POST"&&url.pathname==="/api/admin/zelnum/pricing/configure"){
