@@ -830,17 +830,23 @@ async function importZelnumCatalogue(env) {
 // services/pricing and each Zelnum product's imported minimum are preserved.
 async function configureZelnumBulkPricing(env) {
   const costsCents = {
-    amazonValid:300, appleidValid:300, bandValid:500, binanceValid:800,
-    coinwValid:300, fbValid:100, htxValid:700, insValid:80,
-    kucoinValid:700, lineGender:1500, lineValid:700,
+    amazonValid:300, amazonEmailValid:400,
+    appleidValid:300, appleidEmailValid:300,
+    bandValid:500, binanceValid:800,
+    coinwValid:300, coinwEmailValid:500,
+    fbValid:100, fbEmailValid:50,
+    htxValid:700, htxEmailValid:700,
+    insValid:80, insEmailValid:80,
+    kucoinValid:700, kucoinEmailValid:1000,
+    lineGender:1500, lineValid:700,
     linkedinGender:2500, linkedinValid:500, microsoftValid:300,
     rcsValid:150, snapchatValid:1500, tgGender:450, tgValid:150,
     tgActive:350, tiktokUsername:1000, viberValid:150, viberActive:550,
     waGender:450, waValid:50, waActive:200, twitterValid:200,
-    zaloGender:1400, zaloValid:450, imessageValid:250,
-    "live-activity-filter":300, "phone-status-check":600,
-    "phone-onoff-check":6500, "phone-model-detection":1000,
-    "hlr-lookup":400
+    twitterEmailValid:300, zaloGender:1400, zaloValid:450,
+    imessageValid:250, "live-activity-filter":300,
+    "phone-status-check":600, "phone-onoff-check":6500,
+    "phone-model-detection":1000, "hlr-lookup":400
   };
   const statements = [];
   const missing = [];
@@ -856,7 +862,7 @@ async function configureZelnumBulkPricing(env) {
          enabled,pricing_unit_quantity,minimum_order_quantity,currency,updated_at)
       SELECT ?,?,'percentage',200,NULL,0,10000,
         COALESCE((SELECT minimum_order_quantity FROM resource_pricing WHERE resource_code=?),1),
-        'USD',CURRENT_TIMESTAMP
+        'USDT',CURRENT_TIMESTAMP
       ON CONFLICT(resource_code) DO UPDATE SET
         provider_cost_cents=excluded.provider_cost_cents,
         markup_type='percentage',
@@ -864,7 +870,7 @@ async function configureZelnumBulkPricing(env) {
         final_price_cents=NULL,
         enabled=0,
         pricing_unit_quantity=10000,
-        currency='USD',
+        currency='USDT',
         updated_at=CURRENT_TIMESTAMP
     `).bind(resourceCode, providerCostCents, resourceCode));
   }
@@ -873,12 +879,13 @@ async function configureZelnumBulkPricing(env) {
     configured_products: statements.length,
     expected_products: Object.keys(costsCents).length,
     markup_percentage: 200,
-    currency: "USD",
+    provider_cost_currency: "USD",
+    currency: "USDT",
     pricing_unit_quantity: 10000,
     customer_ordering_enabled: false,
     pricing_enabled: false,
     missing_products: missing,
-    note: "Only matched Zelnum bulk products were updated. All remain disabled; imported minimum quantities and all non-Zelnum pricing are preserved."
+    note: "Official Zelnum bulk costs are stored in USD-equivalent cents; customer wallet prices are USDT at a 1:1 reference. All remain disabled and imported minimum quantities are preserved."
   };
 }
 
@@ -888,15 +895,17 @@ async function configureZelnumBulkPricing(env) {
 async function getAdminCatalogue(env) {
   await ensurePlatformSettingsSchema(env);
   const globalMarkupRow=await env.DB.prepare("SELECT setting_value FROM platform_settings WHERE setting_key='global_markup_percentage' LIMIT 1").first();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE service_catalogue SET is_listed=0,updated_at=CURRENT_TIMESTAMP WHERE resource_code NOT LIKE 'zelnum_%'"),
+    env.DB.prepare("UPDATE resource_pricing SET enabled=0,updated_at=CURRENT_TIMESTAMP WHERE resource_code NOT LIKE 'zelnum_%'"),
+    env.DB.prepare("UPDATE service_categories SET is_listed=0,updated_at=CURRENT_TIMESTAMP WHERE category NOT IN (SELECT DISTINCT category FROM service_catalogue WHERE resource_code LIKE 'zelnum_%')")
+  ]);
   const categoriesResult = await env.DB.prepare(`
-    SELECT
-      category,
-      display_order,
-      is_listed,
-      created_at,
-      updated_at
-    FROM service_categories
-    ORDER BY display_order ASC, category ASC
+    SELECT DISTINCT sc.category,sc.display_order,sc.is_listed,sc.created_at,sc.updated_at
+    FROM service_categories sc
+    JOIN service_catalogue c ON c.category=sc.category COLLATE NOCASE
+    WHERE c.resource_code LIKE 'zelnum_%'
+    ORDER BY sc.display_order ASC,sc.category ASC
   `).all();
 
   const servicesResult = await env.DB.prepare(`
@@ -922,6 +931,7 @@ async function getAdminCatalogue(env) {
     FROM service_catalogue c
     LEFT JOIN resource_pricing p
       ON p.resource_code = c.resource_code
+    WHERE c.resource_code LIKE 'zelnum_%'
     ORDER BY c.display_order ASC, c.name ASC
   `).all();
 
@@ -3098,6 +3108,7 @@ if (
             ON p.resource_code = c.resource_code
           WHERE c.is_listed = 1
             AND sc.is_listed = 1
+            AND c.resource_code LIKE 'zelnum_%'
           ORDER BY sc.display_order ASC,
                    c.display_order ASC,
                    c.name ASC
@@ -3242,7 +3253,8 @@ if (
           FROM service_catalogue c
           JOIN service_categories sc ON sc.category = c.category COLLATE NOCASE
           JOIN resource_pricing p ON p.resource_code = c.resource_code
-          WHERE c.resource_code = ? AND c.is_listed = 1 AND sc.is_listed = 1
+          WHERE c.resource_code = ? AND c.resource_code LIKE 'zelnum_%'
+            AND c.is_listed = 1 AND sc.is_listed = 1
             AND p.enabled = 1 AND c.task_type NOT IN ('VERIFY_IN_DASHBOARD','tg_username')
           LIMIT 1
         `).bind(resourceCode).first();
@@ -3774,12 +3786,12 @@ if (
   try {
     await requireAdmin(request, env);
 
-    const result = await importCheckNumberCatalogue(env);
-
-    return json({
-      ok: true,
-      ...result
-    }, 200, origin);
+    await env.DB.batch([
+      env.DB.prepare("UPDATE service_catalogue SET is_listed=0,updated_at=CURRENT_TIMESTAMP WHERE resource_code NOT LIKE 'zelnum_%'"),
+      env.DB.prepare("UPDATE resource_pricing SET enabled=0,updated_at=CURRENT_TIMESTAMP WHERE resource_code NOT LIKE 'zelnum_%'")
+    ]);
+    return json({ok:true,provider:"zelnum",legacy_products_hidden:true,ordering_enabled:false,
+      note:"CheckNumber products are archived from the active catalogue. Historical orders and wallet ledger entries are preserved."},200,origin);
 
   } catch (error) {
     const statusMap = {
