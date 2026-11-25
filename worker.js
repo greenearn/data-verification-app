@@ -745,28 +745,45 @@ async function importCheckNumberCatalogue(env) {
 // Provider costs are intentionally zero/disabled until the account price is
 // entered by an administrator. Phone tasks require an ISO country code.
 // --------------------------------------------------
-const ZELNUM_BULK_CATALOGUE = [
-  {category:"Zelnum · Phone Intelligence",category_order:80,resource_code:"zelnum_hlr_lookup",name:"Zelnum HLR Lookup",description:"Bulk HLR and carrier lookup",input_type:"phone",task_type:"hlr-lookup",minimum:2000},
-  {category:"Zelnum · Phone Intelligence",category_order:80,resource_code:"zelnum_phone_model",name:"Zelnum Phone Model Detection",description:"Bulk phone model detection",input_type:"phone",task_type:"phone-model-detection",minimum:500},
-  {category:"Zelnum · Phone Intelligence",category_order:80,resource_code:"zelnum_phone_onoff",name:"Zelnum Phone On/Off Check",description:"Bulk phone reachability status check",input_type:"phone",task_type:"phone-onoff-check",minimum:1500},
-  {category:"Zelnum · Phone Intelligence",category_order:80,resource_code:"zelnum_phone_status",name:"Zelnum Phone Status Check",description:"Bulk phone status check",input_type:"phone",task_type:"phone-status-check",minimum:2000},
-  {category:"Zelnum · Phone Intelligence",category_order:80,resource_code:"zelnum_rcs_checker",name:"Zelnum RCS Support Check",description:"Check RCS support for phone numbers",input_type:"phone",task_type:"rcsValid",minimum:1000},
-  {category:"Zelnum · Messaging",category_order:81,resource_code:"zelnum_whatsapp_checker",name:"Zelnum WhatsApp Number Checker",description:"Check WhatsApp number registration",input_type:"phone",task_type:"waValid",minimum:1000},
-  {category:"Zelnum · Messaging",category_order:81,resource_code:"zelnum_telegram_checker",name:"Zelnum Telegram Number Checker",description:"Check Telegram number registration",input_type:"phone",task_type:"tgValid",minimum:1000},
-  {category:"Zelnum · Messaging",category_order:81,resource_code:"zelnum_viber_checker",name:"Zelnum Viber Number Checker",description:"Check Viber number registration",input_type:"phone",task_type:"viberValid",minimum:1000}
-];
-
 async function importZelnumCatalogue(env) {
   await ensurePlatformSettingsSchema(env);
+  // The provider catalogue is the source of truth: it contains current bulk
+  // slugs, realtime IDs, series and per-product minimums. Prices are not
+  // exposed by this endpoint and must be entered from the account pricing page.
+  const response=await zelnumApi(env,"/products");
+  const products=Array.isArray(response.products)?response.products:
+    Array.isArray(response.data?.products)?response.data.products:
+    Array.isArray(response.data)?response.data:
+    Array.isArray(response)?response:[];
+  if(!products.length)throw new Error("zelnum_product_catalogue_empty");
+  const bulk=products.filter(p=>/^(bulk|async)$/i.test(String(p.mode||"").trim())||
+    /bulk|async/i.test(String(p.mode||"")));
+  const realtime=products.filter(p=>/realtime|real-time|single/i.test(String(p.mode||"")));
+  if(!bulk.length&&!realtime.length)throw new Error("zelnum_product_catalogue_format_unrecognized");
   const markupRow=await env.DB.prepare("SELECT setting_value FROM platform_settings WHERE setting_key='global_markup_percentage' LIMIT 1").first();
   const markup=Math.max(0,Math.min(10000,Number(markupRow?.setting_value??10)));
   const categories=new Map();
-  for(const item of ZELNUM_BULK_CATALOGUE)categories.set(item.category,item.category_order);
+  const items=[];
+  for(const p of bulk){
+    const slug=String(p.slug||"").trim();
+    const name=String(p.name||slug).trim();
+    const series=String(p.series||"phone").toLowerCase();
+    const inputType=["phone","email","username"].includes(series)?series:
+      (/email/i.test(name+" "+slug)?"email":/username/i.test(name+" "+slug)?"username":"phone");
+    const minimum=Number(p.min_phones??p.minimum??p.min_numbers??1);
+    if(!slug||slug.length>80||!validTaskType(slug)||!name||!Number.isSafeInteger(minimum)||minimum<1)continue;
+    const resourceCode="zelnum_"+slug.toLowerCase().replace(/[^a-z0-9_-]/g,"_");
+    const category="Zelnum · "+(inputType==="email"?"Email":inputType==="username"?"Username":"Phone");
+    items.push({resource_code:resourceCode,name:"Zelnum "+name,description:"Zelnum bulk verification · "+slug,
+      category,input_type:inputType,task_type:slug,minimum});
+    categories.set(category,inputType==="email"?82:inputType==="username"?83:80);
+  }
+  if(!items.length)throw new Error("zelnum_bulk_catalogue_empty");
   const statements=[];
   for(const [category,order] of categories){
     statements.push(env.DB.prepare("INSERT OR IGNORE INTO service_categories(category,display_order,is_listed) VALUES(?,?,1)").bind(category,order));
   }
-  for(const item of ZELNUM_BULK_CATALOGUE){
+  for(const item of items){
     statements.push(env.DB.prepare(`INSERT OR IGNORE INTO service_catalogue
       (resource_code,name,description,category,input_type,task_type,display_order,is_listed)
       VALUES(?,?,?,?,?,?,?,1)`).bind(item.resource_code,item.name,item.description,item.category,item.input_type,item.task_type,1));
@@ -775,9 +792,10 @@ async function importZelnumCatalogue(env) {
       VALUES (?,0,'percentage',?,NULL,0,10000,?,'USDT',CURRENT_TIMESTAMP)`).bind(item.resource_code,markup,item.minimum));
   }
   const result=await env.DB.batch(statements);
-  return {catalogue_entries:ZELNUM_BULK_CATALOGUE.length,categories:categories.size,database_operations:result.length,
+  return {provider_products:products.length,bulk_products_available:bulk.length,realtime_products_available:realtime.length,
+    bulk_products_imported:items.length,categories:categories.size,database_operations:result.length,
     pricing_enabled:false,customer_ordering_enabled:false,
-    note:"Set each product's actual Zelnum provider cost and customer markup in Admin before enabling pricing."};
+    note:"Every imported bulk product remains disabled until you enter its actual account price and explicitly enable it. Realtime products are detected but are not yet customer-orderable."};
 }
 
 // --------------------------------------------------
@@ -1380,7 +1398,7 @@ async function submitStagedProviderTask(env, uploadId, options = {}) {
   const taskType=String(upload.task_type||"");
   if(!taskType||["VERIFY_IN_DASHBOARD","tg_username"].includes(taskType)||!validTaskType(taskType))
     throw new Error("service_task_code_not_verified");
-  if(providerName==="zelnum"&&!ZELNUM_BULK_CATALOGUE.some(item=>item.task_type===taskType))
+  if(providerName==="zelnum"&&(!String(upload.resource_code||"").startsWith("zelnum_")||!validTaskType(taskType)))
     throw new Error("unsupported_zelnum_product");
   const countryCode=String(options.countryCode||"").trim().toUpperCase();
   if(providerName==="zelnum"&&(upload.input_type||"phone")==="phone"&&!/^[A-Z]{2}$/.test(countryCode))
@@ -1415,7 +1433,7 @@ async function submitStagedProviderTask(env, uploadId, options = {}) {
       FROM resource_pricing WHERE resource_code=? LIMIT 1
     `).bind(upload.resource_code).first();
     const minimum=Number(pricing?.minimum_order_quantity);
-    if(!Number.isSafeInteger(minimum)||minimum<1||entries.length<minimum||entries.length>1000000)
+    if(!Number.isSafeInteger(minimum)||minimum<1||entries.length<minimum||entries.length>2000000)
       throw new Error("provider_quantity_out_of_range");
     if(paidOrder&&(paidOrder.status!=="pending"||Number(paidOrder.quantity)!==entries.length))
       throw new Error("paid_order_not_ready_or_quantity_mismatch");
