@@ -899,7 +899,8 @@ function zelnumCustomerChargeCents(usd){
   const value=Number(usd);
   if(!Number.isFinite(value)||value<0||value>1000000)throw new Error("invalid_zelnum_quote_amount");
   // 200% markup means customer pays provider cost plus 200% (3x), USD:USDT 1:1.
-  return Math.ceil(value*300-1e-8);
+  // Wallet balances are stored in cents: round upward to the next cent (minimum $0.01).
+  return Math.max(1,Math.ceil(value*300-1e-8));
 }
 async function zelnumRealtimeProducts(env,series,ids){
   await ensureZelnumRealtimeCatalogueSchema(env);
@@ -4387,7 +4388,7 @@ if(request.method==="POST"&&url.pathname==="/api/zelnum/realtime/quote"){
     const products=await zelnumRealtimeProducts(env,series,ids);
     const quoteResponse=await zelnumApi(env,"/realtime/quote/"+series,{
       method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({identifier,country,product_ids:ids})
+      body:JSON.stringify({identifier,...(series==="phone"?{country}:{}),product_ids:ids})
     });
     const quote=quoteResponse.quote||quoteResponse.data?.quote;
     if(!quote||!quote.quote_token||quote.total==null)throw new Error("zelnum_quote_response_invalid");
@@ -4484,7 +4485,7 @@ if(request.method==="POST"&&url.pathname==="/api/zelnum/realtime/check"){
         method:"POST",
         headers:{"Content-Type":"application/json","Idempotency-Key":providerKey,
           "X-ZelNum-Quote":String(quote.quote_token),"X-ZelNum-Quote-Amount":String(quote.quoted_total)},
-        body:JSON.stringify({identifier,country,product_ids:ids})
+        body:JSON.stringify({identifier,...(series==="phone"?{country}:{}),product_ids:ids})
       });
     }catch(providerError){
       const code=Number(providerError.providerStatus||0);
