@@ -6693,6 +6693,6 @@ if (
     }, 404, origin);
   },
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(Promise.allSettled([pollProviderTasks(env), processBroadcastQueue(env)]));
+    ctx.waitUntil(Promise.allSettled([ensureZelnumRealtimeCatalogueSchema(env), pollProviderTasks(env), processBroadcastQueue(env)]));
   }
 };
