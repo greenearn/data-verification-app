@@ -788,6 +788,20 @@ async function ensureZelnumRealtimeCatalogueSchema(env){
     enabled INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`).run();
+  // One-time launch migration: enable only the six explicitly approved
+  // basic realtime checks. The migration marker prevents later cold starts
+  // from overriding an administrator's future enable/disable choices.
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS app_migrations(
+    migration_key TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`).run();
+  const migration=await env.DB.prepare(
+    "INSERT OR IGNORE INTO app_migrations(migration_key) VALUES('enable_zelnum_realtime_phase_one_2026_11')"
+  ).run();
+  if(Number(migration.meta?.changes||0)>0){
+    await env.DB.prepare(`UPDATE zelnum_realtime_catalogue SET enabled=1,updated_at=CURRENT_TIMESTAMP
+      WHERE product_id IN (47,48,49,50,51,52)`).run();
+  }
   zelnumRealtimeCatalogueSchemaReady=true;
 }
 
