@@ -778,31 +778,37 @@ async function importCheckNumberCatalogue(env) {
 // --------------------------------------------------
 let zelnumRealtimeCatalogueSchemaReady=false;
 async function ensureZelnumRealtimeCatalogueSchema(env){
-  if(zelnumRealtimeCatalogueSchemaReady)return;
-  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS zelnum_realtime_catalogue(
-    product_id INTEGER PRIMARY KEY,
-    slug TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL,
-    series TEXT NOT NULL CHECK(series IN ('phone','email')),
-    minimum_order_quantity INTEGER NOT NULL DEFAULT 1,
-    enabled INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`).run();
-  // One-time launch migration: enable only the six explicitly approved
-  // basic realtime checks. The migration marker prevents later cold starts
-  // from overriding an administrator's future enable/disable choices.
-  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS app_migrations(
-    migration_key TEXT PRIMARY KEY,
-    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`).run();
-  const migration=await env.DB.prepare(
-    "INSERT OR IGNORE INTO app_migrations(migration_key) VALUES('enable_zelnum_realtime_phase_one_2026_11')"
-  ).run();
-  if(Number(migration.meta?.changes||0)>0){
-    await env.DB.prepare(`UPDATE zelnum_realtime_catalogue SET enabled=1,updated_at=CURRENT_TIMESTAMP
-      WHERE product_id IN (47,48,49,50,51,52)`).run();
+  if(!zelnumRealtimeCatalogueSchemaReady){
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS zelnum_realtime_catalogue(
+      product_id INTEGER PRIMARY KEY,
+      slug TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      series TEXT NOT NULL CHECK(series IN ('phone','email')),
+      minimum_order_quantity INTEGER NOT NULL DEFAULT 1,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`).run();
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS app_migrations(
+      migration_key TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`).run();
+    zelnumRealtimeCatalogueSchemaReady=true;
   }
-  zelnumRealtimeCatalogueSchemaReady=true;
+  // Apply activation only after all six approved products have actually been
+  // imported. A previous schema-only request may have happened before import;
+  // this guarded v2 migration safely repairs that ordering case. Its marker
+  // ensures later admin switch changes are never overwritten.
+  const ready=await env.DB.prepare(`SELECT COUNT(*) AS total FROM zelnum_realtime_catalogue
+    WHERE product_id IN (47,48,49,50,51,52)`).first();
+  if(Number(ready?.total||0)===6){
+    const migration=await env.DB.prepare(
+      "INSERT OR IGNORE INTO app_migrations(migration_key) VALUES('enable_zelnum_realtime_phase_one_v2_2026_11')"
+    ).run();
+    if(Number(migration.meta?.changes||0)>0){
+      await env.DB.prepare(`UPDATE zelnum_realtime_catalogue SET enabled=1,updated_at=CURRENT_TIMESTAMP
+        WHERE product_id IN (47,48,49,50,51,52)`).run();
+    }
+  }
 }
 
 async function importZelnumCatalogue(env) {
@@ -876,7 +882,7 @@ async function importZelnumCatalogue(env) {
       VALUES(?,?,?,?,?,0,CURRENT_TIMESTAMP)
       ON CONFLICT(product_id) DO UPDATE SET slug=excluded.slug,name=excluded.name,
         series=excluded.series,minimum_order_quantity=excluded.minimum_order_quantity,
-        enabled=0,updated_at=CURRENT_TIMESTAMP`).bind(id,slug,name,series,minimum));
+        updated_at=CURRENT_TIMESTAMP`).bind(id,slug,name,series,minimum));
   }
   const result=await env.DB.batch(statements);
   return {provider_products:products.length,bulk_products_available:allBulk.length,bulk_products_supported:bulk.length,
